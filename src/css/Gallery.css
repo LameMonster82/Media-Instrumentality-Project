@@ -1,0 +1,184 @@
+.gallery {
+    display: flex;
+    gap: 10px;
+    justify-content: left;
+    flex-direction: column;
+    grid-area: 2 / 2 / 6 / 6;
+    padding: 1rem;
+}
+
+.gallery-chunk {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    /*border: 1px solid #49454e;*/
+    border-radius: 1rem;
+}
+
+.gallery-item {
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    /*width: 150px;*/
+    overflow: hidden;
+    background-color: #211f24;
+    border-radius: 18px;
+    align-content: center;
+    justify-content: center;
+    display: flex;
+    max-width: calc(100vw - 25rem);
+}
+
+
+
+.gallery-item img {
+    /*transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);*/
+    object-fit: none;
+    /*transform: scale(1.1);*/
+}
+
+/*
+.gallery-item.loaded {
+    width: auto;
+}
+*/
+.gallery-item img.loaded {
+    /*transform: scale(1);*/
+    object-fit: contain;
+}
+
+
+
+
+
+/* Lightbox styling */
+.lightbox {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+    align-items: center;
+    transition: background-color 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.lightbox > .viewAsset {
+    max-width: 90%;
+    max-height: 90%;
+    transition: 
+        width 0.8s cubic-bezier(0.16, 1, 0.3, 1), 
+        height 0.8s cubic-bezier(0.16, 1, 0.3, 1), 
+        top 0.8s cubic-bezier(0.16, 1, 0.3, 1), 
+        left 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+        font-size 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+        color 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lightbox.active {
+    display: flex;
+}
+
+.close-btn {
+    position: absolute;
+    top: 1.5rem;
+    right: 1.5rem;
+    color: white;
+    font-size: 30px;
+    cursor: pointer;
+}
+
+.loading-img-lightbox {
+    position: absolute;
+    top: 20px;
+    left: 30px;
+    width: 30px;
+}
+
+.lightbox *.focused {
+    position: fixed;
+    /* Fixed positioning for full screen */
+    z-index: 1000;
+    /* Ensure it is on top */
+    object-fit: contain;
+    /* Maintain aspect ratio when full screen */
+    border-radius: 18px;
+}
+
+.zoomin {
+    top: 5%;
+    left: 5%;
+    width: 90vw;
+    height: 90vh;
+    font-size: 256px;
+    color: #ebddff;
+}
+
+.zoominVideo {
+    top: unset;
+    left: unset;
+    width: unset;
+    height: unset;
+
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.date_separator {
+    font-size: 64px;
+    color: #d3bcfd;
+    text-align: start;
+    display: flex;
+    align-items: center;
+    font-family: "Inter", sans-serif;
+    font-optical-sizing: auto;
+    font-weight: 600;
+    font-style: normal;
+    width: fit-content;
+    line-height: normal;
+    background-color: #3b383e;
+    padding: 0px 2rem;
+    border-radius: 1rem;
+}
+
+.date_separator:not(:first-child) {
+    margin-top: 2rem;
+}
+
+.loadingGif {
+    height: 64px;
+    padding: 24px;
+}
+
+.text-message {
+    color: #ebddff;
+    text-align: center;
+    font-optical-sizing: auto;
+    width: -webkit-fill-available;
+    width: -moz-available;
+    font-size: 64px;
+    font-style: normal;
+    font-weight: bold;
+    top: 50%;
+    position: absolute;
+    line-height: 64px;
+}
+
+.fileTypeIndicator {
+    position: absolute;
+    right: 3%;
+    top: 3%;
+    background-color: #3b383e;
+    border-radius: 12px;
+    padding: 6px;
+    width: 30px;
+    height: 30px;
+}
+
+.fileTypeIndicator > * {
+    font-size: 26px;
+    line-height: 26px;
+}

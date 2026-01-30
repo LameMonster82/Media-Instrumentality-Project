@@ -1,0 +1,15 @@
+{
+    "configurations": [
+        {
+            "name": "Launch Chrome",
+            "request": "launch",
+            "type": "chrome",
+            "url": "https://192.168.1.118:5005/",
+            "webRoot": "${workspaceFolder}",
+            "runtimeExecutable": "c:\\Users\\LlamasHere\\AppData\\Local\\Thorium\\Application\\thorium.exe",
+            "enableDWARF": true,
+            "showAsyncStacks": true,
+            "preLaunchTask": "bun build"
+        }
+    ]
+}

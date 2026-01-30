@@ -1,0 +1,113 @@
+@import "./Global2.css";
+
+.ScrollableDiv {
+    scrollbar-gutter: stable;
+    overflow-y: auto;
+    scrollbar-color: var(--md-sys-color-surface-bright) var(--md-sys-color-surface-container);
+    scrollbar-width: thin;
+    height: 100%;
+    direction: rtl;
+}
+
+.Sidebar {
+    grid-area: sidebar;
+    position: sticky;
+    background-color: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-primary);
+    padding-left: 2rem;
+    padding-right: 2rem;
+    border: 2px solid var(--md-sys-color-outline-variant);
+    border-top-right-radius: 8px;
+    margin: -2px;
+    overflow: clip;
+
+    nav {
+        direction: ltr;
+    }
+
+    h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        text-align: left;
+        margin: 1rem;
+    }
+
+    nav span {
+        display: block;
+        background-color: var(--md-sys-color-outline-variant);
+        width: 100%;
+        height: 0.15rem;
+    }
+
+    nav ul {
+        --before-content: 'question_mark';
+        padding: 0;
+        font-size: 1.75rem;
+        font-weight: 500;
+        line-height: 1;
+        list-style: none;
+        /*border: 2px solid var(--md-sys-color-surface-container-highest);*/
+        border-radius: 1.15rem;
+
+        li {
+            margin: 0.5rem 0;
+        }
+
+
+
+        li.active {
+            background-color: var(--md-sys-color-surface-bright);
+            border: 2px solid var(--md-sys-color-outline-variant);
+
+        }
+
+        li a::before {
+            text-overflow: ellipsis;
+            vertical-align: bottom;
+            font-family: 'Material Symbols Rounded';
+            content: var(--before-content);
+            margin-right: 0.5rem;
+        }
+
+        li a {
+            background-color: transparent;
+            transition: background-color 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+            text-decoration: none;
+            color: var(--md-sys-color-primary);
+            text-overflow: ellipsis;
+            overflow: hidden;
+            white-space: nowrap;
+            display: block;
+            border-radius: 1rem;
+            padding: 0.75rem;
+        }
+
+        li a:hover {
+            background-color: var(--md-sys-color-surface-container-high);
+        }
+
+        li ul {
+            margin-left: 2rem;
+        }
+
+        /*
+        li ul li::before {
+            vertical-align: bottom;
+            text-align: right;
+            content: "\251C";
+            margin-right: 0.5rem;
+            display: inline-block;
+            width: 2.5rem;
+            height: fit-content;
+        }
+
+        li ul li:first-child::before {
+            content: "\2514\252C";
+        }
+
+        li ul li:last-of-type::before {
+            content: "\2002\2514";
+        }
+            */
+    }
+}

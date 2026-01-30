@@ -1,0 +1,342 @@
+/* Controls container */
+.controls {
+    position: absolute;
+    bottom: 6vh;
+    display: flex;
+    justify-content: center-;
+    align-items: center;
+    padding: 10px;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 10px;
+    z-index: 1001;
+    flex-direction: row;
+    height: 3vh;
+    width: 90%;
+    transition: border-radius 0.5s ease-in-out, opacity 0.5s ease-in-out;
+    min-width: 400px;
+    opacity: 1;
+}
+
+.controls.inactive {
+    opacity: 0;
+}
+.controls:active {
+    cursor: grabbing;
+}
+
+.controls.tracklist-open {
+    border-radius: 10px 0px 10px 10px;
+}
+
+/* Buttons and sliders */
+.video-conrol-btn {
+    background-color: transparent;
+
+    border: none;
+    padding: 5px;
+    cursor: pointer;
+    border: 0;
+
+    display: flex;
+    flex-direction: row;
+}
+
+.video-conrol-btn i {
+    font-size: 36px;
+    color: white;
+    transition: all 0.5s ease;
+    user-select: none;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    cursor: pointer;
+    margin: 0 10px;
+    border-radius: 12px;
+    /* Round corners */
+    background: rgb(24, 24, 24);
+    /* Light gray background */
+    position: relative;
+}
+
+.progress-range {
+    display: inline;
+    margin: 0;
+    position: absolute;
+    width: 100%;
+    height: 8px;
+    cursor: pointer;
+    border-radius: 12px;
+    background: transparent;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+}
+
+.progress-hover-tooltip {
+    position: absolute;
+    background-color: #00000080;
+    color: white;
+    display: block;
+    pointer-events: none;
+    border-radius: 10px 10px 0 0;
+    transition: 
+        max-height .5s ease-in-out, 
+        padding .5s ease-in-out;
+    overflow: hidden;
+    padding: 0 0.5rem;
+    height: fit-content;
+    max-height: 0;
+    white-space: break-spaces;
+    text-align: center;
+}
+
+.progress-hover-tooltip.active {
+    
+    padding: 0.5rem;
+    max-height: 6vh;
+}
+
+.buffer-range {
+    width: 100%;
+    display: block;
+    height: 8px;
+    position: absolute;
+    background: rgb(48, 48, 48);
+    border-radius: 12px;
+    background: linear-gradient(to right, darkgray, darkgray), rgb(48, 48, 48);
+    background-size: var(--buffer-progress, 0%) 10px;
+    background-repeat: no-repeat;
+    pointer-events: none;
+}
+
+.active-range {
+    background: linear-gradient(to right, white, white), transparent;
+    background-size: var(--video-progress, 0%) 10px;
+    background-repeat: no-repeat;
+}
+
+.progress-range::-webkit-slider-thumb,
+.progress-range::-moz-range-thumb {
+    border-radius: 3px;
+    width: 8px;
+    height: 24px;
+    background-color: white;
+    border: none;
+    cursor: pointer;
+    -webkit-appearance: none;
+}
+
+.progress-range::-moz-range-track {
+    height: 10px;
+    border-radius: 5px;
+}
+
+.progress-range::-webkit-progress-value,
+.progress-range::-moz-range-progress {
+    height: 10px;
+    background-color: white;
+    border-radius: 12px 0px 0px 12px;
+}
+
+.progress-range::-webkit-slider-container {
+    min-block-size: 0px;
+}
+
+#chaptersForVideo > option {
+    cursor: pointer;
+    -webkit-appearance: none;
+    background-color: #fff;
+    border: none;
+    border-radius: 3px;
+    position: absolute;
+    background-color: #242424;
+    width: 2px;
+    height: 12px;
+    min-block-size: 0px;
+    top: 50%;
+}
+
+.volume-control {
+    width: 60%;
+    height: 8px;
+    cursor: pointer;
+    margin: 0 10px;
+    border-radius: 12px;
+    background: none;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    display: block;
+    position: absolute;
+}
+
+/* Styling for the range thumb for WebKit browsers (Chrome, Safari) */
+.volume-control::-webkit-slider-thumb {
+    border-radius: 3px;
+    width: 8px;
+    height: 24px;
+    background-color: white;
+    border: none;
+    cursor: pointer;
+    -webkit-appearance: none;
+}
+
+/* Styling for the range thumb for Firefox */
+.volume-control::-moz-range-thumb {
+    width: 0px;
+    /* Thumb width */
+    height: 30px;
+    /* Thumb height (vertical) */
+    background-color: white;
+    /* Green color */
+    border: none;
+    /* Remove border */
+    border-radius: 5px;
+    /* Optional: rounded thumb corners */
+    cursor: pointer;
+    /* Change cursor when hovering over the thumb */
+    transition: width 0.3s ease-in-out;
+}
+
+.volume-control::-moz-range-track {
+    height: 10px;
+    background: rgb(24, 24, 24);
+    border-radius: 5px;
+}
+
+.volume-control::-moz-range-progress {
+    height: 10px;
+    background: white;
+    border-radius: 12px 0px 0px 12px;
+}
+
+.progressNumber {
+    color: lightgray;
+    font-feature-settings: 'tnum';
+}
+
+.highlighted {
+    color: white;
+    font-feature-settings: 'tnum';
+}
+
+.volume-control {
+    transition: width 0.3s ease-in-out, opacity 0.3s ease-in-out;
+    width: 0px;
+    opacity: 0;
+}
+
+.volume-control-range-container {
+    display: block;
+    position: relative;
+    background: none;
+    margin: 0;
+    height: auto;
+}
+
+.volume-control-range-container > * {
+    top: calc(50% - 8px / 2);
+    margin: 0;
+}
+
+.video-conrol-btn:hover .volume-control {
+    width: 100px;
+    opacity: 1;
+}
+
+.video-conrol-btn:hover .volume-control::-moz-range-thumb {
+    width: 5px;
+}
+
+/* Fullscreen and dropdown menu styles */
+#fullscreenBtn {
+    font-size: 14px;
+}
+
+.dropdown {
+    position: relative;
+}
+
+.dropdown-content {
+    display: none;
+    position: absolute;
+    background-color: white;
+    color: black;
+    box-shadow: 0px 8px 16px rgba(0, 0, 0, 0.2);
+    z-index: 1;
+}
+
+.dropdown:hover .dropdown-content {
+    display: block;
+}
+
+.dropdown-content button {
+    background-color: white;
+    border: none;
+    padding: 8px;
+    cursor: pointer;
+}
+
+.dropdown-content button:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Hide volume control by default */
+#volumeControl {
+    display: none;
+}
+
+.track-selector {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    bottom: calc(3vh + 10px);
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 10px 10px 0px 0px;
+    padding: 0px 10px 0px 10px;
+    right: 0px;
+    width: 150px;
+    margin: 10px 0px 10px 10px;
+    height: 0;
+    transition: all 0.5s ease-in-out;
+    overflow: hidden;
+}
+
+.track-selector.open {
+    padding: 10px 10px 5px 10px;
+    margin: 10px 0px 10px 10px;
+}
+
+.track-selector label {
+    font-weight: 700;
+    color: white;
+    font-size: 16px;
+}
+
+.track-selector select {
+    padding: 5px;
+    margin: 5px;
+    font-size: 16px;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background-color: #3b383e;
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.track-selector select:hover {
+    border-color: #d3bcfd;
+}
+
+.loading-svg-video {
+    position: fixed;
+    display: block;
+    z-index: 1001;
+    left: calc(50% - 20% / 2);
+    width: 20%;
+    height: 20%;
+    top: calc(50% - 20% / 2);
+}

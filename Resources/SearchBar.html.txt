@@ -1,0 +1,36 @@
+<style>
+    .SearchHeader {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        grid-area: 1 / 2 / 2 / 6;
+        padding: 1rem;
+    }
+
+    .SearchBar {
+        outline: none;
+        border: 2px solid;
+        border-color: #1d1b20;
+        border-radius: 36px;
+        width: 100%;
+        padding: 12px;
+        font-size: 18px;
+        font-family: "Inter", sans-serif;
+        font-optical-sizing: auto;
+        font-weight: normal;
+        font-style: normal;
+        background-color: #151218;
+        color: #e7e0e8;
+        transition:
+            background-color 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+            border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+        max-width: 50rem;
+    }
+
+    .SearchBar:focus {
+        background-color: #3b383e;
+        border-color: #948f99;
+    }
+</style>
+
+<input type="text" placeholder="Search..." aria-label="Search" class="SearchBar">

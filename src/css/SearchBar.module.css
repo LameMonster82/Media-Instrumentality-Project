@@ -1,0 +1,44 @@
+@import "./Global2.css";
+
+.SearchHeader {
+    grid-area: topbar;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+}
+
+.SearchBar {
+    outline: none;
+    border: 2px solid;
+    border-color: var(--border-color-1);
+    border-radius: var(--border-radius-mid);
+    padding: 0.75rem;
+    font-size: x-large;
+    font-family: var(--default-font);
+    font-optical-sizing: auto;
+    font-weight: 500;
+    font-style: normal;
+    text-align: center;
+    background-color: transparent;
+    color: var(--md-sys-color-primary);
+    opacity: 1;
+    transition:
+        border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    min-width: 20rem;
+    max-width: 80rem;
+    height: fit-content;
+}
+
+.SearchBar:focus {
+    border-color: var(--md-sys-color-outline);
+}
+
+.SearchBar::placeholder {
+    opacity: 1;
+    transition: opacity 0.3s;
+}
+
+.SearchBar:focus::placeholder {
+    opacity: 0;
+}

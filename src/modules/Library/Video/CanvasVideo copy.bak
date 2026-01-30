@@ -1,0 +1,732 @@
+import { LibAV as LibAVThing } from "./libav/libav-6.5.7.1-all.mjs";
+import { type LibAV, type LibAVSync, type Packet } from "./libav/libav.types";
+import LibAVFactory from "./libav/libav-6.5.7.1-all.thr.js" with { type: 'file', loader: "file"};
+import LibAVWasm from "./libav/libav-6.5.7.1-all.thr.wasm";
+import { videoStreamToConfig, packetToEncodedVideoChunk, laFrameToVideoFrame } from "libavjs-webcodecs-bridge";
+
+type CanvasFrame = {
+    frame: VideoFrame;
+    ts: number;
+};
+
+export class VideoPlayerCanvas {
+    public canvas: HTMLCanvasElement;
+    private ctx: CanvasRenderingContext2D;
+
+    private videoControls: HTMLDivElement | null = null;
+
+    private videoTrackSelectLabel: HTMLLabelElement | null = null;
+    private videoTrackSelect: HTMLSelectElement | null = null;
+    private audioTrackSelect: HTMLSelectElement | null = null;
+    private subtitleTrackSelect: HTMLSelectElement | null = null;
+
+    private transmutatedBar: HTMLSpanElement | null = null;
+    private updateTimeCallback: () => void = () => { };
+
+    private mediaDuration: number = 0;
+    private currentTimeProp: number = 0;
+    private volume: number = 1;
+    private isPlaying: boolean = false;
+    private isSeeking = false;
+
+    public get currentTime(): number {
+        return this.currentTimeProp;
+    }
+
+    private set currentTime(v: number) {
+        this.currentTimeProp = v;
+        this.updateTimeCallback();
+    }
+
+
+    constructor() {
+        // Create the video element
+        this.canvas = document.createElement('canvas');
+        this.canvas.width = 1920;
+        this.canvas.height = 1080;
+        this.ctx = this.canvas.getContext('2d')!;
+    }
+
+    async Play(file: File) {
+        if (!this.videoControls) throw new Error("No Controls");
+
+        let startTime: number | null = null; // Our "wall clock" in ms
+        let lastTimestamp = 0;
+
+        this.canvas.addEventListener("playPause", () => {
+            if (this.isPlaying) {
+                startTime = performance.now() - lastTimestamp / 1000;
+            }
+        });
+
+        this.isPlaying = true;
+        let canvasWidth = this.canvas.width;
+        let canvasHeight = this.canvas.height;
+        let frameQueuw: VideoFrame[] = [];
+        let running = true;
+        let firstFrameResolve: (value: VideoFrame) => void = () => {};
+
+        this.GetNextFrame(file, (frame) => {
+            frameQueuw.unshift(frame);
+            firstFrameResolve(frame);
+        }, () => frameQueuw.length < 60).then(() => {
+            running = false;
+        });
+
+        while (running) {
+            let frame = frameQueuw.pop();
+            if (!frame) {
+                await new Promise<void>(res => setTimeout(res, 0));
+                continue;
+            }
+
+            startTime ??= performance.now();
+            lastTimestamp = frame.timestamp;
+
+            if (canvasWidth !== frame.codedWidth || canvasHeight !== frame.codedHeight) {
+                this.canvas.width = frame.codedWidth;
+                this.canvas.height = frame.codedHeight;
+                canvasWidth = frame.codedWidth;
+                canvasHeight = frame.codedHeight;
+            }
+
+            // Wait until our clock reaches the frame's timestamp
+            while ((!this.isPlaying && !this.isSeeking) || ((performance.now() - startTime < lastTimestamp / 1000) && !this.isSeeking)) {
+                await new Promise<void>(res => setTimeout(res, 0));
+            }
+
+            if (this.isSeeking) {
+                frameQueuw.forEach(frame => frame.close());
+                frame.close();
+                frameQueuw = [];
+                await new Promise(res => this.canvas.addEventListener("seeked", res, { once: true }));
+                await new Promise<VideoFrame>(res => firstFrameResolve = res);
+                frame = frameQueuw.pop()!;
+                lastTimestamp = frame.timestamp;
+                startTime = performance.now() - lastTimestamp / 1000;
+                //continue;
+            }
+
+            //const start = performance.now();
+            this.ctx.drawImage(frame, 0, 0);
+            //console.log("Presenting frame took:", performance.now() - start);
+            frame.close();
+            this.currentTime = lastTimestamp / 1000000;
+        }
+    }
+
+    async GetNextFrame(file: File, callback: (frame: VideoFrame) => void, doYouNeedMoreFrames: () => boolean) {
+        const libav = await (LibAVThing({ toImport: LibAVFactory, wasmurl: LibAVWasm, noes6: true, yesthreads: true }) as Promise<LibAV | LibAV & LibAVSync>);
+
+        // Initial read
+        await libav.mkreadaheadfile("input", file);
+        const [fmt_ctx, streams] =
+            await libav.ff_init_demuxer_file("input");
+
+        // Find the video stream (FIXME: eventually audio stream too?)
+        let videoIdx = -1;
+        for (let i = 0; i < streams.length; i++) {
+            if (streams[i]!.codec_type === libav.AVMEDIA_TYPE_VIDEO) {
+                videoIdx = i;
+                break;
+            }
+        }
+        if (videoIdx < 0) {
+            throw new Error("Error! Couldn't find video stream!");
+        }
+        const videoStream = streams[videoIdx]!;
+        this.mediaDuration = Math.max(...streams.map(stream => stream.duration));
+        this.canvas.dispatchEvent(new Event("timeupdate"));
+
+        let seeker = Promise.resolve(0);
+
+        this.canvas.addEventListener("seek", async () => {
+            console.log("hii");
+            this.isSeeking = true;
+            const ts = this.currentTime *
+                videoStream.time_base_den / videoStream.time_base_num;
+            seeker = libav.av_seek_frame(fmt_ctx, videoIdx, ts, 0, 0);
+            //seeker = libav.avformat_seek_file_approx(fmt_ctx, videoIdx, ts, 0, 0);
+        });
+
+        // Initialize the decoder
+        const [, c, pkt, frame] =
+            await libav.ff_init_decoder(videoStream.codec_id, videoStream.codecpar);
+
+        // Prepare to initialize the scaler (for pixel format)
+        const thisThis = this;
+        let sctxPromise = Promise.resolve(0);
+        let sctx: number | null = null;
+        let inW = -1, inH = -1, inF = -1;
+        let runawayChunks = false;
+
+        let memory = 1024 * 1024 * 4;
+        let lastKeyFrame: {
+            duration: number | null;
+            timestamp: number;
+            data: ArrayBuffer
+        } | undefined;
+
+        const config = await videoStreamToConfig(libav, videoStream);
+        let supported: boolean | undefined = undefined;
+        let webCodecVideoDecoder: VideoDecoder | undefined = undefined;
+        if (config && typeof config.codec === "string") {
+            const videoDecoderSupport = await VideoDecoder.isConfigSupported(config as VideoDecoderConfig);
+            supported = videoDecoderSupport.supported;
+        }
+
+        if (supported) {
+            console.log("Browser supports this natively. Using WebCodecs", config);
+        } else {
+            console.log("Unknown video codeec maybe? Using ffmpeg", config);
+        }
+
+        // And read
+        while (true) {
+            // Read some packets
+            const [res, packets] = await libav.ff_read_frame_multi(fmt_ctx, pkt, {
+                limit: memory,
+                copyoutPacket: "ptr"
+            });
+
+            //console.log(await libav.ff_error(res));
+
+            const vPackets = packets[videoIdx] ?? [];
+
+            const processFfmpegPacket = async function* (vPacket: number) {
+                //if (thisThis.isSeeking) return "done";
+                const soutFrame = await libav.av_frame_alloc();
+                let frameWidth: number | null = null;
+                let frameHeight: number | null = null;
+                let frameFormat: number | null = null;
+
+                let ret = await libav.avcodec_send_packet(c, vPacket);
+                if (ret < 0) {
+                    var err = "Error submitting the packet to the decoder: " + await libav.ff_error(ret);
+                    console.log(err);
+                    await libav.av_frame_free_js(soutFrame);
+                    return "done";
+                }
+                //await libav.av_packet_unref(vPacket);
+                yield "ready";
+                while (true) {
+                    ret = await libav.avcodec_receive_frame(c, frame);
+                    if (ret === -6 || ret === -541478725) {
+                        break;
+                    } else if (ret < 0) throw new Error("Error decoding audio frame: " + await libav.ff_error(ret));
+                    const framePtr = frame;
+                    frameWidth ??= await libav.AVFrame_width(frame);
+                    frameHeight ??= await libav.AVFrame_height(frame);
+                    frameFormat ??= await libav.AVFrame_format(frame);
+
+                    let pts = await libav.AVFrame_pts(framePtr);
+                    let ptshi = await libav.AVFrame_ptshi(framePtr);
+
+                    let videoFrameFormat = thisThis.AVPixelFormatToString(frameFormat);
+                    // Maybe initialize the scaler
+                    if (videoFrameFormat === undefined && (inW !== frameWidth || inH !== frameHeight ||
+                        inF !== frameFormat)) {
+                        await sctxPromise;
+                        let resolve = (valuse: number) => { };
+                        sctxPromise = new Promise<number>(res => resolve = res);
+                        if (sctx !== null)
+                            await libav.sws_freeContext(sctx);
+
+                        inW = frameWidth!;
+                        inH = frameHeight!;
+                        inF = frameFormat;
+                        sctx = await libav.sws_getContext(
+                            inW, inH, inF,
+                            inW, inH, libav.AV_PIX_FMT_RGBA,
+                            2, 0, 0, 0
+                        );
+                        resolve(0);
+                    }
+                    //let start = 0;
+                    let outFrame = framePtr;
+                    if (videoFrameFormat === undefined) {
+                        await sctxPromise;
+                        //start = performance.now();
+                        sctxPromise = libav.sws_scale_frame(sctx!, soutFrame, framePtr);
+                        await sctxPromise;
+                        outFrame = soutFrame;
+                        videoFrameFormat = 'RGBA';
+                        //console.log("Processing frame took:", performance.now() - start);
+
+                    }
+                    //start = performance.now();
+                    const doneFrame = await libav.ff_copyout_frame_video(outFrame);
+                    if (doneFrame.format >= 0) {
+                        doneFrame.width = frameWidth;
+                        doneFrame.height = frameHeight;
+                        doneFrame.pts = pts;
+                        doneFrame.ptshi = ptshi;
+                        yield laFrameToVideoFrame(doneFrame, { timeBase: [videoStream.time_base_num, videoStream.time_base_den] });
+                    }
+
+                    await libav.av_frame_unref(frame);
+                }
+                await libav.av_frame_free_js(soutFrame);
+                return "done";
+            };
+
+            if (supported && !webCodecVideoDecoder) {
+                webCodecVideoDecoder = new VideoDecoder({
+                    output: (frame) => {
+                        if (this.isSeeking) {
+                            frame.close();
+                        } else
+                            callback(frame);
+                    }, error: (e: Error) => {
+                        console.log(e);
+                    }
+                });
+
+                webCodecVideoDecoder.configure(config as VideoDecoderConfig);
+            }
+
+
+
+            //let gen1: AsyncGenerator<"ready" | VideoFrame, string> | null = null;
+            //let gen2: AsyncGenerator<"ready" | VideoFrame, string> | null = null;
+
+            //let gen1Loading: Promise<IteratorResult<"ready" | VideoFrame, string>> | null = null;
+            //let gen2Loading: Promise<IteratorResult<"ready" | VideoFrame, string>> | null = null;
+
+            async function* yieldFrom(
+                gen: AsyncGenerator<"ready" | VideoFrame, string>
+            ) {
+                let res = await gen.next();
+                while (res.value !== "done") {
+                    if (res.value !== "ready") yield res.value as VideoFrame;
+                    res = await gen.next();
+                }
+            }
+
+            let packetStuff = [Promise.resolve()];
+            if (supported) {
+                packetStuff = vPackets.map(async packetPtr => {
+                    if (this.isSeeking) return;
+                    const packet = await libav.ff_copyout_packet(packetPtr);
+                    if (this.isSeeking) return;
+                    const encodedChunk = packetToEncodedVideoChunk(packet, {
+                        time_base_num: videoStream.time_base_num,
+                        time_base_den: videoStream.time_base_den
+                    }) as EncodedVideoChunk;
+                    if (encodedChunk.type === "key") {
+                        runawayChunks = false;
+                        const buffer = new ArrayBuffer(encodedChunk.byteLength);
+                        encodedChunk.copyTo(buffer)
+                        lastKeyFrame = {
+                             timestamp: encodedChunk.timestamp,
+                             duration: encodedChunk.duration!,
+                             data: buffer
+                        }
+                    }
+                    if(!runawayChunks)
+                    webCodecVideoDecoder!.decode(encodedChunk);
+                    //await libav.av_packet_free_js(packetPtr);
+                });
+            } else {
+                for (const packet of vPackets) {
+                    if (this.isSeeking) break;
+                    const frameGens = processFfmpegPacket(packet);
+                    for await (const videoFrame of yieldFrom(frameGens)) {
+                        callback(videoFrame);
+                    }
+                }
+            }
+
+
+
+            //await Promise.all(vPackets.map(packet => libav.av_packet_free_js(packet)));
+            /*
+            for (let i = 0; i < vPackets.length; i++) {
+              // Choose the current generator and its loading promise based on parity.
+              const isEven = !(i & 1);
+              let [currentGen, currentLoading] = isEven
+                ? [gen1, gen1Loading]
+                : [gen2, gen2Loading];
+            
+              if (currentLoading) await currentLoading;
+              currentGen ??= processPacket(vPackets[i]!);
+            
+              // Preload the alternate generator if there's a next packet.
+              if (i + 1 < vPackets.length) {
+                if (isEven) {
+                  gen2 = processPacket(vPackets[i + 1]!);
+                  gen2Loading = gen2.next();
+                } else {
+                  gen1 = processPacket(vPackets[i + 1]!);
+                  gen1Loading = gen1.next();
+                }
+              }
+            
+              // Consume the current generator.
+              yield* yieldFrom(currentGen);
+            
+              // Save the updated generator back.
+              if (isEven) gen1 = currentGen;
+              else gen2 = currentGen;
+          }
+          */
+
+
+
+            if (this.isSeeking) {
+                await seeker;
+                await Promise.all(packetStuff);
+                await Promise.all(vPackets.map(packetPtr => libav.av_packet_free_js(packetPtr)));
+                if (supported) {
+                    runawayChunks = true;
+                    await webCodecVideoDecoder?.flush()
+                    //runawayChunks = true;
+                    //webCodecVideoDecoder?.reset()
+                    //webCodecVideoDecoder?.configure(config as VideoDecoderConfig);
+                    if (false && lastKeyFrame) {
+                        lastKeyFrame.timestamp = this.currentTime * 1000000;
+                        webCodecVideoDecoder?.decode(new EncodedVideoChunk({
+                            type: 'key',
+                            timestamp: lastKeyFrame.timestamp,
+                            duration: lastKeyFrame.duration!,
+                            data: lastKeyFrame.data
+                        }));
+                    }
+                }
+                
+                this.isSeeking = false;
+                this.canvas.dispatchEvent(new Event("seeked"));
+                continue;
+            }
+
+            if (res === libav.AVERROR_EOF) {
+                await Promise.all(packetStuff);
+                await Promise.all(vPackets.map(packetPtr => libav.av_packet_free_js(packetPtr)));
+            }
+
+            while (!doYouNeedMoreFrames()) {
+                await new Promise<void>(res => setTimeout(res, 0));
+            }
+        }
+    }
+
+    public CreatePlayerControls(): HTMLDivElement {
+        if (this.videoControls) return this.videoControls;
+
+        // Create controls container
+        const controls = document.createElement('div');
+        controls.classList.add('controls');
+
+        // Play/Pause button (using Material Icon)
+        const playButton = document.createElement('button');
+        playButton.classList.add('video-conrol-btn');
+        const playIcon = document.createElement('i');
+        playIcon.classList.add('material-symbols-rounded');
+        playIcon.textContent = 'pause'; // Material Icon for Play
+        playButton.appendChild(playIcon);
+        controls.appendChild(playButton);
+
+        // Progress Bar
+        const progressBarHold = document.createElement('div');
+        progressBarHold.classList.add('progress-bar');
+        controls.appendChild(progressBarHold);
+
+        this.transmutatedBar = document.createElement('span');
+        this.transmutatedBar.classList.add('buffer-range');
+        this.transmutatedBar.style.background = 'rgb(36,36,36)';
+        progressBarHold.appendChild(this.transmutatedBar);
+
+        const bufferBar = document.createElement('span');
+        bufferBar.classList.add('buffer-range', 'active-range');
+        progressBarHold.appendChild(bufferBar);
+
+        const progressBarRange = document.createElement('input');
+        progressBarRange.type = 'range';
+        progressBarRange.classList.add('progress-range');
+        progressBarRange.value = '0';
+        progressBarRange.step = '0.01';
+        progressBarRange.min = '0';
+        progressBarRange.max = '100';
+        progressBarHold.appendChild(progressBarRange);
+
+        // Progress numbers
+        const numberProgress = document.createElement('span');
+        numberProgress.classList.add('progressNumber', 'highlighted');
+        numberProgress.textContent = '0:00';
+        controls.appendChild(numberProgress);
+
+        const numberDuration = document.createElement('span');
+        numberDuration.classList.add('progressNumber');
+        numberDuration.textContent = '/0:00';
+        controls.appendChild(numberDuration);
+
+        // Volume Button
+        const volumeContainer = document.createElement('div');
+        volumeContainer.classList.add('video-conrol-btn');
+        const volumeIcon = document.createElement('i');
+        volumeIcon.classList.add('material-symbols-rounded');
+        volumeIcon.textContent = 'volume_up'; // Material Icon for Volume
+        volumeContainer.appendChild(volumeIcon);
+        controls.appendChild(volumeContainer);
+
+        // Volume Control (Slider)
+        const volumeControl = document.createElement('input');
+        volumeControl.type = 'range';
+        volumeControl.classList.add('volume-control');
+        volumeControl.value = '100';
+        volumeControl.max = '100';
+        volumeControl.step = '1';
+        volumeContainer.appendChild(volumeControl);
+
+        // Captions Button
+        const captionBtn = document.createElement('div');
+        captionBtn.classList.add('video-conrol-btn');
+        const captionIcon = document.createElement('i');
+        captionIcon.classList.add('material-symbols-rounded');
+        captionIcon.textContent = 'subtitles'; // Material Icon for Captions
+        captionBtn.appendChild(captionIcon);
+        controls.appendChild(captionBtn);
+
+        const trackSelector = document.createElement('div');
+        trackSelector.classList.add('track-selector');
+        trackSelector.dataset.isHidden = '1';
+        captionBtn.appendChild(trackSelector);
+
+        const videoLabel = document.createElement('label');
+        videoLabel.htmlFor = "VideoLabelForTrackSelector";
+        videoLabel.textContent = "Video";
+        trackSelector.appendChild(videoLabel);
+
+        const videoSelect = document.createElement('select');
+        videoSelect.id = 'VideoLabelForTrackSelector';
+        trackSelector.appendChild(videoSelect);
+
+        this.videoTrackSelect = videoSelect;
+        this.videoTrackSelectLabel = videoLabel;
+        const option = document.createElement('option');
+        option.value = '0';
+        option.text = '-';
+        videoSelect.appendChild(option);
+
+        const audioLabel = document.createElement('label');
+        audioLabel.htmlFor = "AudioLabelForTrackSelector";
+        audioLabel.textContent = "Audio";
+        trackSelector.appendChild(audioLabel);
+
+        const audioSelect = document.createElement('select');
+        audioSelect.id = 'AudioLabelForTrackSelector';
+        trackSelector.appendChild(audioSelect);
+
+        this.audioTrackSelect = audioSelect;
+
+        audioSelect.appendChild(option.cloneNode());
+
+        const subtitleLabel = document.createElement('label');
+        subtitleLabel.htmlFor = "SubtitleLabelForTrackSelector";
+        subtitleLabel.textContent = "Subtitles";
+        trackSelector.appendChild(subtitleLabel);
+
+        const subtitleSelect = document.createElement('select');
+        subtitleSelect.id = 'SubtitleLabelForTrackSelector';
+        trackSelector.appendChild(subtitleSelect);
+
+        this.subtitleTrackSelect = subtitleSelect;
+
+        subtitleSelect.appendChild(option.cloneNode());
+
+
+        // Fullscreen Button
+        const fullscreenBtn = document.createElement('button');
+        fullscreenBtn.classList.add('video-conrol-btn');
+        const fullscreenIcon = document.createElement('i');
+        fullscreenIcon.classList.add('material-symbols-rounded');
+        fullscreenIcon.textContent = 'fullscreen'; // Material Icon for Fullscreen
+        fullscreenBtn.appendChild(fullscreenIcon);
+        controls.appendChild(fullscreenBtn);
+
+        this.videoControls = controls;
+
+        // Play/Pause functionality
+        playButton.addEventListener('click', () => {
+            this.isPlaying = !this.isPlaying;
+
+            playIcon.textContent = this.isPlaying ? 'pause' : 'play_arrow';
+            this.canvas.dispatchEvent(new Event("playPause"));
+        });
+
+        let lastProgreess: number = -1;
+        let lastTime: number = -1;
+        let hasHours: boolean = false;
+        let hasMinutes: boolean = false;
+
+        this.updateTimeCallback = () => {
+            const progress = (this.currentTime / this.mediaDuration) * 100;
+            if (lastProgreess != progress) {
+                progressBarRange.value = isNaN(progress) ? '0' : progress.toString();
+                lastProgreess = progress;
+                bufferBar.style.setProperty('--video-progress', `${progress}%`);
+            }
+
+            if (lastTime !== this.currentTime) {
+                const time = formatSeconds(this.currentTime, hasHours, hasMinutes);
+                numberProgress.textContent = time.time;
+                lastTime = this.currentTime;
+            }
+        };
+
+        // Update progress bar as the video plays
+        this.canvas.addEventListener('timeupdate', () => {
+            const time = formatSeconds(this.mediaDuration, false, false);
+            numberDuration.textContent = `/${time.time}`;
+            hasHours = time.hours;
+            hasMinutes = time.minutes;
+        });
+
+        //bufferBar.style.width = `${clamp(lowestBuffered / this.videoElement.duration, 0, 1) * 100}%`;
+
+        // Allow user to change the progress by clicking on the progress bar
+        progressBarRange.addEventListener('input', () => {
+            this.currentTime = (parseFloat(progressBarRange.value) / 100) * this.mediaDuration;
+            if (this.isSeeking) return;
+            this.canvas.dispatchEvent(new Event("seek"));
+        });
+
+        let lastVolume = this.volume;
+
+        // Volume control
+        volumeIcon.addEventListener('click', () => {
+            if (this.volume > 0) {
+                lastVolume = this.volume;
+                this.volume = 0;
+                volumeControl.value = '0';
+            } else {
+                this.volume = clamp(lastVolume, 0.01, 1);
+                volumeControl.value = (this.volume * 100).toString();
+            }
+
+        });
+
+        volumeControl.addEventListener('input', () => {
+            this.volume = parseFloat(volumeControl.value) / 100;
+        });
+
+        this.canvas.addEventListener('volumechange', () => {
+            if (this.volume > 0)
+                lastVolume = this.volume;
+
+            if (this.volume >= 0.5)
+                volumeIcon.textContent = 'volume_up';
+            else if (this.volume > 0.25)
+                volumeIcon.textContent = 'volume_down';
+            else if (this.volume > 0)
+                volumeIcon.textContent = 'volume_mute';
+            else
+                volumeIcon.textContent = 'no_sound';
+        });
+
+        // Fullscreen button functionality
+        fullscreenBtn.addEventListener('click', () => {
+            //if (this.canvas.requestFullscreen) {
+            //    this.videoElement.requestFullscreen();
+            //}
+        });
+
+        captionIcon.addEventListener('click', () => {
+            if (trackSelector.dataset.isHidden == '1') {
+                trackSelector.style.height = trackSelector.scrollHeight + "px";
+                trackSelector.classList.add('open');
+                controls.classList.add('tracklist-open');
+                trackSelector.dataset.isHidden = '0';
+            } else {
+                trackSelector.classList.remove('open');
+                controls.classList.remove('tracklist-open');
+                trackSelector.style.height = "0px";
+                trackSelector.dataset.isHidden = '1';
+            }
+        });
+
+        this.videoControls = controls;
+
+        return this.videoControls;
+    }
+
+    public PopulateTrackSelector(mediaInfo: VideoInfo) {
+        if (this.videoTrackSelect && mediaInfo.Videos.length > 1) {
+            this.videoTrackSelect.replaceChildren();
+            mediaInfo.Videos.forEach(videoTrack => {
+                const option = document.createElement('option');
+                option.value = videoTrack.Index.toString();
+                option.text = videoTrack.Name;
+                this.videoTrackSelect!.appendChild(option);
+            });
+        } else {
+            this.videoTrackSelect?.remove();
+            this.videoTrackSelectLabel?.remove();
+        }
+
+        if (this.audioTrackSelect && mediaInfo.Audios.length > 0) {
+            this.audioTrackSelect.replaceChildren();
+            mediaInfo.Audios.forEach(audioTrack => {
+                const option = document.createElement('option');
+                option.value = audioTrack.Index.toString();
+                option.text = audioTrack.Name;
+                this.audioTrackSelect!.appendChild(option);
+            });
+        }
+
+        if (this.subtitleTrackSelect && mediaInfo.Subtitles.length > 0) {
+            this.subtitleTrackSelect.replaceChildren();
+            mediaInfo.Subtitles.forEach(subtitleTrack => {
+                const option = document.createElement('option');
+                option.value = subtitleTrack.Index.toString();
+                option.text = subtitleTrack.Name;
+                this.subtitleTrackSelect!.appendChild(option);
+            });
+        }
+    }
+
+    private AVPixelFormatToString(format: number): VideoPixelFormat | undefined {
+        switch (format) {
+            case 0:
+                return "I420";
+            case 33:
+                return "I420A";
+            case 4:
+                return "I422";
+            case 23:
+                return "NV12";
+            case 26:
+                return "RGBA";
+            case 28:
+                return "BGRA";
+            default:
+                return undefined;
+        }
+    }
+}
+
+function clamp(i: number, min: number, max: number): number {
+    return Math.min(Math.max(i, min), max);
+}
+
+function formatSeconds(seconds: number, hoursEnabled: boolean, minutesEnabled: boolean) {
+    const hours = Math.floor(seconds / 3600); // Get the number of hours
+    const minutes = Math.floor((seconds % 3600) / 60); // Get the number of minutes
+    const remainingSeconds = Math.floor(seconds % 60); // Get the number of seconds
+    const milliseconds = Math.floor((seconds % 1) * 1000); // Get the milliseconds
+
+    // Format the time without leading zeroes for hours or minutes
+    let formattedTime = '';
+
+    if (hours > 0 || hoursEnabled) {
+        formattedTime += `${hours.toString().padStart(2, '0')}:`; // Add hours if greater than 0
+    }
+
+    if ((minutes > 0 || minutesEnabled) || (hours > 0 || hoursEnabled)) {
+        formattedTime += `${minutes.toString().padStart(2, '0')}:`; // Add minutes if greater than 0 or hours exist
+    }
+
+    formattedTime += `${remainingSeconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`; // Always add seconds and milliseconds
+
+    return {time: formattedTime, hours: (hours > 0 || hoursEnabled), minutes: (minutes > 0 || minutesEnabled)};
+}

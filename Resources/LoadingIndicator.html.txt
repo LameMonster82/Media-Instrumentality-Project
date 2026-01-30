@@ -1,0 +1,66 @@
+<style>
+    .loadingIndicator {
+        animation: r 2s linear infinite;
+        height: 50%;
+        width: 50%;
+        top: 25%;
+        position: relative;
+        flex-shrink: 0;
+        left: 50%;
+    }
+
+    @keyframes r {
+        to {
+            transform: rotate(270deg)
+        }
+    }
+
+    .loadingIndicator .mainCircle {
+        animation: circle1 2s ease-in-out infinite;
+    }
+
+    @keyframes circle1 {
+        50% {
+            transform: rotate(165deg);
+            stroke-dashoffset: 10
+        }
+
+        to {
+            transform: rotate(450deg)
+        }
+
+        from,
+        to {
+            stroke-dashoffset: 28
+        }
+    }
+
+    .loadingIndicator .otherCircle {
+        animation: circle2 2s ease-in-out infinite;
+        transform: rotate(50deg);
+    }
+
+    @keyframes circle2 {
+        50% {
+            transform: rotate(474deg);
+            stroke-dashoffset: 28
+        }
+
+        to {
+            transform: rotate(500deg)
+        }
+
+        from,
+        to {
+            stroke-dashoffset: 10
+        }
+    }
+</style>
+
+<svg class="loadingIndicator" viewBox="-5 -5 10 10"
+    xmlns="http://www.w3.org/2000/svg">
+    <circle class="mainCircle" fill="none" stroke-dasharray="30" stroke-dashoffset="8" stroke="#d3bcfd"
+        stroke-linecap="round" r="4" />
+    <circle class="otherCircle" fill="none" stroke-dasharray="30" stroke-dashoffset="8" stroke="#4b4358"
+        stroke-linecap="round" r="4" />
+</svg>

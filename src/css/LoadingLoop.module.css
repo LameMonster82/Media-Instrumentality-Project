@@ -1,0 +1,58 @@
+@keyframes rotateSvg {
+    to {
+        transform: rotate(270deg)
+    }
+}
+
+@keyframes circle1 {
+    50% {
+        transform: rotate(165deg);
+        stroke-dashoffset: 10
+    }
+
+    to {
+        transform: rotate(450deg)
+    }
+
+    from,
+    to {
+        stroke-dashoffset: 28
+    }
+}
+
+@keyframes circle2 {
+    50% {
+        transform: rotate(474deg);
+        stroke-dashoffset: 28
+    }
+
+    to {
+        transform: rotate(500deg)
+    }
+
+    from,
+    to {
+        stroke-dashoffset: 10
+    }
+}
+
+.loadingIndicator {
+    animation: rotateSvg 2s linear infinite;
+    height: 50%;
+    width: 50%;
+    top: 25%;
+    position: relative;
+    flex-shrink: 0;
+    left: 50%;
+
+    .mainCircle {
+        stroke: white;
+        animation: circle1 2s ease-in-out infinite;
+    }
+
+    .otherCircle {
+        stroke: red;
+        animation: circle2 2s ease-in-out infinite;
+        transform: rotate(50deg);
+    }
+}

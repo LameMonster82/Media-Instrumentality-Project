@@ -1,0 +1,14 @@
+:root {
+    --background-color: #151218;
+    --border-radius-mid: 2rem;
+    --border-color-1: #1d1b20;
+    --border-color-2: #948f99;
+    --text-color-1: #e7e0e8;
+    --default-font: Inter, Avenir, Helvetica, Arial, sans-serif;
+}
+
+.body {
+    font-family: var(--default-font);
+    background-color: var(--md-sys-color-surface-dim);
+    margin: 0;
+}

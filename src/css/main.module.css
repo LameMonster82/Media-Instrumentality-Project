@@ -1,0 +1,28 @@
+@import "./Global2.css";
+
+.MainGrid {
+    border: 2px solid var(--md-sys-color-outline-variant);
+    display: grid;
+    grid-template-columns: 40rem 1fr;
+    /* sidebar + main area */
+    grid-template-rows: 6rem 1fr;
+    /* topbar + content */
+    grid-template-areas:
+        "sidebar topbar"
+        "sidebar content";
+    height: calc(100vh - 4px); /* 2x border */
+    overflow: clip;
+}
+
+.sidebar {
+    grid-area: sidebar;
+    background: #f4f4f4;
+    padding: 1rem;
+}
+
+.content {
+    grid-area: content;
+    background: var(--background-color);
+    color: white;
+    padding: 1rem;
+}

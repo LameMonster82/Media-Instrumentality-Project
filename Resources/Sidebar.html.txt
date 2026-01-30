@@ -1,0 +1,70 @@
+<style>
+    .sidebar {
+        position: sticky;
+        max-width: 15rem;
+        background-color: #1d1b20;
+        padding: 1rem;
+        height: calc(100vh - 3rem);
+        /* Full height */
+        overflow-x: hidden;
+        flex-shrink: 0;
+        border-radius: 0px 32px 0px 0px;
+        margin-left: 0;
+        padding-left: 0;
+        grid-area: 1 / 1 / 6 / 2;
+        text-align: center;
+        margin-top: 1rem;
+        top: 1rem;
+    }
+
+    .sidebar h1 {
+        margin-top: 0;
+        color: #d3bcfd;
+        font-weight: 800;
+        font-style: normal;
+        font-size: 32px;
+    }
+
+    .sidebar ul {
+        list-style-type: none;
+        padding: 0;
+    }
+
+    .sidebar ul li {
+        padding: 1rem 1rem 1rem 0px;
+        border-radius: 0px 32px 32px 0px;
+        text-align: left;
+        transition: background-color 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .sidebar ul li:hover {
+        background-color: #4b4358;
+    }
+
+    .sidebar ul li.selected {
+        background-color: #4f3d74;
+    }
+
+    .sidebar ul li a {
+        text-decoration: none;
+        color: #cdc2db;
+        font-weight: 600;
+        font-style: normal;
+        font-size: 20px;
+        margin-left: 2rem;
+    }
+
+    .sidebar ul li a:hover {
+        color: #e7e0e8;
+    }
+</style>
+
+<aside class="sidebar">
+    <h1>Gay Library</h1>
+    <ul>
+        <li><a href="#link1">Library</a></li>
+        <li><a href="#link2">People</a></li>
+        <li><a href="#link3">Something else idk</a></li>
+        <li><a href="#link4">Link 4</a></li>
+    </ul>
+</aside>

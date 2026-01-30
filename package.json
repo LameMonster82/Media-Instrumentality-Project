@@ -1,0 +1,23 @@
+{
+  "name": "media-instrumentality-project",
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "build": "bun build.ts"
+  },
+  "private": true,
+  "devDependencies": {
+    "@types/audioworklet": "^0.0.75",
+    "@types/bun": "^1.2.21"
+  },
+  "peerDependencies": {
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "@bjorn3/browser_wasi_shim": "^0.4.2",
+    "@uswriting/exiftool": "^1.0.5",
+    "ass-compiler": "^0.1.15",
+    "assjs": "^0.1.4",
+    "exifr": "^7.1.3"
+  }
+}

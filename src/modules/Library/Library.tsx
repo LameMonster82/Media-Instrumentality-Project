@@ -16,7 +16,8 @@ export class Library2 {
         this.mainWindow.classList.add(styles.flexWindow!);
         let loadIndicator = LoadingIndicator();
         this.mainWindow.appendChild(loadIndicator);
-        let assets = await this.GetAssetsFromServer();
+        //let assets = await this.GetAssetsFromServer();
+        let assets: AssetFile[] = [];
         this.mainWindow.removeChild(loadIndicator);
         let errCode: string | undefined;
         while (typeof assets == 'string' || assets.length == 0) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-Bun.build({
+await Bun.build({
     entrypoints: [
         "index.html",
         "test.html",
@@ -20,5 +20,8 @@ Bun.build({
         asset: '[dir]/[name].[ext]',
     },
 });
+
+const header = Bun.file("./_headers");
+await Bun.write("./build/_headers", header);
 
 

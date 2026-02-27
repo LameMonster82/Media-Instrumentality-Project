@@ -1,6 +1,5 @@
-import { h } from "./JSXRuntime/jsx-runtime";
 import SearchBar from "./modules/SearchBar";
-import mainStyles from "./css/main.module.css";
+import mainStyles from "@/css/main.module.css";
 import Sidebar from "./modules/Sidebar";
 import LoadingIndicator from "./modules/LoadingLoop";
 import { Library2 } from "./modules/Library/Library";

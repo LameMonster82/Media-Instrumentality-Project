@@ -1,0 +1,316 @@
+/* Controls container */
+.controls {
+    position: absolute;
+    bottom: 6vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 10px;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 10px;
+    z-index: 1001;
+    flex-direction: row;
+    height: 3vh;
+    width: 90%;
+    transition: border-radius 0.5s ease-in-out, opacity 0.5s ease-in-out;
+    min-width: 400px;
+    opacity: 1;
+
+    &.inactive {
+        opacity: 0;
+    }
+
+    &:active {
+        cursor: grabbing;
+    }
+
+    &.tracklistOpen {
+        border-radius: 10px 0px 10px 10px;
+    }
+}
+
+/* Buttons and sliders */
+.videoControlBtn {
+    background-color: transparent;
+    padding: 5px;
+    cursor: pointer;
+    border: 0;
+    display: flex;
+    flex-direction: row;
+
+    & i {
+        font-size: 36px;
+        color: white;
+        transition: all 0.5s ease;
+        user-select: none;
+    }
+
+    &:hover {
+        & .volumeControl {
+            width: 100px;
+            opacity: 1;
+
+            &::-moz-range-thumb {
+                width: 5px;
+            }
+        }
+    }
+}
+
+.progressBar {
+    width: 100%;
+    height: 8px;
+    cursor: pointer;
+    margin: 0 10px;
+    border-radius: 12px;
+    background: rgb(24, 24, 24);
+    position: relative;
+}
+
+.progressRange {
+    display: inline;
+    margin: 0;
+    position: absolute;
+    width: 100%;
+    height: 8px;
+    cursor: pointer;
+    border-radius: 12px;
+    background: transparent;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    text-align: unset;
+
+    &::-webkit-slider-thumb,
+    &::-moz-range-thumb {
+        border-radius: 3px;
+        width: 8px;
+        height: 24px;
+        background-color: white;
+        border: none;
+        cursor: pointer;
+        -webkit-appearance: none;
+    }
+
+    &::-moz-range-track {
+        height: 10px;
+        border-radius: 5px;
+    }
+
+    &::-webkit-progress-value,
+    &::-moz-range-progress {
+        height: 10px;
+        background-color: white;
+        border-radius: 12px 0px 0px 12px;
+    }
+
+    &::-webkit-slider-container {
+        min-block-size: 0px;
+    }
+}
+
+.progressHoverTooltip {
+    position: absolute;
+    background-color: #00000080;
+    color: white;
+    display: block;
+    pointer-events: none;
+    border-radius: 10px 10px 0 0;
+    transition: max-height .5s ease-in-out, padding .5s ease-in-out;
+    overflow: hidden;
+    padding: 0 0.5rem;
+    height: fit-content;
+    max-height: 0;
+    white-space: break-spaces;
+    text-align: center;
+
+    &.active {
+        padding: 0.5rem;
+        max-height: 6vh;
+    }
+}
+
+.bufferRange {
+    width: 100%;
+    display: block;
+    height: 8px;
+    position: absolute;
+    background: rgb(48, 48, 48);
+    border-radius: 12px;
+    background: linear-gradient(to right, darkgray, darkgray), rgb(48, 48, 48);
+    background-size: var(--buffer-progress, 0%) 10px;
+    background-repeat: no-repeat;
+    pointer-events: none;
+
+    &.activeRange {
+        background: linear-gradient(to right, white, white), transparent;
+        background-size: var(--video-progress, 0%) 10px;
+        background-repeat: no-repeat;
+    }
+}
+
+/* Kept datalist ID as a global so the browser can link it properly to the input */
+:global(#chaptersForVideo) > option {
+    cursor: pointer;
+    -webkit-appearance: none;
+    border: none;
+    border-radius: 3px;
+    position: absolute;
+    background-color: #242424;
+    width: 2px;
+    height: 12px;
+    min-block-size: 0px;
+    top: 50%;
+}
+
+.volumeControl {
+    height: 8px;
+    cursor: pointer;
+    margin: 0 10px;
+    border-radius: 12px;
+    background: none;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    display: block;
+    position: absolute;
+    transition: width 0.3s ease-in-out, opacity 0.3s ease-in-out;
+    width: 0px;
+    opacity: 0;
+
+    &::-webkit-slider-thumb {
+        border-radius: 3px;
+        width: 8px;
+        height: 24px;
+        background-color: white;
+        border: none;
+        cursor: pointer;
+        -webkit-appearance: none;
+    }
+
+    &::-moz-range-thumb {
+        width: 0px;
+        height: 30px;
+        background-color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: width 0.3s ease-in-out;
+    }
+
+    &::-moz-range-track {
+        height: 10px;
+        background: rgb(24, 24, 24);
+        border-radius: 5px;
+    }
+
+    &::-moz-range-progress {
+        height: 10px;
+        background: white;
+        border-radius: 12px 0px 0px 12px;
+    }
+}
+
+.volumeControlRangeContainer {
+    display: block;
+    position: relative;
+    background: none;
+    margin: 0;
+    height: auto;
+
+    & > * {
+        top: calc(50% - 8px / 2);
+        margin: 0;
+    }
+}
+
+.progressNumber {
+    color: lightgray;
+    font-feature-settings: 'tnum';
+
+    &.highlighted {
+        color: white;
+    }
+}
+
+/* Fullscreen and dropdown menu styles */
+.dropdown {
+    position: relative;
+
+    &:hover .dropdownContent {
+        display: block;
+    }
+}
+
+.dropdownContent {
+    display: none;
+    position: absolute;
+    background-color: white;
+    color: black;
+    box-shadow: 0px 8px 16px rgba(0, 0, 0, 0.2);
+    z-index: 1;
+
+    & button {
+        background-color: white;
+        border: none;
+        padding: 8px;
+        cursor: pointer;
+
+        &:hover {
+            background-color: rgba(0, 0, 0, 0.1);
+        }
+    }
+}
+
+.trackSelector {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    bottom: calc(3vh + 10px);
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 10px 10px 0px 0px;
+    padding: 0px 10px 0px 10px;
+    right: 0px;
+    width: 150px;
+    margin: 10px 0px 10px 10px;
+    height: 0;
+    transition: all 0.5s ease-in-out;
+    overflow: hidden;
+
+    &.open {
+        padding: 10px 10px 5px 10px;
+        margin: 10px 0px 10px 10px;
+    }
+
+    & label {
+        font-weight: 700;
+        color: white;
+        font-size: 16px;
+    }
+
+    & select {
+        padding: 5px;
+        margin: 5px;
+        font-size: 16px;
+        border: 2px solid transparent;
+        border-radius: 8px;
+        background-color: #3b383e;
+        color: white;
+        cursor: pointer;
+        transition: all 0.3s ease;
+
+        &:hover {
+            border-color: #d3bcfd;
+        }
+    }
+}
+
+.loadingSvgVideo {
+    position: fixed;
+    display: block;
+    z-index: 1001;
+    left: calc(50% - 20% / 2);
+    width: 20%;
+    height: 20%;
+    top: calc(50% - 20% / 2);
+}

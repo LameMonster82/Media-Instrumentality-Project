@@ -1,10 +1,11 @@
-import { PromiseRes, SeekableWorkerUrl, type WorkerExifTags, type WorkerMediaInfo, type WorkerRequestExif, type WorkerShutdown } from "../SomeTypes";
-import { CtrlPkg, STATE_EOF, STATE_GOOD, STATE_NOT_INIT, type SeekableWorkerCtrlBuf } from "../Video/SharedSeekableStream2";
+import { PromiseRes, SeekableWorkerUrl, type WorkerExifTags, type WorkerMediaInfo, type WorkerRequestExif, type WorkerShutdown } from "@/modules/SomeTypes"
+
 import type { MainModule } from "./libexif";
 import libexif_wasm from "./libexif.mjs";
 
 //@ts-ignore
 import exifWasmImport from "./libexif.wasm";
+import { CtrlPkg, STATE_EOF, STATE_GOOD, STATE_NOT_INIT, type SeekableWorkerCtrlBuf } from "@/modules/Video/SharedSeekableStream2";
 
 
 const exifWasm = exifWasmImport;

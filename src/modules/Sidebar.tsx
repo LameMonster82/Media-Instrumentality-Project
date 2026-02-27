@@ -1,4 +1,3 @@
-import { h } from "@/JSXRuntime/jsx-runtime";
 import styles from "../css/Sidebar.module.css";
 
 type NavLink = {
@@ -130,13 +129,13 @@ export default class Sidebar {
     private LinkToHTMLChildren(linkOrig: NavLink, firstHidden = true): HTMLElement[] {
         return [(
             <ul>
-                { ...(linkOrig.children ?? []).map((link, index, array) => {
+                { (linkOrig.children ?? []).map((link, index, array) => {
                     if (link.hidden) {
                         return this.LinkToHTMLChildren(link);
                     }
 
                     return [this.createLink(link)];
-                }) }
+                }).flat() }
             </ul>)];
     }
 

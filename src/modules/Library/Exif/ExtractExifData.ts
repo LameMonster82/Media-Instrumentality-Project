@@ -1,5 +1,5 @@
 import type { Asset } from "../Asset";
-import { libexifUrl, type WorkerExifTags, type WorkerRequestExif, type XMPImage } from "../SomeTypes";
+import { libexifUrl, type WorkerExifTags, type WorkerRequestExif, type XMPImage } from "@/modules/SomeTypes"
 import { runExifTools } from "./Exiftool/run-exif-tools";
 
 

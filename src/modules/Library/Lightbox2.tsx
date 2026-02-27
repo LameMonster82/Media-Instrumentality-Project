@@ -1,10 +1,9 @@
-import { h, Fragment } from "@/JSXRuntime/jsx-runtime";
 import styles from "@/css/Lightbox.module.css";
 import { Asset } from "./Asset";
 import { ExtractExif } from "./Exif/ExtractExifData";
-import { AssetType, FormatBytes, type XMPImage } from "./SomeTypes";
 import { LoadingIndicatorURL } from "../LoadingLoop";
-import { VideoPlayerFFmpeg } from "./Video/FFmpegVideo";
+import { AssetType, FormatBytes, type XMPImage } from "../SomeTypes";
+import { VideoPlayer } from "@/modules/Video/VideoPlayer";
 
 export class Lightbox2 {
     private dialog: HTMLDialogElement | undefined;
@@ -21,15 +20,14 @@ export class Lightbox2 {
 
         document.body.style.overflow = "hidden";
 
-        const image = (
+        const image = 
             <img
                 style={ {
                     borderRadius: imageStyle.getPropertyValue("border-radius")
                 } }
                 class={ styles.LightboxPreview }
                 src={ asset?.GetUrl() ?? srcImage.src }>
-            </img>
-        ) as HTMLImageElement;
+            </img> as HTMLImageElement;
 
         setRect(image, thing);
         const openImage = () => {
@@ -138,14 +136,16 @@ export class Lightbox2 {
     }
 
     async playMedia(asset: Asset, lightboxImage: HTMLImageElement) {
-        const videoPlayer = new VideoPlayerFFmpeg();
-        const videoElement = videoPlayer.video;
+        const videoPlayer = new VideoPlayer();
+        const videoElement = videoPlayer.videoElement;
 
         let thumbnail = asset.thumbnailUrl && asset.thumbnailUrl.length > 0 ? asset.thumbnailUrl : lightboxImage.src;
 
+        
+
         //const videoPlayer = new WebGLPlayer(canvasElement);
 
-        videoElement.classList.add("viewAsset", "focused", "zoomin", "zoominVideo");
+        videoElement.classList.add("viewAsset", "focused", "zoomin", "zoominVideo", styles.LightboxPreview);
         videoElement.style.position = "fixed";
         videoElement.style.top = "";
         videoElement.style.left = "";
@@ -154,7 +154,7 @@ export class Lightbox2 {
 
         this.dialog!.appendChild(videoElement);
 
-        const controls = videoPlayer.CreatePlayerControls();
+        const controls = videoPlayer.mediaControl
         this.dialog!.appendChild(controls);
 
         //this.currentFullscreeenImage?.onClosing.push(async () => {
@@ -169,6 +169,7 @@ export class Lightbox2 {
             element.style.width = videoElement.videoWidth + "px";
             element.style.height = videoElement.videoWidth + "px";
             this.dialog!.insertBefore(element, controls);
+            lightboxImage.style.display = "none"
         }, 327680);
     }
 
@@ -234,8 +235,8 @@ export class Lightbox2 {
                 onclose={ () => this.closeDialog() }
                 ref={ e => this.dialog = e }>
 
-                <span onclick={ e => this.toggleMenu() }>menu</span>
-                <span onclick={ e => this.closeDialog() }>close</span>
+                <span onclick={ e => this.toggleMenu() } class="side_button">menu</span>
+                <span onclick={ e => this.closeDialog() } class="side_button">close</span>
                 <aside
                     class={ styles.Sidebar }
                     hidden

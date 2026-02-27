@@ -1,13 +1,12 @@
 {
   "compilerOptions": {
     // Environment setup & latest features
-    "lib": ["ESNext", "DOM"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
-    "jsx": "react",
-    "jsxFactory": "h",
-    "jsxFragmentFactory": "Fragment",
+    "jsx": "react-jsx",
+    "jsxImportSource": "custom-jsx",
     "allowJs": true,
 
     // Bundler mode
@@ -18,13 +17,15 @@
 
     // Best practices
     "strict": true,
-    "skipLibCheck": true,
+    "skipLibCheck": false,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": false,
     "noImplicitOverride": true,
 
     "baseUrl": ".",
     "paths": {
+      "custom-jsx/jsx-runtime": ["./src/JSXRuntime/jsx-runtime.ts"],
+      "custom-jsx/jsx-dev-runtime": ["./src/JSXRuntime/jsx-runtime.ts"],
       "@/*": ["./src/*"]
     },
 

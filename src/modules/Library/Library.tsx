@@ -1,8 +1,7 @@
-import { h } from "@/JSXRuntime/jsx-runtime";
-import styles from "../../css/Library.module.css";
+import styles from "@/css/Library.module.css";
 import LoadingIndicator, { LoadingIndicatorBase64, LoadingIndicatorURL } from "../LoadingLoop";
-import { AssetType, PromiseRes, type AssetFile, type Dictionary } from "./SomeTypes";
 import { Asset } from "./Asset";
+import { PromiseRes, type AssetFile, type Dictionary } from "../SomeTypes";
 
 
 export class Library2 {
@@ -50,16 +49,12 @@ export class Library2 {
         const media = this.SortByDate(filtered);
         const allDates = Object.keys(media);
 
-        if (allDates.length === 0) {
-            return 0;
-        }
-
         for (const key of allDates) {
             const imagesDate = media[key];
             if (!imagesDate) continue;
 
             const chunk =
-            <div>
+                <div>
                 <span class={ styles.MediaDateSeparator }>
                     { key }
                 </span>

@@ -1,8 +1,8 @@
+import { type ThumnbnailDesc, type AssetDBFile, type Dictionary, AssetType, type AssetFile, type WorkerSubmitThumbnail, GetFolderPath, isCoverImage } from "../SomeTypes.js";
+import { ExtractThumbnail } from "../Video/ExtractThumbnailWorker.js";
+import { ffmpegDemuxers } from "../Video/SupportedMedia.js";
 import { BrokenImageSVG } from "./ImageToSVG.js";
-import { AssetType, GetFolderPath, isCoverImage, type AssetDBFile, type AssetFile, type Dictionary, type ThumnbnailDesc, type WorkerSubmitThumbnail } from "./SomeTypes.js";
-import { ExtractThumbnail } from "./Video/ExtractThumbnailWorker.js";
-import { ImageToDataURL } from "./Video/QuickDrawCanvas.js";
-import { ffmpegDemuxers } from "./Video/SupportedMedia.js";
+
 
 class MediaDB {
     private DB_NAME = "MediaGalleryDB";

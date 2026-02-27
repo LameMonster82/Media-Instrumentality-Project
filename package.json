@@ -7,6 +7,7 @@
   },
   "private": true,
   "devDependencies": {
+    "@chialab/esbuild-plugin-worker": "^0.19.0",
     "@types/audioworklet": "^0.0.75",
     "@types/bun": "^1.2.21"
   },
@@ -15,9 +16,11 @@
   },
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2",
+    "@chialab/esbuild-plugin-html": "^0.19.0",
     "@uswriting/exiftool": "^1.0.5",
     "ass-compiler": "^0.1.15",
     "assjs": "^0.1.4",
+    "esbuild": "^0.27.3",
     "exifr": "^7.1.3"
   }
 }

@@ -17,7 +17,7 @@ body {
     /* background: repeating-conic-gradient(var(--md-sys-color-surface-container-low) 0 25%, var(--md-sys-color-surface-container-lowest) 0 50%) 50% / 3rem 3rem; */
 }
 
-.Lightbox span {
+.Lightbox > .side_button {
     font-family: "Material Symbols Rounded";
     color: var(--md-sys-color-primary);
     font-size: xxx-large;
@@ -167,11 +167,11 @@ body {
 
 .Lightbox:popover-open,
 .Lightbox[open]::backdrop,
-.Lightbox[open] span {
+.Lightbox[open] > .side_button {
     opacity: 1;
 }
 
-.Lightbox[open] span {
+.Lightbox[open] > .side_button {
     z-index: 10;
     position: relative;
 }
@@ -180,7 +180,7 @@ body {
 
     .Lightbox:popover-open,
     .Lightbox[open]::backdrop,
-    .Lightbox[open] span {
+    .Lightbox[open] > .side_button {
         opacity: 0;
     }
 }

@@ -1,4 +1,3 @@
-import { h } from "../JSXRuntime/jsx-runtime.js";
 import styles from "../css/SearchBar.module.css";
 
 export default function SearchBar(onSearch: (searchString: string) => void) {

@@ -1,17 +1,24 @@
-export function h<K extends keyof HTMLElementTagNameMap>(
+import type { Box } from "./Box";
+
+export function jsx<K extends keyof HTMLElementTagNameMap>(
     tag: K | Function,
-    props: JSX.HTMLAttributes<HTMLElementTagNameMap[K]> | null,
-    ...children: (HTMLElement | string | number | boolean | null | undefined)[]
+    props: JSX.HTMLAttributes<HTMLElementTagNameMap[K]>
 ): HTMLElementTagNameMap[K] | (HTMLElement | string | number | boolean | null | undefined)[] {
+    const { children, ...attributes } = props;
+
     if (typeof tag === "function") {
         return tag({ ...props, children });
     }
     const el = document.createElement(tag) as HTMLElementTagNameMap[K];
 
     // props handling (same as before)
-    for (const [key, value] of Object.entries(props || {})) {
-        if (key === "ref" && typeof value === "function") {
-            (value as (e: HTMLElementTagNameMap[K]) => void)(el);
+    for (const [key, value] of Object.entries(attributes || {})) {
+        if (key === "ref") {
+            if (typeof value === "object") {
+                (value as Box).element = el;
+            } else if (typeof value === "function") {
+                (value as (e: HTMLElementTagNameMap[K]) => void)(el)
+            }   
         } else if (key.startsWith("on") && typeof value === "function") {
             el.addEventListener(key.substring(2).toLowerCase(), value as any);
         } else if (key == 'style') {
@@ -29,7 +36,8 @@ export function h<K extends keyof HTMLElementTagNameMap>(
     }
 
     // children handling
-    for (const child of children.flat(Infinity)) {
+    const childrenArray = Array.isArray(children) ? children : [children];
+    for (const child of childrenArray) {
         if (child == null || child == undefined) continue;
         el.appendChild(
             child instanceof Node ? child : document.createTextNode(String(child))
@@ -40,3 +48,5 @@ export function h<K extends keyof HTMLElementTagNameMap>(
 }
 
 export const Fragment = (props: { children?: any; }) => props.children;
+export const jsxs = jsx; // Required for static children in the new transform
+export const jsxDEV = jsx;

@@ -23,7 +23,7 @@ export function jsx<K extends keyof HTMLElementTagNameMap>(
             el.addEventListener(key.substring(2).toLowerCase(), value as any);
         } else if (key == 'style') {
             for (const [cssKey, cssVal] of Object.entries(value as CSSStyleDeclaration || {})) {
-                if (cssKey.startsWith("--") && !el.style[cssKey]) {
+                if (cssKey.startsWith("--") && !el.style[cssKey as any]) {
                     el.style.setProperty(cssKey, cssVal);
                 } else {
                     // @ts-ignore

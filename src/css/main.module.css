@@ -3,7 +3,7 @@
 .MainGrid {
     border: 2px solid var(--md-sys-color-outline-variant);
     display: grid;
-    grid-template-columns: 40rem 1fr;
+    grid-template-columns: 20rem 1fr;
     /* sidebar + main area */
     grid-template-rows: 6rem 1fr;
     /* topbar + content */

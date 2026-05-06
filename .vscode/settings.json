@@ -1,3 +1,6 @@
 {
-  "css.styleSheets": ["src/**/*.css"]
+  "css.styleSheets": [
+    "src/**/*.css"
+  ],
+  "typescript.tsdk": "node_modules\\typescript\\lib"
 }

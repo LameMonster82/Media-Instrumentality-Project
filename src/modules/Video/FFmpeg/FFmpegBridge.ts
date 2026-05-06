@@ -1,7 +1,7 @@
 import { workerState } from "./State";
 
-import { type AllTargetWorkerMessages, type WorkerSubmitStreams, type WorkerRequestAnswered, type WorkerSubmitThumbnail, type WorkerThumbnailInProgress, type WorkerThumbnailDone, type WebVideoDecoderMessage, type WebAudioDecoderMessage, type WorkerShutdown, PromiseRes, SeekableWorkerUrl, WaitATick, type WorkerInitFFmpeg, type WorkerInitFFmpegOnlyModule, type WorkerSeekResult, type WorkerMediaInfo, type WorkerChapterInfo, type Demuxer, type WorkerSubmitDemuxers, type FFmpegStreams } from "@/modules/SomeTypes";
-import { AVLogLevel, AVPixelFormatToVideoFormat, supported_pxl_formats } from "../AVTypes";
+import { type AllTargetWorkerMessages, type WorkerSubmitStreams, type WorkerRequestAnswered, type WorkerSubmitThumbnail, type WorkerThumbnailInProgress, type WorkerThumbnailDone, type WebVideoDecoderMessage, type WebAudioDecoderMessage, type WorkerShutdown, PromiseRes, SeekableWorkerUrl, WaitATick, type WorkerInitFFmpeg, type WorkerInitFFmpegOnlyModule, type WorkerSeekResult, type WorkerMediaInfo, type WorkerChapterInfo, type Demuxer, type WorkerSubmitDemuxers, type FFmpegStreams, type WorkerEndOfFile } from "@/modules/SomeTypes";
+import { AVLogLevel, AVPixelFormatToVideoFormat, supported_pxl_formats } from "./AVTypes";
 import { ImageToDataURL, VideoFrameToDataURL } from "../QuickDrawCanvas";
 import { CtrlPkg, STATE_NOT_INIT, type SeekableWorkerSeek, STATE_GOOD, type SeekableWorkerCtrlBuf } from "../SharedSeekableStream2";
 import type { FFmpegWorker } from "./ffmpeg";
@@ -49,8 +49,9 @@ async function RequestFrame() {
             continue; // try again
         } else if (ret == 0 || ret == 3) {
             break;
-        } else if (ret == 2) {
+        } else if (ret == 2 || ret == -541478725) {
             workerState.endOfFile = true;
+            self.postMessage({ kind: "endOfFile" } as WorkerEndOfFile);
             break;
         } // AVERROR_EOF
     }
@@ -77,6 +78,7 @@ async function AskFFmpegToSeek(time: number) {
         }
         break;
     }
+    workerState.endOfFile = false;
     self.postMessage({ kind: "doneSeeking", return: ret } as WorkerSeekResult);
     workerState.seekByUser = false;
     return;

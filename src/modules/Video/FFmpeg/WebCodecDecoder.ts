@@ -13,9 +13,10 @@ let target: DedicatedWorkerGlobalScope | MessagePort = self;
 self.onmessage = async (event: MessageEvent<WebVideoDecoderMessage | WebAudioDecoderMessage>) => {
     try {
         switch (event.data.kind) {
+            case 'reinit':
             case 'init':
                 event.data.config ??= config;
-                initDecoder(event.data);
+                initDecoder(event.data, event.data.kind == 'reinit');
                 self.postMessage({ kind: 'initialized' } as WebDecoderGeneralMessage);
                 break;
 
@@ -52,9 +53,12 @@ self.onmessage = async (event: MessageEvent<WebVideoDecoderMessage | WebAudioDec
     }
 };
 
-function initDecoder(message: WebVideoDecoderMessage | WebAudioDecoderMessage) {
-    decoderType = message.decoderType;
-    target = message.postDataTo ?? self;
+function initDecoder(message: WebVideoDecoderMessage | WebAudioDecoderMessage, reinit: boolean = false) {
+    if (!reinit) {
+        decoderType = message.decoderType;
+        target = message.postDataTo ?? self;
+    }
+    
     const callbacks = {
         output: async (frame: VideoFrame | AudioData) => {
             SendQueueMessage();
@@ -114,14 +118,15 @@ function initDecoder(message: WebVideoDecoderMessage | WebAudioDecoderMessage) {
         ? new VideoDecoder({ ...message.config, ...callbacks })
         : new AudioDecoder({ ...message.config, ...callbacks });
 
-    config = message.config;
+    if(!reinit)
+        config = message.config;
 
     decoder.ondequeue = () => {
         SendQueueMessage();
     }
 
     // @ts-ignore
-    decoder.configure(message.config);
+    decoder.configure(config);
 }
 
 function SendQueueMessage() {

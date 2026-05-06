@@ -1,4 +1,5 @@
 import styles from "@/css/Lightbox.module.css";
+import { PositionInLightbox } from "@/css/VideoControls.module.css";
 import { Asset } from "./Asset";
 import { ExtractExif } from "./Exif/ExtractExifData";
 import { LoadingIndicatorURL } from "../LoadingLoop";
@@ -155,6 +156,7 @@ export class Lightbox2 {
         this.dialog!.appendChild(videoElement);
 
         const controls = videoPlayer.mediaControl
+        controls.classList.add(styles.LightboxPreview, PositionInLightbox);
         this.dialog!.appendChild(controls);
 
         //this.currentFullscreeenImage?.onClosing.push(async () => {

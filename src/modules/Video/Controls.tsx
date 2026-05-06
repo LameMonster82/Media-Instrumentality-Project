@@ -2,16 +2,14 @@ import styles from '@/css/VideoControls.module.css';
 import { createBox } from '@/JSXRuntime/Box';
 import type { AudioMediaStream, ChapterInfo, SubtitleMediaStream, VideoMediaStream } from '../SomeTypes';
 
-
-
-// Define the contract for how Controls communicate back to the Parent
 export interface MediaControlCallbacks {
     onPlayToggle: (intentPlay: boolean) => void;
-    onPauseForSeek: () => void;
     onSeekTo: (time: number) => void;
     onStepFrame: () => void;
     onVolumeChange: (volume: number) => void;
     getMediaDuration: () => number;
+    getCurrentTime: () => number,
+    getVolume: () => number,
     onVideoTrackSelect: (index: number) => void,
     onAudioTrackSelect: (index: number) => void,
     onSubtitleTrackSelect: (index: number) => void,
@@ -31,7 +29,6 @@ export class MediaControls {
     private subtitleSelect: HTMLSelectElement = null!;
     private subtitleLabel: HTMLLabelElement = null!;
     private playButton: HTMLButtonElement = null!;
-    private playIcon: HTMLElement = null!;
     private bufferBar: HTMLSpanElement = null!;
     private numberProgress: HTMLSpanElement = null!;
     private numberDuration: HTMLSpanElement = null!;
@@ -64,29 +61,30 @@ export class MediaControls {
         videoElement: HTMLVideoElement, // Passed so controls handle fullscreen/cursor
         callbacks: MediaControlCallbacks
     ) {
+        const videoSelector = Math.random().toString(16).slice(2, 8);
+        const audioSelector = Math.random().toString(16).slice(2, 8);
+        const subtitleSelector = Math.random().toString(16).slice(2, 8);
+
         this.videoElement = videoElement;
         this.callbacks = callbacks;
         const chapterList = createBox<HTMLDataListElement>();
         this.controls = <div class={ styles.controls }>
             {/* Play button */ }
-            <button class={ styles.videoControlBtn } ref={ r => this.playButton = r }>
-                <i class="material-symbols-rounded" ref={ r => this.playIcon = r }>
-                    play_arrow
-                </i>
+            <button class={ styles.videoControlBtn + " material-symbols-rounded" } ref={ r => this.playButton = r }>
+                play_arrow
             </button>
 
             {/* Progress bar */ }
             <div class={ styles.progressBar } ref={ r => this.progressBarHold = r }>
-                <span class={ styles.bufferRange } ref={ r => this.transmutatedBar = r } />
+                <span class={ styles.backgroundSlider } />
+                <span class={ `${styles.backgroundSlider} ${styles.activeRange}` } ref={ r => this.bufferBar = r } />
                 <datalist id="chaptersForVideo" style={ { display: "block" } } ref={ r => chapterList.element = this.chapterDataList = r } />
                 <input
                     type="range"
                     class={ styles.progressRange }
-                    defaultValue="0"
                     step="any"
                     min="0"
                     max="100"
-                    list={ chapterList.element }
                     ref={ r => this.progressBarRange = r }
                 />
                 <div
@@ -94,7 +92,7 @@ export class MediaControls {
                     ref={ r => this.progressHoverRange = r }
                     style={ { bottom: "calc(8px / 2 + 3vh / 2 + 10px)" } }
                 />
-                <span class={ `${styles.bufferRange} ${styles.activeRange}` } ref={ r => this.bufferBar = r } />
+                { /*<span class={ `${styles.backgroundSlider} ${styles.activeRange}` } ref={ r => this.bufferBar = r } /> */ }
             </div>
 
             {/* Time indicators */ }
@@ -111,8 +109,8 @@ export class MediaControls {
                     volume_up
                 </i>
                 <span class={ `${styles.volumeControl} ${styles.volumeControlRangeContainer}` }>
-                    <span class={ styles.bufferRange } style={ { background: "rgb(36,36,36)" } } />
-                    <span class={ `${styles.bufferRange} ${styles.activeRange}` } ref={ r => this.bufferVolumeBar = r } />
+                    <span class={ styles.backgroundSlider } style={ { background: "rgb(36,36,36)" } } />
+                    <span class={ `${styles.backgroundSlider} ${styles.activeRange}` } ref={ r => this.bufferVolumeBar = r } />
                     <input
                         type="range"
                         class={ styles.volumeControl }
@@ -130,14 +128,14 @@ export class MediaControls {
                     subtitles
                 </i>
                 <div class={ styles.trackSelector } data-is-hidden="1" ref={ r => this.trackSelector = r }>
-                    <label ref={ r => this.videoLabel = r }>Video</label>
-                    <select ref={ r => this.videoSelect = r } onchange={e => this.callbacks.onVideoTrackSelect(parseFloat(this.videoSelect.selectedOptions[0].value) )}/>
+                    <label for={ videoSelector } ref={ r => this.videoLabel = r }>Video</label>
+                    <select id={ videoSelector } ref={ r => this.videoSelect = r } onchange={ e => this.callbacks.onVideoTrackSelect(parseFloat(this.videoSelect.selectedOptions[0].value)) } />
 
-                    <label ref={r => this.audiolLabel = r}>Audio</label>
-                    <select ref={ r => this.audioSelect = r } onchange={e => this.callbacks.onAudioTrackSelect(parseFloat(this.audioSelect.selectedOptions[0].value) )}/>
+                    <label for={ audioSelector } ref={ r => this.audiolLabel = r }>Audio</label>
+                    <select id={ audioSelector } ref={ r => this.audioSelect = r } onchange={ e => this.callbacks.onAudioTrackSelect(parseFloat(this.audioSelect.selectedOptions[0].value)) } />
 
-                    <label ref={r => this.subtitleLabel = r}>Subtitles</label>
-                    <select ref={ r => this.subtitleSelect = r } onchange={e => this.callbacks.onSubtitleTrackSelect(parseFloat(this.subtitleSelect.selectedOptions[0].value) )}/>
+                    <label for={ subtitleSelector } ref={ r => this.subtitleLabel = r }>Subtitles</label>
+                    <select id={ subtitleSelector } ref={ r => this.subtitleSelect = r } onchange={ e => this.callbacks.onSubtitleTrackSelect(parseFloat(this.subtitleSelect.selectedOptions[0].value)) } />
                 </div>
             </div>
 
@@ -147,17 +145,21 @@ export class MediaControls {
             </button>
         </div>;
 
-        this.initListeners();
-        makeDraggable(this.controls);
+        this.progressBarRange.setAttribute("list", "chaptersForVideo");
+        this.progressBarRange.value = "0";
+        this.volumeControl.value = "0";
 
-        this.UpdateVideoTracks([])
+        this.initListeners();
+        //makeDraggable(this.controls);
+
+        this.UpdateVideoTracks([]);
         this.UpdateAudioTracks([]);
         this.UpdateSubtitleTracks([]);
+
+        this.UpdateCurrentTime(this.callbacks.getCurrentTime(), this.callbacks.getMediaDuration());
+        this.SyncVolumeState(this.callbacks.getVolume());
     }
 
-    // ==========================================
-    // INITIALIZATION & EVENT LISTENERS
-    // ==========================================
     private initListeners() {
         // --- Playback & Seeking ---
         this.playButton.addEventListener('click', () => {
@@ -167,17 +169,18 @@ export class MediaControls {
 
         this.progressBarRange.addEventListener('mousedown', (e) => {
             e.stopPropagation();
-            this.callbacks.onPauseForSeek();
+            this.callbacks.onPlayToggle(false);
         });
 
         this.progressBarRange.addEventListener('input', (e) => {
             e.stopPropagation();
-            this.updateTimeVisuals(this.progressBarRange.valueAsNumber);
+            this.UpdateCurrentTime(this.progressBarRange.valueAsNumber);
+            this.callbacks.onSeekTo(this.progressBarRange.valueAsNumber);
         });
 
         this.progressBarRange.addEventListener('mouseup', (e) => {
             e.stopPropagation();
-            this.callbacks.onSeekTo(this.progressBarRange.valueAsNumber);
+            //this.callbacks.onSeekTo(this.progressBarRange.valueAsNumber);
         });
 
         // --- Progress Bar Hover ---
@@ -248,30 +251,26 @@ export class MediaControls {
         this.hideCursorDelay();
     }
 
-    // ==========================================
-    // PARENT -> CONTROLS API (Pushed State)
-    // ==========================================
-
-    public setDuration(duration: number) {
-        const timeObj = formatSeconds(duration, false);
+    public SetDuration(duration: number) {
+        let timeObj = { time: "--:--", hours: false };
+        if (duration >= 0) {
+            timeObj = formatSeconds(duration, false);
+        }
         this.numberDuration.textContent = `/${timeObj.time}`;
         this.hasHours = timeObj.hours;
-    }
-
-    public updateCurrentTime(time: number, duration: number) {
-        this.updateTimeVisuals(time, duration);
+        this.progressBarRange.max = duration.toString();
     }
 
     public setBufferProgress(percent: number) {
-        this.transmutatedBar.style.setProperty(`--buffer-progress`, `${percent}%`);
+        //this.transmutatedBar.style.setProperty(`--buffer-progress`, `${percent}%`);
     }
 
-    public syncPlaybackState(isPlaying: boolean) {
+    public SyncPlaybackState(isPlaying: boolean) {
         this.isPlaying = isPlaying;
-        this.playIcon.textContent = this.isPlaying ? 'pause' : 'play_arrow';
+        this.playButton.innerHTML = this.isPlaying ? 'pause' : 'play_arrow';
     }
 
-    public syncVolumeState(volume: number) {
+    public SyncVolumeState(volume: number) {
         if (volume > 0) this.lastVolume = volume;
         this.updateVolumeVisuals(volume);
     }
@@ -280,16 +279,19 @@ export class MediaControls {
         this.videoSelect.innerHTML = '';
         this.videoStreams = videos;
         for (const video of videos) {
-            this.videoSelect.appendChild(<option
-                selected={ video.isUsed }
-                value={ video.index.toString() }
-                text={ video.metadata["title"] ?? video.metadata["TITLE"] ?? video.metadata["language"] ?? video.metadata["LANGUAGE"] ?? `Stream: ${video.index}` }
-            />);
+            this.videoSelect.appendChild(
+                <option
+                    selected={ video.isUsed }
+                    value={ video.index.toString() }
+                    text={ video.metadata["title"] ?? video.metadata["TITLE"] ?? video.metadata["language"] ?? video.metadata["LANGUAGE"] ?? `Stream: ${video.index}` }
+                />);
         }
 
         const visible = videos.length > 0 ? 'unset' : 'none';
         this.videoSelect.style.display = visible;
         this.videoLabel.style.display = visible;
+
+        this.SetTrackSelectorVisibility();
     }
 
     public UpdateAudioTracks(audios: AudioMediaStream[]) {
@@ -306,6 +308,8 @@ export class MediaControls {
         const visible = audios.length > 0 ? 'unset' : 'none';
         this.audioSelect.style.display = visible;
         this.audiolLabel.style.display = visible;
+
+        this.SetTrackSelectorVisibility();
     }
 
     public UpdateSubtitleTracks(subtitles: SubtitleMediaStream[]) {
@@ -322,6 +326,8 @@ export class MediaControls {
         const visible = subtitles.length > 0 ? 'unset' : 'none';
         this.subtitleSelect.style.display = visible;
         this.subtitleLabel.style.display = visible;
+
+        this.SetTrackSelectorVisibility();
     }
 
     public UpdateChapters(chapters: ChapterInfo[]) {
@@ -338,16 +344,12 @@ export class MediaControls {
         }
     }
 
-    // ==========================================
-    // INTERNAL UI LOGIC
-    // ==========================================
-
-    private updateTimeVisuals(time: number, duration?: number) {
+    public UpdateCurrentTime(time: number, duration?: number) {
         const mediaDuration = duration ?? this.callbacks.getMediaDuration();
         const progress = ((time / mediaDuration) * 100).toPrecision(4);
 
         if (this.lastProgress !== progress) {
-            this.progressBarRange.value = progress === "NaN" ? '0' : time.toString();
+            this.progressBarRange.value = progress === "NaN" ? '--:--' : time.toString();
             this.lastProgress = progress;
             this.bufferBar.style.setProperty('--video-progress', `${progress}%`);
         }
@@ -355,6 +357,17 @@ export class MediaControls {
         if (this.lastTime !== time) {
             this.numberProgress.textContent = formatSeconds(time, this.hasHours).time;
             this.lastTime = time;
+        }
+    }
+
+    private SetTrackSelectorVisibility() {
+        if (this.videoStreams.length <= 0 &&
+            this.audioStreams.length <= 0 &&
+            this.subtitleStreams.length <= 0) {
+            
+            this.captionIcon.style.display = "none";
+        } else {
+            this.captionIcon.style.display = "";
         }
     }
 

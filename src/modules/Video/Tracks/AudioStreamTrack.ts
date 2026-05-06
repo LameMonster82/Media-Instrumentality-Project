@@ -1,4 +1,4 @@
-import { AudioTime, type StreamTrackNeeds, type WorkerAudioData, type WorkerAudioDataInit, type WritableAudioContext } from "../SomeTypes.ts";
+import { AudioTime, type StreamTrackNeeds, type WorkerAudioData, type WorkerAudioDataInit, type WritableAudioContext } from "@/modules/SomeTypes";
 
 interface SendData {
     kind: "sendData";

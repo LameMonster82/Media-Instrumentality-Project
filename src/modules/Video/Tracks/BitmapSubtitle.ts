@@ -1,4 +1,4 @@
-import { generateUUID, type StreamTrackNeeds } from "../SomeTypes.ts";
+import { generateUUID, type StreamTrackNeeds } from "@/modules/SomeTypes"
 
 export type BitmapSubtitleInfo = {
     image: Blob | File,

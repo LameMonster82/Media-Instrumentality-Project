@@ -310,7 +310,7 @@ export type AllWorkerMessages =
     WorkerAudioData | WorkerAudioDataInit |
     WorkerRequestBufferData | WorkerRequestSeek |
     WorkerSubmitStreams | WorkerSeekResult | WorkerMediaInfo |
-    WorkerBitmapSubtitle | WorkerChapterInfo | WorkerRequestAnswered |
+    WorkerBitmapSubtitle | WorkerChapterInfo | WorkerRequestAnswered | WorkerEndOfFile |
     WorkerAssSubtitle | WorkerEmbedFont | WorkerPostPort | WorkerVideoFrameImageBitmap | WebDecoderQueueMessage | WorkerShutdown;
 
 export interface WorkerInitFFmpeg extends WorkerPostMessage {
@@ -337,6 +337,10 @@ export interface WorkerRequestFrames extends WorkerPostMessage {
 export interface WorkerRequestAnswered extends WorkerPostMessage {
     readonly kind: "requestAnswered";
     readonly status?: boolean;
+}
+
+export interface WorkerEndOfFile extends WorkerPostMessage {
+    readonly kind: "endOfFile";
 }
 
 export interface WorkerRequestFfmpegSeek extends WorkerPostMessage {
@@ -556,7 +560,7 @@ export interface StreamTrackNeeds<T> {
 }
 
 interface WebDecoderMessage<T extends "audio" | "video"> extends WorkerPostMessage {
-    kind: 'init' | 'decode' | 'flush' | 'close';
+    kind: 'init' | 'decode' | 'flush' | 'close' | 'reinit';
     decoderType: T;
     streamIndex: number;
     postDataTo: MessagePort | null;
@@ -633,7 +637,7 @@ export const libexifUrl = new URL('src/modules/Library/Exif/ExifWorker.js', loca
 export const ffmpegUrl = new URL('src/modules/Video/FFmpeg/FFmpegBridge.js', location.origin);
 export const SeekableWorkerUrl = new URL('src/modules/Video/SharedSeekableStream2.js', location.origin);
 export const videoStreamWorkerUrl = new URL('src/modules/Video/VideoStreamTrack.js', location.origin);
-export const WebDecoderWorkerUrl = new URL('src/modules/Video/WebCodecDecoder.js', location.origin);
+export const WebDecoderWorkerUrl = new URL('src/modules/Video/FFmpeg/WebCodecDecoder.js', location.origin);
 
 export function FormatBytes(bytes: number, decimals = 2): string {
     if (bytes === 0) return "0 Bytes";

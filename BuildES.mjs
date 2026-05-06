@@ -4,22 +4,42 @@ import workerPlugin from "@chialab/esbuild-plugin-worker"
 import http from 'node:http'
 import https from 'node:https';
 import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
 
 console.log('Building...')
 
+const serveDir = 'build';
+
+const wellKnownPath = path.join(serveDir, '.well-known', 'appspecific');
+fs.mkdirSync(wellKnownPath, { recursive: true });
+
+const devtoolsConfig = {
+  workspace: {
+    root: process.cwd(),        // Gets your local absolute path automatically
+    uuid: crypto.randomUUID()   // Generates the required v4 UUID
+  }
+};
+
+fs.writeFileSync(
+  path.join(wellKnownPath, 'com.chrome.devtools.json'),
+  JSON.stringify(devtoolsConfig, null, 2)
+);
+
 const ctx = await esbuild.context({
     entryPoints: [
+        "VideoControls.html",
         "index.html",
         "src/modules/Library/Exif/ExifWorker.ts",
         "src/modules/Library/Exif/libexif.mjs",
         "src/modules/Video/FFmpeg/FFmpegBridge.ts",
-        "src/modules/Video/VideoStreamTrack.ts",
+        "src/modules/Video/Tracks/VideoStreamTrack.ts",
         "src/modules/Video/ExtractThumbnailWorker.ts",
         "src/modules/Video/FFmpeg/WebCodecDecoder.ts",
         "src/modules/Video/SharedSeekableStream2.ts",
         "src/modules/Video/FFmpeg/ffmpeg.js"
     ],
-    outdir: './build',
+    outdir: serveDir,
     sourcemap: 'external',
 
     // Esbuild automatically appends the extension, so omit `.[ext]`
@@ -44,7 +64,7 @@ const ctx = await esbuild.context({
 
 //await ctx.watch();
 let { hosts, port } = await ctx.serve({
-    servedir: 'build',
+    servedir: serveDir,
     cors: {
         origin: ["*"]
     }
@@ -52,8 +72,8 @@ let { hosts, port } = await ctx.serve({
 });
 
 const httpsOptions = {
-    key: fs.readFileSync('./local.key'),
-    cert: fs.readFileSync('./local.cert'),
+    key: fs.readFileSync('./Resources/local.key'),
+    cert: fs.readFileSync('./Resources/local.cert'),
 
 };
 

@@ -1,7 +1,6 @@
 /* Controls container */
 .controls {
     position: absolute;
-    bottom: 6vh;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -11,7 +10,6 @@
     z-index: 1001;
     flex-direction: row;
     height: 3vh;
-    width: 90%;
     transition: border-radius 0.5s ease-in-out, opacity 0.5s ease-in-out;
     min-width: 400px;
     opacity: 1;
@@ -21,54 +19,72 @@
     }
 
     &:active {
-        cursor: grabbing;
+       /* cursor: grabbing; */
     }
 
     &.tracklistOpen {
         border-radius: 10px 0px 10px 10px;
     }
-}
 
-/* Buttons and sliders */
-.videoControlBtn {
-    background-color: transparent;
-    padding: 5px;
-    cursor: pointer;
-    border: 0;
-    display: flex;
-    flex-direction: row;
+    .videoControlBtn {
+        background-color: transparent;
+        padding: 5px;
+        cursor: pointer;
+        border: 0;
+        display: flex;
+        flex-direction: row;
 
-    & i {
         font-size: 36px;
         color: white;
         transition: all 0.5s ease;
         user-select: none;
-    }
 
-    &:hover {
-        & .volumeControl {
-            width: 100px;
-            opacity: 1;
+        &:hover {
+            & .volumeControl {
+                width: 100px;
+                opacity: 1;
 
-            &::-moz-range-thumb {
-                width: 5px;
+                &::-moz-range-thumb {
+                    width: 5px;
+                }
             }
         }
     }
+
+    .progressBar {
+        width: 100%;
+        height: 8px;
+        cursor: pointer;
+        margin: 0 10px;
+        border-radius: 12px;
+        background: rgb(24, 24, 24);
+        position: relative;
+
+
+    }
 }
 
-.progressBar {
+.backgroundSlider {
     width: 100%;
+    display: block;
     height: 8px;
-    cursor: pointer;
-    margin: 0 10px;
+    position: absolute;
+    background: rgb(48, 48, 48);
     border-radius: 12px;
-    background: rgb(24, 24, 24);
-    position: relative;
+    background: linear-gradient(to right, darkgray, darkgray), rgb(48, 48, 48);
+    background-size: var(--buffer-progress, 0%) 10px;
+    background-repeat: no-repeat;
+    pointer-events: none;
+}
+
+.activeRange {
+    background: linear-gradient(to right, white, white), transparent;
+    background-size: var(--video-progress, 0%) 10px;
+    background-repeat: no-repeat;
 }
 
 .progressRange {
-    display: inline;
+    display: block;
     margin: 0;
     position: absolute;
     width: 100%;
@@ -81,8 +97,7 @@
     -moz-appearance: none;
     text-align: unset;
 
-    &::-webkit-slider-thumb,
-    &::-moz-range-thumb {
+    &::-webkit-slider-thumb {
         border-radius: 3px;
         width: 8px;
         height: 24px;
@@ -97,8 +112,7 @@
         border-radius: 5px;
     }
 
-    &::-webkit-progress-value,
-    &::-moz-range-progress {
+    &::-webkit-progress-value {
         height: 10px;
         background-color: white;
         border-radius: 12px 0px 0px 12px;
@@ -130,27 +144,8 @@
     }
 }
 
-.bufferRange {
-    width: 100%;
-    display: block;
-    height: 8px;
-    position: absolute;
-    background: rgb(48, 48, 48);
-    border-radius: 12px;
-    background: linear-gradient(to right, darkgray, darkgray), rgb(48, 48, 48);
-    background-size: var(--buffer-progress, 0%) 10px;
-    background-repeat: no-repeat;
-    pointer-events: none;
-
-    &.activeRange {
-        background: linear-gradient(to right, white, white), transparent;
-        background-size: var(--video-progress, 0%) 10px;
-        background-repeat: no-repeat;
-    }
-}
-
 /* Kept datalist ID as a global so the browser can link it properly to the input */
-:global(#chaptersForVideo) > option {
+:global(#chaptersForVideo)>option {
     cursor: pointer;
     -webkit-appearance: none;
     border: none;
@@ -218,7 +213,7 @@
     margin: 0;
     height: auto;
 
-    & > * {
+    &>* {
         top: calc(50% - 8px / 2);
         margin: 0;
     }
@@ -313,4 +308,12 @@
     width: 20%;
     height: 20%;
     top: calc(50% - 20% / 2);
+}
+
+.PositionInLightbox {
+    top: unset;
+    left: calc(50% - 40vw);
+    bottom: 6vh;
+    width: 80vw;
+    height: 3vh;
 }

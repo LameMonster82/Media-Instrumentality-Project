@@ -80,14 +80,10 @@ export function seek_video_data(offset: bigint, whence: number): bigint {
         const stream = workerState.streams[index];
         const webWorker = workerState.webDecodersWorkers[index];
         if (stream.isSupported && webWorker) {
-            if (workerState.seekByUser) {
-                webWorker.worker.postMessage({ kind: "close", decoderType: stream.type } as WebVideoDecoderMessage | WebAudioDecoderMessage);
-            } else {
-                webWorker.worker.postMessage({ kind: "flush", decoderType: stream.type } as WebVideoDecoderMessage | WebAudioDecoderMessage);
-            }
+            webWorker.worker.postMessage({ kind: "close", decoderType: stream.type } as WebVideoDecoderMessage | WebAudioDecoderMessage);
 
             webWorker.worker.postMessage({
-                kind: "init",
+                kind: "reinit",
                 decoderType: stream.type,
                 config: undefined
             } as WebVideoDecoderMessage | WebAudioDecoderMessage);

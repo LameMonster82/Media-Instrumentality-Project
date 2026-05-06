@@ -1,31 +1,18 @@
 // https://stackoverflow.com/a/78627418
+// Btw actually used to be a module idk
 import type { Box } from "@/JSXRuntime/Box";
+
+declare module "*.svg" {
+	const path: `${string}.svg`;
+	export = path;
+}
+
+declare module "*.wasm" {
+	const path: `${string}.wasm`;
+	export = path;
+}
+
 declare global {
-	module "*.svg" {
-		/**
-		 * A path to the SVG file
-		 */
-		const path: `${string}.svg`;
-		export = path;
-	}
-
-	module "*.wasm" {
-		/**
-		 * A path to the WASM file
-		 */
-		const path: `${string}.wasm`;
-		export = path;
-	}
-
-	module "*.module.css" {
-		/**
-		 * A record of class names to their corresponding CSS module classes
-		 */
-		const classes: { readonly [key: string]: string; };
-		export = classes;
-	}
-
-
 	namespace JSX {
 		type Element = HTMLElement;
 		type JSXNode = string | Element | JSXNode[];

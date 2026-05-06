@@ -1,5 +1,5 @@
 import { type VideoMediaStream, WebDecoderWorkerUrl, type WorkerVideoFrame, type WebDecoderErrorMessage, type WebDecoderGeneralMessage, type WebVideoDecoderMessage, type WorkerPostPort } from "@/modules/SomeTypes";
-import { AVColorRange, AVColorSpace, AVColorPrimaries, AVColorTransferCharacteristic, AVColorRangeToColorRange, AVColorSpaceToColorMatrixCoeff, AVColorPrimarieToColorPrimative, AVColorTransferToTransferChar, AVPictureType, AVPixelFormatToVideoFormat } from "../AVTypes";
+import { AVColorRange, AVColorSpace, AVColorPrimaries, AVColorTransferCharacteristic, AVColorRangeToColorRange, AVColorSpaceToColorMatrixCoeff, AVColorPrimarieToColorPrimative, AVColorTransferToTransferChar, AVPictureType, AVPixelFormatToVideoFormat } from "./AVTypes";
 import { workerState } from "./State";
 import type { FFmpegVideoConfig, FFmpegWorker } from "./ffmpeg";
 

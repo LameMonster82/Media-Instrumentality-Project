@@ -14,8 +14,7 @@
     position: sticky;
     background-color: var(--md-sys-color-surface-container);
     color: var(--md-sys-color-primary);
-    padding-left: 2rem;
-    padding-right: 2rem;
+    padding-right: 1rem;
     border: 2px solid var(--md-sys-color-outline-variant);
     border-top-right-radius: 8px;
     margin: -2px;
@@ -26,7 +25,7 @@
     }
 
     h1 {
-        font-size: 2.5rem;
+        font-size: 2rem;
         font-weight: 700;
         text-align: left;
         margin: 1rem;

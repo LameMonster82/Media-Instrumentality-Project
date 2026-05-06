@@ -1,16 +1,24 @@
 import homepage from "./index.html";
+import videoTest from "./VideoControls.html";
 
-Bun.serve({
+const stuff = Bun.serve({
     // development can also be an object.
     development: {
-        // Enable Hot Module Reloading
         hmr: false,
-
-        // Echo console logs from the browser to the terminal
         console: true,
+        chromeDevToolsAutomaticWorkspaceFolders: true
+    },
+
+    tls: {
+        cert: Bun.file("./Resources/local.cert"),
+        key: Bun.file("./Resources/local.key")
     },
 
     routes: {
         "/": homepage,
+        "/testControls": videoTest,
+        "/testVideo.mp4": new Response(Bun.file("./Resources/IMG_9223.MP4")) 
     },
 });
+
+console.log(`We serve at ${stuff.url}`)

@@ -23,7 +23,7 @@
         "noFallthroughCasesInSwitch": true,
         "noUncheckedIndexedAccess": false,
         "noImplicitOverride": true,
-        "baseUrl": ".",
+        "libReplacement": true,
         "paths": {
             "custom-jsx/jsx-runtime": [
                 "./src/JSXRuntime/jsx-runtime.ts"
@@ -33,7 +33,10 @@
             ],
             "@/*": [
                 "./src/*"
-            ]
+            ],
+            "Resources/*": [
+                "./Resources/*"
+            ],
         },
         // Some stricter flags (disabled by default)
         "noUnusedLocals": false,
@@ -41,13 +44,14 @@
         "noPropertyAccessFromIndexSignature": false,
         "plugins": [
             {
-                "name": "typescript-plugin-css-modules", 
+                "name": "typescript-plugin-css-modules",
                 "options": {
                     "goToDefinition": true
                 }
             }
         ]
     },
+    "include": ["src/**/*", "global.d.ts", "src/JSXRuntime/jsx.d.ts"],
     "exclude": [
         "dist",
         "node_modules",

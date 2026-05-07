@@ -194,8 +194,13 @@ self.onmessage = async (e: MessageEvent<AllTargetWorkerMessages>) => {
                 console.warn("Seeker did not return good :(");
                 self.postMessage({ kind: "thumbnailDone", return: -1 } as WorkerThumbnailDone);
             } else {
-                const ret = workerState.outModule._extract_thumbnail();
-                self.postMessage({ kind: "thumbnailDone", return: ret } as WorkerThumbnailDone);
+                try {
+                   const ret = workerState.outModule._extract_thumbnail();
+                    self.postMessage({ kind: "thumbnailDone", return: ret } as WorkerThumbnailDone);
+                } catch {
+                    self.postMessage({ kind: "thumbnailDone", return: -1 } as WorkerThumbnailDone);
+                }
+
             }
 
             return;

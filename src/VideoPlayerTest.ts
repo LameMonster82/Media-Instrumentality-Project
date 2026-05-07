@@ -40,23 +40,25 @@ class VideoPlayerApp {
 
     private initControls(): void {
         this.controls = new MediaControls(this.video, {
-            onPlayToggle: async (intentPlay: boolean) => {
-                if (intentPlay) {
+            onPlayPause: async (intent?: boolean) => {
+                intent ??= !this.video.paused;
+                if (intent) {
                     await this.video.play();
-                    this.clock.play();
+                    this.clock.Play();
                 } else {
-                    this.clock.pause();
+                    this.clock.Pause();
                     this.video.pause();
                 }
-                this.controls.SyncPlaybackState(!this.video.paused);
+                this.controls.SetPlayback(intent);
+                return intent;
             },
             onSeekTo: (time: number) => {
                 this.video.currentTime = time;
             },
             onStepFrame: () => {
                 this.videoManager?.triggerNextFrame();
-                this.clock.play();
-                this.controls.SyncPlaybackState(true);
+                this.clock.Play();
+                this.controls.SetPlayback(true);
             },
             onVolumeChange: (volume: number) => {
                 this.video.volume = volume;
@@ -70,24 +72,24 @@ class VideoPlayerApp {
         });
 
         this.video.addEventListener("pause", () => {
-            this.controls.SyncPlaybackState(false);
+            this.controls.SetPlayback(false);
         });
 
         this.video.addEventListener("play", () => {
-            this.controls.SyncPlaybackState(true);
+            this.controls.SetPlayback(true);
         });
 
         this.video.addEventListener("playPauseIntent", () => {
             if (this.clock.isPlaying) {
-                this.clock.pause();
+                this.clock.Pause();
                 this.video.pause();
             } else {
-                this.clock.play();
+                this.clock.Play();
                 this.video.play();
             }
         });
 
-        this.video.addEventListener('volumechange', () => this.controls.SyncVolumeState(this.video.volume));
+        this.video.addEventListener('volumechange', () => this.controls.SetVolume(this.video.volume));
         this.video.addEventListener('durationchange', () => this.controls.SetDuration(this.video.duration));
         this.video.addEventListener('timeupdate', (e) => {
             if (!this.clock.isPlaying) return;

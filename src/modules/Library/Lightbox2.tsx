@@ -1,15 +1,16 @@
 import styles from "@/css/Lightbox.module.css";
-import { PositionInLightbox } from "@/css/VideoControls.module.css";
+import videoStyles from "@/css/VideoControls.module.css";
 import { Asset } from "./Asset";
 import { ExtractExif } from "./Exif/ExtractExifData";
 import { LoadingIndicatorURL } from "../LoadingLoop";
-import { AssetType, FormatBytes, type XMPImage } from "../SomeTypes";
+import { AssetType, FormatBytes, type ExifTree } from "../SomeTypes";
 import { VideoPlayer } from "@/modules/Video/VideoPlayer";
 
 export class Lightbox2 {
     private dialog: HTMLDialogElement | undefined;
     private sideMenu: HTMLElement | undefined;
     private currentlyOpenImages: { srcImage: HTMLImageElement; image: HTMLElement; zoom: ZoomStuff; }[] = [];
+    private videoPlayer: VideoPlayer | undefined;
 
     openDialog(srcImage: HTMLImageElement) {
         if (!this.dialog) return;
@@ -21,7 +22,7 @@ export class Lightbox2 {
 
         document.body.style.overflow = "hidden";
 
-        const image = 
+        const image =
             <img
                 style={ {
                     borderRadius: imageStyle.getPropertyValue("border-radius")
@@ -48,9 +49,8 @@ export class Lightbox2 {
             if (asset) {
                 if (asset.GetType() !== AssetType.IMAGE) {
                     this.playMedia(asset, image);
-                } else {
-                    this.appendExifData(asset);
                 }
+                this.appendExifData(asset);
 
             }
 
@@ -75,7 +75,13 @@ export class Lightbox2 {
 
         this.sideMenu.replaceChildren();
 
-        this.sideMenu.appendChild(<h1>{ asset.handle.name }</h1>);
+        this.sideMenu.appendChild(
+            <div class={ styles.titleBar }>
+                <span onclick={ e => this.toggleMenu() } class={ styles.side_button } style={ { marginLeft: "1rem" } }>arrow_back</span>
+                <h1>{ asset.handle.name }</h1>
+                <span onclick={ e => this.closeDialog() } class={ styles.side_button }>close</span>
+            </div>
+        );
         this.sideMenu.appendChild(<h2 title={ asset.handle.size + " Bytes" }>{ FormatBytes(asset.handle.size) }</h2>);
         this.sideMenu.appendChild(<h2>{ asset.handle.path }</h2>);
 
@@ -85,79 +91,42 @@ export class Lightbox2 {
         ExtractExif(asset).then(e => {
             loading.remove();
 
-            if (e.tags.length > 0) {
-                const exif =
-                    <details class={ styles.AssetDetails }>
-                        <summary>EXIF</summary>
-                        <dl>
-                            { e.tags.map(tag => {
-                                return <>
-                                    <dt title={ `${tag.name}\n\n${tag.desc}` }>{ tag.title }</dt>
-                                    <dd>{ tag.value }</dd>
-                                </>;
-                            }) }
-                        </dl>
-                    </details>;
-                this.sideMenu?.appendChild(exif);
-            }
+            const tags = renderExifDetails(e.tree);
 
-            if (e.xmpImages.length > 0) {
-                const openImage = (e: PointerEvent, image: XMPImage) => {
-                    if (!image.rawData) {
-                        (e.target! as HTMLElement).innerHTML = "Cant :/";
-                        return;
-                    }
-                    const parent = (e.target! as HTMLElement).parentElement!;
-                    (e.target! as HTMLElement).remove();
-
-                    const blob = new Blob([image.rawData as Uint8Array<ArrayBuffer>], { type: image.mime });
-                    const url = URL.createObjectURL(blob);
-
-                    parent.appendChild(<img src={ url }></img>);
-                };
-
-                const xmp =
-                    <details class={ styles.AssetDetails }>
-                        <summary>XMP</summary>
-                        <details>
-                            <summary>XMP Embedded Images</summary>
-                            <dl>
-                                { e.xmpImages.map(image => {
-                                    return <>
-                                        <dt>{ image.semantic }</dt>
-                                        <dd><button onclick={ e => openImage(e, image) }>Show me</button></dd>
-                                    </>;
-                                }) }
-                            </dl>
-                        </details>
-                    </details>;
-                this.sideMenu?.appendChild(xmp);
-            }
+            const exif =
+                <details class={ styles.AssetDetails }>
+                    <summary>EXIF</summary>
+                    { ...tags }
+                </details>;
+            this.sideMenu?.appendChild(exif);
         });
     }
 
     async playMedia(asset: Asset, lightboxImage: HTMLImageElement) {
         const videoPlayer = new VideoPlayer();
+        this.videoPlayer = videoPlayer;
         const videoElement = videoPlayer.videoElement;
 
         let thumbnail = asset.thumbnailUrl && asset.thumbnailUrl.length > 0 ? asset.thumbnailUrl : lightboxImage.src;
 
-        
-
         //const videoPlayer = new WebGLPlayer(canvasElement);
-
-        videoElement.classList.add("viewAsset", "focused", "zoomin", "zoominVideo", styles.LightboxPreview);
+        videoElement.classList.add("focused", "zoomin", "zoominVideo", styles.LightboxPreview);
         videoElement.style.position = "fixed";
         videoElement.style.top = "";
         videoElement.style.left = "";
         videoElement.style.width = "";
         videoElement.style.height = "";
 
-        this.dialog!.appendChild(videoElement);
+        const controls = videoPlayer.mediaControl;
+        controls.classList.add(styles.LightboxPreview, videoStyles.PositionInLightbox);
 
-        const controls = videoPlayer.mediaControl
-        controls.classList.add(styles.LightboxPreview, PositionInLightbox);
-        this.dialog!.appendChild(controls);
+        const videoBox =
+            <div class={ `viewAsset ${styles.LightboxPreview}` } id="smallVideoBox">
+                { videoElement }
+                { controls }
+            </div>;
+
+        this.dialog!.appendChild(videoBox);
 
         //this.currentFullscreeenImage?.onClosing.push(async () => {
         //    videoPlayer.Destroy();
@@ -166,12 +135,14 @@ export class Lightbox2 {
         //});
 
 
+
+
         await videoPlayer.GetFileReady(asset.GetUrl(), asset.handle.name, asset.thumbnailUrl ?? undefined, (element) => {
             element.classList.add("viewAsset", "focused", "zoomin", "zoominVideo");
             element.style.width = videoElement.videoWidth + "px";
             element.style.height = videoElement.videoWidth + "px";
             this.dialog!.insertBefore(element, controls);
-            lightboxImage.style.display = "none"
+            lightboxImage.style.display = "none";
         }, 327680);
     }
 
@@ -184,6 +155,10 @@ export class Lightbox2 {
         if (!this.sideMenu?.hidden) {
             this.toggleMenu();
         }
+
+        this.videoPlayer?.Destroy();
+        this.videoPlayer = undefined;
+        document.getElementById("smallVideoBox")?.remove();
 
         document.body.style.overflow = "";
         //this.image?.classList.remove(styles.open);
@@ -237,8 +212,8 @@ export class Lightbox2 {
                 onclose={ () => this.closeDialog() }
                 ref={ e => this.dialog = e }>
 
-                <span onclick={ e => this.toggleMenu() } class="side_button">menu</span>
-                <span onclick={ e => this.closeDialog() } class="side_button">close</span>
+                <span onclick={ e => this.toggleMenu() } class={ styles.side_button }>menu</span>
+                <span onclick={ e => this.closeDialog() } class={ styles.side_button }>close</span>
                 <aside
                     class={ styles.Sidebar }
                     hidden
@@ -356,3 +331,47 @@ function setRect(target: HTMLElement, rect: DOMRect) {
     target.style.height = rect.height + "px";
 }
 
+function getMimeType(base64: any) {
+    if (typeof base64 !== "string") return undefined;
+    if (base64.startsWith('base64:/9j/')) return 'image/jpeg';
+    if (base64.startsWith('base64:iVBORw0KGgo')) return 'image/png';
+    if (base64.startsWith('base64:R0lGOD')) return 'image/gif';
+    if (base64.startsWith('base64:UklGR')) return 'image/webp';
+    return undefined; // fallback
+}
+
+function renderExifDetails(tree: ExifTree): HTMLElement[] {
+    let detailList = [];
+
+    for (const [key, group] of Object.entries(tree)) {
+        const rowContainer = <div class={ styles.detailClass }></div>;
+        const details =
+            <details>
+                <summary>{ group.name }</summary>
+                { rowContainer }
+            </details>;
+
+        for (const tag of group.tags) {
+            const isImage = getMimeType(tag.value);
+
+            let theThing: HTMLElement | string;
+            if (isImage) {
+                const fixed = (tag.value as string).replace("base64:", 'base64,');
+                theThing = <img src={`data:${isImage};${fixed}`}></img>
+            } else {
+                theThing = tag.value.toString();
+            }
+
+            const row =
+                <div>
+                    <span>{ tag.name }</span>
+                    <span>{ theThing }</span>
+                </div>;
+            rowContainer.appendChild(row);
+        }
+
+        detailList.push(details);
+    }
+
+    return detailList;
+}

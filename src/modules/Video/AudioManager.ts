@@ -11,8 +11,8 @@ export class AudioManager {
     private audioFrameWriting: Promise<void> = Promise.resolve();
 
     constructor(
-        private clock: MediaClock, 
-        private getStreams: () => FFmpegStreams[], 
+        private clock: MediaClock,
+        private getStreams: () => FFmpegStreams[],
         private requestAudioTrackCreation: (streamIndex: number) => AudioStreamTrack | AudioStreamTrackNative
     ) {
         this.audioLoop();
@@ -35,13 +35,13 @@ export class AudioManager {
     }
 
     public isBufferLow(decoderQueueSize: number): boolean {
-        return this.audiosBuffer.length + decoderQueueSize < 33; 
+        return this.audiosBuffer.length + decoderQueueSize < 33;
     }
 
     public isBufferEmpty(decoderQueueSize: number): boolean {
-        return this.audiosBuffer.length + decoderQueueSize <= 0; 
+        return this.audiosBuffer.length + decoderQueueSize <= 0;
     }
- 
+
     public onBufferPopped(resolveArray: (() => void)[]) {
         this.bufferPoppedResolves = resolveArray;
     }
@@ -88,7 +88,7 @@ export class AudioManager {
     private async audioLoop() {
         while (true) {
             if (!this.clock.isPlaying && !this.clock.isSeeking) {
-                await WaitATick(); 
+                await WaitATick();
                 continue;
             }
 
@@ -101,16 +101,17 @@ export class AudioManager {
             const { timestamp, duration } = AudioTime(data);
             const timeInSeconds = timestamp / 1000000;
 
-            if (this.clock.currentTime >= timeInSeconds - (duration / 1000000)) {
+            if (this.clock.RealTime() >= timeInSeconds - (duration / 1000000)) {
                 let streamTrack = this.getStreams()[data.streamIndex].mediaStream;
-                
+
                 if (!streamTrack || (!(streamTrack instanceof AudioStreamTrack) && !(streamTrack instanceof AudioStreamTrackNative))) {
                     streamTrack = this.requestAudioTrackCreation(data.streamIndex);
                 }
 
                 await this.audioFrameWriting;
+                this.clock.AdvanceMediaTime(timeInSeconds);
                 data = this.audiosBuffer.shift()!;
-                this.audioFrameWriting = streamTrack.WriteData(data, this.clock.currentTime);
+                this.audioFrameWriting = streamTrack.WriteData(data, this.clock.RealTime());
 
                 Resolve(this.bufferPoppedResolves);
             } else {

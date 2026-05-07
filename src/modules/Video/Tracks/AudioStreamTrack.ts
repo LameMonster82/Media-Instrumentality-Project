@@ -1,147 +1,122 @@
-import { AudioTime, type StreamTrackNeeds, type WorkerAudioData, type WorkerAudioDataInit, type WritableAudioContext } from "@/modules/SomeTypes";
+import { AudioTime, type StreamTrackNeeds, type WorkerAudioData, type WorkerAudioDataInit, } from "@/modules/SomeTypes";
 
-interface SendData {
-    kind: "sendData";
-    array: Float32Array;
+type WorkletMessage =
+    | { kind: "write"; buffer: Float32Array; }
+    | { kind: "flush"; }
+    | { kind: "close"; };
+
+const WORKLET_NAME = "AudioStreamShim";
+
+function buildWorkletSource(): string {
+    // Template literal keeps the code readable and avoids the
+    // fragile function.toString() + registerProcessor dance.
+    return /* js */`
+class AudioStreamProcessor extends AudioWorkletProcessor {
+    constructor() {
+        super();
+        this.queue  = [];      // Float32Array[]
+        this.current = null;   // Float32Array | null
+        this.offset  = 0;
+        this.active  = true;
+
+        this.port.onmessage = ({ data }) => {
+            switch (data.kind) {
+                case "write": this.queue.push(data.buffer); break;
+                case "flush": this.queue.length = 0; this.current = null; break;
+                case "close": this.active = false; break;
+            }
+        };
+    }
+
+    process(_inputs, outputs) {
+        const [output] = outputs;
+        const channels = output.length;
+        const frames   = output[0].length;
+
+        for (let f = 0; f < frames; f++) {
+            for (let ch = 0; ch < channels; ch++) {
+                if (this.current === null || this.offset >= this.current.length) {
+                    this.current = this.queue.shift() ?? null;
+                    this.offset  = 0;
+                }
+                output[ch][f] = this.current !== null ? this.current[this.offset++] : 0;
+            }
+        }
+
+        return this.active;
+    }
+}
+registerProcessor("${WORKLET_NAME}", AudioStreamProcessor);
+`;
 }
 
-interface SendCleanup {
-    kind: "cleanup"
-}
-
-interface SendShutdown {
-    kind: "shutDown";
-}
+// ---------------------------------------------------------------------------
+// AudioStreamTrack
+// ---------------------------------------------------------------------------
 
 export class AudioStreamTrack implements StreamTrackNeeds<WorkerAudioData | WorkerAudioDataInit> {
-    private track: MediaStreamTrack;
-    private writer: WritableStream<Float32Array>;
-    private audioContext: AudioContext;
-    private workletNode: AudioWorkletNode | undefined;
     public readonly streamindex: number;
 
-    constructor(streamIndex: number, sampleRate: number = 44100, channels: number = 2) {
-        this.audioContext = new AudioContext({ sampleRate });
-        const dest = this.audioContext.createMediaStreamDestination();
-        const [track] = dest.stream.getAudioTracks();
-        const ac = this.audioContext;
+    private readonly audioContext: AudioContext;
+    private readonly destination: MediaStreamAudioDestinationNode;
+    private readonly track: MediaStreamTrack;
+    private readonly channels: number;
+    private workletNode?: AudioWorkletNode;
+
+    constructor(streamIndex: number, sampleRate = 44100, channels = 2) {
         this.streamindex = streamIndex;
-        const thisThis = this;
-
-        (track as any).writable = new WritableStream({
-            async start(controller: WritableStreamDefaultController) {
-                (this as WritableAudioContext).arrays = [];
-
-                function worklet() {
-                    registerProcessor("mstg-shim", class Processor extends AudioWorkletProcessor {
-                        arrays: Float32Array[] = [];
-                        arrayOffset: number = 0;
-                        array?: Float32Array;
-                        emptyArray: Float32Array = new Float32Array(0);
-                        enabled: boolean = true;
-
-                        constructor() {
-                            super();
-
-                            this.port.onmessage = (e: MessageEvent<SendData | SendShutdown | SendCleanup>) => {
-                                if (e.data.kind === "sendData")
-                                    this.arrays.push(e.data.array);
-                                else if (e.data.kind === "cleanup")
-                                    this.arrays.length = 0;
-                                else if (e.data.kind === "shutDown")
-                                    this.enabled = false;
-                            };
-                        }
-
-                        process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
-                            const output = outputs[0]; // output[channel][sample]
-                            const numChannels = output.length;
-                            const frameLength = output[0].length;
-
-                            for (let i = 0; i < frameLength; i++) {
-                                for (let c = 0; c < numChannels; c++) {
-                                    if (!this.array || this.arrayOffset >= this.array.length) {
-                                        this.array = this.arrays.shift() || this.emptyArray;
-                                        this.arrayOffset = 0;
-                                    }
-                                    output[c][i] = this.array[this.arrayOffset++] || 0;
-                                }
-                            }
-                            return this.enabled;
-                        }
-                    });
-                }
-
-                await ac.audioWorklet.addModule(`data:text/javascript,(${worklet.toString()})()`);
-
-                const node = new AudioWorkletNode(ac, "mstg-shim",
-                    {
-                        numberOfInputs: 0,
-                        numberOfOutputs: 1,
-                        outputChannelCount: [channels] // <- Replace with dynamic value
-                    }
-                );
-
-
-
-                node.connect(dest);
-                thisThis.workletNode = node;
-                (this as WritableAudioContext).node = node;
-
-                return track;
-            },
-
-            write(audioData: Float32Array) {
-                (this as WritableAudioContext).node?.port.postMessage({ kind: "sendData", array: audioData }, [audioData.buffer]);
-            },
-        });
-
-        track.contentHint = "music";
-        this.track = track;
-        this.writer = (track as any).writable;
+        this.channels = channels;
+        this.audioContext = new AudioContext({ sampleRate });
+        this.destination = this.audioContext.createMediaStreamDestination();
+        [this.track] = this.destination.stream.getAudioTracks();
+        this.track.contentHint = "music";
     }
 
-
-    public Initialize(): Promise<void> {
-        return Promise.resolve();
-    }
-
-    // Method to process raw audio data and play it back
-    async WriteData(frame: WorkerAudioData | WorkerAudioDataInit, currentTime: number): Promise<void> {
-        let audioDataBuffer: Float32Array;
-        const frameTime = AudioTime(frame);
-        const leftTime = ((frameTime.timestamp + frameTime.duration) / 1000000)  - currentTime;
-        if (frame.kind === "audioData") {
-            if (leftTime <= 0) {
-                frame.audioData.close();
-                return;
-            }
-            let maxSamples = Math.floor(leftTime * frame.audioData.sampleRate);
-            maxSamples = Math.min(maxSamples, frame.audioData.numberOfFrames);
-            audioDataBuffer = new Float32Array(maxSamples * frame.audioData.numberOfChannels);
-            frame.audioData.copyTo(audioDataBuffer, { planeIndex: 0, format: "f32", frameCount: maxSamples });
-        } else {
-            if (leftTime <= 0) {
-                return;
-            }
-            let maxSamples = Math.floor(leftTime * frame.dataBuffer.sampleRate);
-            maxSamples = Math.min(maxSamples, frame.dataBuffer.numberOfFrames);
-            audioDataBuffer = new Float32Array(frame.dataBuffer.data,0, (maxSamples * frame.dataBuffer.numberOfChannels));
-        }
-
-        const writer = this.writer!.getWriter();
+    /** Must be awaited before the first WriteData call. */
+    public async Initialize(): Promise<void> {
+        const blob = new Blob([buildWorkletSource()], { type: "text/javascript" });
+        const url = URL.createObjectURL(blob);
         try {
-            //const chunks = this.splitInto128FrameChunks(rawData, this.channels);
-            await writer.write(new Float32Array(audioDataBuffer));
+            await this.audioContext.audioWorklet.addModule(url);
         } finally {
-            writer.releaseLock();
+            URL.revokeObjectURL(url);
         }
 
-        if (frame.kind === "audioData")
-            frame.audioData.close();
+        this.workletNode = new AudioWorkletNode(this.audioContext, WORKLET_NAME, {
+            numberOfInputs: 0,
+            numberOfOutputs: 1,
+            outputChannelCount: [this.channels],
+        });
+        this.workletNode.connect(this.destination);
     }
-    public SeekTo(time: number, fastSeek: boolean): Promise<void> {
-        this.workletNode?.port.postMessage({ kind: 'cleanup' } as SendCleanup);
+
+    public async WriteData(
+        frame: WorkerAudioData | WorkerAudioDataInit,
+        currentTime: number,
+    ): Promise<void> {
+        if (!this.workletNode) return;
+
+        const frameTime = AudioTime(frame);
+        const endTimeSeconds = (frameTime.timestamp + frameTime.duration) / 1_000_000;
+        const timeRemaining = endTimeSeconds - currentTime;
+
+        if (timeRemaining <= 0) {
+            if (frame.kind === "audioData") frame.audioData.close();
+            return;
+        }
+
+        const audioBuffer = frame.kind === "audioData"
+            ? this.copyFromAudioData(frame, timeRemaining)
+            : this.viewFromDataBuffer(frame, timeRemaining);
+
+        if (frame.kind === "audioData") frame.audioData.close();
+
+        // Transfer the ArrayBuffer — zero-copy hand-off to the worklet thread.
+        this.postToWorklet({ kind: "write", buffer: audioBuffer }, [audioBuffer.buffer]);
+    }
+
+    public SeekTo(_time: number, _fastSeek: boolean): Promise<void> {
+        this.postToWorklet({ kind: "flush" });
         return Promise.resolve();
     }
 
@@ -149,48 +124,46 @@ export class AudioStreamTrack implements StreamTrackNeeds<WorkerAudioData | Work
         return this.track;
     }
 
-    public Enable(enable: boolean) {
+    public Enable(enable: boolean): void {
         this.track.enabled = enable;
     }
 
-    public Destroy() {
-        this.workletNode?.disconnect();
-        this.workletNode?.port.postMessage({ kind: 'shutDown' } as SendShutdown);
-        this.workletNode?.port.close();
+    public Destroy(): void {
+        if (this.workletNode) {
+            this.postToWorklet({ kind: "close" });
+            this.workletNode.disconnect();
+            this.workletNode.port.close();
+        }
         this.track.stop();
-        this.writer.abort();
         this.audioContext.close();
     }
+
+    /** Allocates a new buffer and copies decoded audio into it. */
+    private copyFromAudioData(frame: WorkerAudioData, timeRemaining: number): Float32Array {
+        const { audioData } = frame;
+        const maxFrames = Math.min(
+            Math.floor(timeRemaining * audioData.sampleRate),
+            audioData.numberOfFrames,
+        );
+        const buffer = new Float32Array(maxFrames * audioData.numberOfChannels);
+        audioData.copyTo(buffer, { planeIndex: 0, format: "f32", frameCount: maxFrames });
+        return buffer;
+    }
+
+    /**
+     * Returns a typed-array *view* into the existing ArrayBuffer — no copy.
+     * Ownership is transferred to the worklet via postMessage.
+     */
+    private viewFromDataBuffer(frame: WorkerAudioDataInit, timeRemaining: number): Float32Array {
+        const { dataBuffer } = frame;
+        const maxFrames = Math.min(
+            Math.floor(timeRemaining * dataBuffer.sampleRate),
+            dataBuffer.numberOfFrames,
+        );
+        return new Float32Array(dataBuffer.data, 0, maxFrames * dataBuffer.numberOfChannels);
+    }
+
+    private postToWorklet(message: WorkletMessage, transfer: Transferable[] = []): void {
+        this.workletNode?.port.postMessage(message, transfer);
+    }
 }
-
-function splitInto128FrameChunks(
-        packedData: ArrayBuffer,
-        channels: number
-    ): Float32Array[] {
-        const framesPerChunk = 128;
-        const chunkSize = framesPerChunk * channels;
-
-        const totalFrames = (packedData.byteLength / 4) / channels;
-        const numChunks = Math.floor(totalFrames / framesPerChunk);
-
-        const chunks: Float32Array[] = [];
-
-        for (let i = 0; i < numChunks; i++) {
-            const start = i * chunkSize;
-            const end = start + chunkSize;
-            chunks.push(new Float32Array(packedData.slice(start, end)));
-        }
-
-        return chunks;
-    }
-
-    function cutBufferToDuration(
-        data: Float32Array,
-        durationSeconds: number,
-        sampleRate: number,
-        channels: number
-    ): Float32Array {
-        const maxSamples = Math.floor(durationSeconds * sampleRate * channels);
-        if (data.length <= maxSamples) return data;
-        return data.subarray(0, maxSamples);
-    }

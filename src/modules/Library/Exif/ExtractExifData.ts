@@ -1,20 +1,49 @@
 import type { Asset } from "../Asset";
-import { libexifUrl, type WorkerExifTags, type WorkerRequestExif, type XMPImage } from "@/modules/SomeTypes"
-import { runExifTools } from "./Exiftool/run-exif-tools";
+import { libexifUrl, PromiseRes, type ExifTree, type WorkerExifTags, type WorkerRequestExif } from "@/modules/SomeTypes";
+import { dispose, parseMetadata } from '@uswriting/exiftool';
 
 
+const { promise: exifDocs, resolve } = PromiseRes<Document>();
+
+fetch("Resources/ExifTags.xml").then(async (e) => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(await e.text(), 'application/xml');
+    resolve(doc);
+});
 
 export async function ExtractExif(asset: Asset): Promise<WorkerExifTags> {
-    const output = await runExifTools(asset);
+    const output = await parseMetadata({ name: asset.GetName(), data: await asset.AsBlob() }, {
+        args: ["-a", "-all:all", "-trailer", "-j", "-G0", "-b"],
+        transform: (data) => JSON.parse(data),
+        fetch: (...args) => {
+            return fetch("node_modules/@6over3/zeroperl-ts/dist/esm/zeroperl.wasm");
+        },
+    });
+
+    const doc = await exifDocs;
+
+    let exifTree: ExifTree = {};
+    for (const [key, val] of Object.entries(output.data[0])) {
+        if (key === 'SourceFile')
+            continue;
+
+        const [group, tag] = key.split(':');
+        if (exifTree[group] == undefined) {
+            exifTree[group] = {
+                name: doc.getElementById(group)?.querySelector("desc[lang='en']")?.textContent ?? group,
+                tags: []
+            };
+        }
+
+        exifTree[group].tags.push({
+            name: doc.querySelector(`tag[name=${tag}]`)?.querySelector("desc[lang='en']")?.textContent ?? tag,
+            value: val as string | number | (string | number)[]
+        });
+    }
+
     return {
         kind: "exifTags",
-        tags: output.map(o => { return {
-            title: o.label,
-            name: o.label,
-            desc: "No Desc",
-            value: o.value,
-        }}),
-        xmpImages: []
+        tree: exifTree
     };
 
 

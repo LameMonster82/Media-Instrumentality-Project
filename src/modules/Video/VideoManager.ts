@@ -11,10 +11,10 @@ export class VideoManager {
     private _nextFrame: boolean = false;
 
     constructor(
-        private clock: MediaClock, 
-        private getStreams: () => FFmpegStreams[], 
+        private clock: MediaClock,
+        private getStreams: () => FFmpegStreams[],
         private requestVideoTrackCreation: (streamIndex: number) => Promise<VideoStreamTrack>,
-        private onRenderPause: () => void 
+        private onRenderPause: () => void
     ) {
         this.videoLoop();
     }
@@ -28,7 +28,7 @@ export class VideoManager {
             if (data.kind === "videoFrame") data.videoFrame.close();
             return;
         }
-        
+
         this.framesBuffer.push(data);
         Resolve(this.bufferInsertedResolves);
     }
@@ -100,7 +100,7 @@ export class VideoManager {
             const { timestamp } = FrameTime(frame);
             const timeInSeconds = timestamp / 1000000;
 
-            if (this.clock.currentTime >= timeInSeconds) {
+            if (this.clock.RealTime() >= timeInSeconds) {
                 let streamTrack = this.getStreams()[frame.streamIndex].mediaStream;
                 if (!streamTrack || !(streamTrack instanceof VideoStreamTrack)) {
                     streamTrack = await this.requestVideoTrackCreation(frame.streamIndex);
@@ -108,7 +108,8 @@ export class VideoManager {
 
                 await this.videoFrameWriting;
                 frame = this.framesBuffer.shift()!;
-                
+
+                this.clock.AdvanceMediaTime(timeInSeconds);
                 this.videoFrameWriting = (streamTrack as VideoStreamTrack).WriteData(frame);
 
                 if (this._nextFrame) {

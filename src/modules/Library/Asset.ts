@@ -180,6 +180,15 @@ export class Asset {
         return this.handle.url;
     }
 
+    public GetName() {
+        return this.path.split("/").pop() ?? "";
+    }
+
+    public async AsBlob() {
+        const response = await fetch(this.GetUrl());
+        return await response.blob();
+    }
+
     public async GetThumbnailUrl() {
         if (this.thumbnailUrl) return this.thumbnailUrl;
         const blob = await this.GetThumbnailBlob();

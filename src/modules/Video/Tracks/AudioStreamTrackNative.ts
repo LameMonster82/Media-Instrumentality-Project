@@ -1,4 +1,4 @@
-import type { StreamTrackNeeds, WorkerAudioData, WorkerAudioDataInit } from "../SomeTypes.ts";
+import type { StreamTrackNeeds, WorkerAudioData, WorkerAudioDataInit } from "@/modules/SomeTypes";
 
 export class AudioStreamTrackNative implements StreamTrackNeeds<WorkerAudioData | WorkerAudioDataInit> {
     private writableStream: WritableStream<AudioData>;
@@ -31,8 +31,7 @@ export class AudioStreamTrackNative implements StreamTrackNeeds<WorkerAudioData 
         if (audioData.kind === "audioData") {
             audio = audioData.audioData;
         } else {
-            // @ts-ignore
-            audioData.dataBuffer.transfer = audioData.transferable;
+            audioData.dataBuffer.transfer = audioData.transferable as ArrayBuffer[];
             audio = new AudioData(audioData.dataBuffer);
         }
 

@@ -11,6 +11,7 @@ import { AudioManager } from "./AudioManager";
 import { VideoManager } from "./VideoManager";
 import { Wait, Resolve, WaitATick } from "./VideoUtils";
 import { SubtitleManager } from "./Subtitlemanager.ts";
+import lightboxStyles from "@/css/Lightbox.module.css";
 
 export class VideoPlayer {
     private video: HTMLVideoElement;
@@ -39,6 +40,7 @@ export class VideoPlayer {
     private hasAudio: boolean = false;
 
     private endOfFile: boolean = false;
+    private isPlaying: boolean = false;
 
     private bufferPopedResolves: (() => void)[] = [];
     private streamDecoderQueue: number[] = [];
@@ -46,38 +48,42 @@ export class VideoPlayer {
     constructor() {
         this.video = document.createElement('video');
         this.video.playsInline = true;
+        this.video.onerror = (e) => {
+            console.error(`The video element did not like that: ${e}`);
+        };
+        this.video.pause();
         this.video.srcObject = this.mediaStream;
 
         this.clock = new MediaClock();
 
         this.controls = new MediaControls(this.video, {
-            onPlayToggle: this.PlayPause.bind(this),
+            onPlayPause: this.PlayPause.bind(this),
             onSeekTo: (time) => {
                 this.seekTo(time);
             },
             onStepFrame: () => {
                 this.videoManager?.triggerNextFrame();
-                this.clock.play(); // Step frame simulates tiny play
-                this.controls.SyncPlaybackState(true);
+                this.clock.Play(); // Step frame simulates tiny play
+                this.controls.SetPlayback(true);
             },
             onVolumeChange: (volume) => { this.video.volume = volume; },
             getMediaDuration: () => this.mediaDuration,
             onVideoTrackSelect: (index) => this.UpdateTrack("video", index),
             onAudioTrackSelect: (index) => this.UpdateTrack("audio", index),
             onSubtitleTrackSelect: (index) => this.UpdateTrack("subtitle", index),
-            getCurrentTime: () => this.clock.currentTime,
-            getVolume: () => this.video.volume
+            getCurrentTime: () => this.clock.MediaTime(),
+            getVolume: () => this.video.volume,
         });
 
         this.video.addEventListener("pause", () => {
             if (!this.clock.isPlaying) return;
-            this.controls.SyncPlaybackState(false);
+            this.controls.SetPlayback(false);
             this.mediaSessionHandler?.syncPlaybackState(false);
         });
 
         this.video.addEventListener("play", () => {
             if (this.clock.isPlaying) return;
-            this.controls.SyncPlaybackState(true);
+            this.controls.SetPlayback(true);
             this.mediaSessionHandler?.syncPlaybackState(true);
         });
 
@@ -85,13 +91,13 @@ export class VideoPlayer {
             this.PlayPause(this.clock.isPlaying);
         });
 
-        this.video.addEventListener('volumechange', () => this.controls.SyncVolumeState(this.video.volume));
+        this.video.addEventListener('volumechange', () => this.controls.SetVolume(this.video.volume));
         this.video.addEventListener('timeDurationUpdate', () => this.controls.SetDuration(this.mediaDuration));
 
         this.mediaSessionHandler = new MediaSessionHandler(
             this.video,
             () => this.mediaDuration,
-            () => this.clock.currentTime,
+            () => this.clock.MediaTime(),
             (time) => this.seekTo(time)
         );
 
@@ -209,38 +215,27 @@ export class VideoPlayer {
 
         this.bufferingLoop();
         this.startBufferUIUpdateLoop();
-        this.startUIClockLoop();
 
-        this.video.play().then(res => {
-            this.clock.play();
-            loading?.remove();
-            this.controls.controlsContainer.style.display = "";
-        }, rej => {
-            const playButton = CreatePlayButton(() => {
-                this.PlayPause(true);
-            });
-            this.video.parentElement?.appendChild(playButton);
+        await this.RequestFrame();
+
+        const playButton = this.CreatePlayButton(() => {
+            this.PlayPause(true);
         });
+        this.video.parentElement?.appendChild(playButton);
     }
 
-    private async PlayPause(intent: boolean) {
-        if (intent) {
-            this.clock.pause();
+    private async PlayPause(intent?: boolean) {
+        intent ??= !this.isPlaying;
+        if (!intent) {
+            this.clock.Pause();
             this.video.pause();
         } else {
-            this.clock.play();
+            this.clock.Play();
             await this.video.play();
         }
-    }
-
-    private startUIClockLoop() {
-        const updateUI = () => {
-            if (this.clock.isPlaying) {
-                this.controls.UpdateCurrentTime(this.clock.currentTime);
-            }
-            requestAnimationFrame(updateUI);
-        };
-        requestAnimationFrame(updateUI);
+        this.isPlaying = intent;
+        this.controls.SetPlayback(intent);
+        return intent;
     }
 
     private startBufferUIUpdateLoop() {
@@ -262,6 +257,10 @@ export class VideoPlayer {
     private async bufferingLoop() {
         if (!this.ffmpegWorker) return;
         while (true) {
+            if (this.clock.isPlaying) {
+                this.controls.UpdateCurrentTime(this.clock.MediaTime());
+            }
+
             if (this.clock.isSeeking) {
                 await WaitATick();
                 continue;
@@ -284,9 +283,10 @@ export class VideoPlayer {
                             this.PlayPause(true);
                             resolve();
                         };
-                        const playButton = CreatePlayButton(call.bind(this));
+                        const playButton = this.CreatePlayButton(call.bind(this));
                         this.video.addEventListener('playPauseIntent', call.bind(this), { once: true });
                         this.video.parentElement?.appendChild(playButton);
+                        this.controls.SetPlayback(false);
 
                         await promise;
                         continue;
@@ -294,12 +294,7 @@ export class VideoPlayer {
                         await WaitATick();
                     }
                 } else {
-                    this.ffmpegWorker.postMessage({ kind: "requestFrames" } as WorkerRequestFrames);
-
-                    await Promise.race([
-                        Wait(this.videoManager.getBufferInsertedResolvers()),
-                        Wait(this.audioManager.getBufferInsertedResolvers())
-                    ]);
+                    await this.RequestFrame();
                 }
 
             } else {
@@ -342,6 +337,15 @@ export class VideoPlayer {
         return videoEmpty && audioEmpty;
     }
 
+    private async RequestFrame() {
+        this.ffmpegWorker!.postMessage({ kind: "requestFrames" } as WorkerRequestFrames);
+
+        await Promise.race([
+            Wait(this.videoManager.getBufferInsertedResolvers()),
+            Wait(this.audioManager.getBufferInsertedResolvers())
+        ]);
+    }
+
     private async seekTo(time: number) {
         if (this.clock.isSeeking) return;
 
@@ -349,7 +353,7 @@ export class VideoPlayer {
         let canQuickSkipAudio = this.hasAudio ? this.audioManager.canQuickSkip(time) : true;
 
         if (!canQuickSkipVideo || !canQuickSkipAudio) {
-            this.clock.setSeeking(true);
+            this.clock.SetSeeking(true);
             this.videoManager.flush(0, true);
             this.audioManager.flush(0, true);
 
@@ -358,7 +362,7 @@ export class VideoPlayer {
 
         this.endOfFile = false;
 
-        this.clock.seek(time);
+        this.clock.Seek(time);
         this.controls.UpdateCurrentTime(time);
         this.video.dispatchEvent(new Event("seek"));
 
@@ -368,13 +372,13 @@ export class VideoPlayer {
     }
 
     private SeekFinished(evictBuffers: boolean) {
-        this.videoManager.flush(this.clock.currentTime, evictBuffers);
-        this.audioManager.flush(this.clock.currentTime, evictBuffers);
+        this.videoManager.flush(this.clock.MediaTime(), evictBuffers);
+        this.audioManager.flush(this.clock.MediaTime(), evictBuffers);
 
-        this.clock.setSeeking(false);
+        this.clock.SetSeeking(false);
 
         for (const stream of this.availableStreams) {
-            stream.mediaStream?.SeekTo(this.clock.currentTime, !evictBuffers);
+            stream.mediaStream?.SeekTo(this.clock.MediaTime(), !evictBuffers);
         }
 
         this.endOfFile = false;
@@ -438,10 +442,10 @@ export class VideoPlayer {
             }
         }
         this.ffmpegWorker?.postMessage({ kind: "changeStream", type: type, toIndex: value } as WorkerChangeStream);
-        this.seekTo(this.clock.currentTime);
+        this.seekTo(this.clock.MediaTime());
     }
 
-    private Destroy() {
+    public Destroy() {
         this.mediaSessionHandler?.destroy();
         this.frontIcon?.remove();
 
@@ -459,25 +463,34 @@ export class VideoPlayer {
                 }
             };
             this.ffmpegWorker.postMessage({ kind: "shutdown" });
+            setTimeout(() => this.ffmpegWorker?.terminate(), 3000);
         }
+
+        this.controls.controlsContainer.remove();
+        this.videoElement.remove();
 
         window.removeEventListener('unload', this.Destroy.bind(this));
     }
-}
 
-function CreatePlayButton(onClick: () => void): HTMLSpanElement {
-    const playButton = document.createElement('span');
-    playButton.classList.add('zoomin', 'material-symbols-rounded');
-    playButton.style.position = 'fixed';
-    playButton.style.color = 'white';
-    playButton.style.fontSize = '256px';
-    playButton.style.lineHeight = '90vh';
-    playButton.style.zIndex = "1003";
-    playButton.onclick = () => {
-        playButton.remove();
-        onClick();
-    };
-    playButton.innerHTML = 'play_arrow';
+    private CreatePlayButton(onClick: () => void): HTMLSpanElement {
+        const playButton = document.createElement('span');
+        playButton.classList.add('zoomin', 'material-symbols-rounded', lightboxStyles.LightboxPreview);
+        playButton.style.position = 'fixed';
+        playButton.style.color = 'white';
+        playButton.style.fontSize = 'min(25vh,25vw)';
+        playButton.style.lineHeight = '90vh';
+        playButton.style.zIndex = "1003";
+        playButton.style.textAlign = "center";
+        playButton.style.transition = "unset";
+        playButton.onclick = () => {
+            playButton.remove();
+            onClick();
+        };
+        playButton.innerHTML = 'play_arrow';
+        this.video.addEventListener("playPauseIntent", () => {
+            playButton.remove();
+        }, { once: true });
 
-    return playButton;
+        return playButton;
+    }
 }

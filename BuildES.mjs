@@ -15,15 +15,15 @@ const wellKnownPath = path.join(serveDir, '.well-known', 'appspecific');
 fs.mkdirSync(wellKnownPath, { recursive: true });
 
 const devtoolsConfig = {
-  workspace: {
-    root: process.cwd(),        // Gets your local absolute path automatically
-    uuid: crypto.randomUUID()   // Generates the required v4 UUID
-  }
+    workspace: {
+        root: process.cwd(),        // Gets your local absolute path automatically
+        uuid: crypto.randomUUID()   // Generates the required v4 UUID
+    }
 };
 
 fs.writeFileSync(
-  path.join(wellKnownPath, 'com.chrome.devtools.json'),
-  JSON.stringify(devtoolsConfig, null, 2)
+    path.join(wellKnownPath, 'com.chrome.devtools.json'),
+    JSON.stringify(devtoolsConfig, null, 2)
 );
 
 const ctx = await esbuild.context({
@@ -37,7 +37,9 @@ const ctx = await esbuild.context({
         "src/modules/Video/ExtractThumbnailWorker.ts",
         "src/modules/Video/FFmpeg/WebCodecDecoder.ts",
         "src/modules/Video/SharedSeekableStream2.ts",
-        "src/modules/Video/FFmpeg/ffmpeg.js"
+        "src/modules/Video/FFmpeg/ffmpeg.js",
+        "node_modules/@6over3/zeroperl-ts/dist/esm/zeroperl.wasm",
+        "Resources/ExifTags.xml"
     ],
     outdir: serveDir,
     sourcemap: 'external',
@@ -50,7 +52,15 @@ const ctx = await esbuild.context({
     bundle: true,
     format: 'esm',
     platform: 'browser',
-    plugins: [htmlPlugin()],
+    plugins: [htmlPlugin(), {
+        name: "node-externals",
+        setup(build) {
+            build.onResolve({ filter: /^node:/ }, args => ({
+                path: args.path,
+                external: true,
+            }));
+        },
+    }],
     target: ['esnext'],
     supported: {
         'top-level-await': true
@@ -59,10 +69,14 @@ const ctx = await esbuild.context({
     sourcemap: true,
     outdir: 'build',
 
-    loader: { '.wasm': 'file' },
+    loader: {
+        '.wasm': 'file',
+        '.module.css': 'local-css',
+        '.xml': 'file',
+    },
 });
 
-//await ctx.watch();
+await ctx.watch();
 let { hosts, port } = await ctx.serve({
     servedir: serveDir,
     cors: {

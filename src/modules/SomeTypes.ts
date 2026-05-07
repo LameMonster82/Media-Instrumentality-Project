@@ -114,14 +114,6 @@ export interface WritableAudioContext extends WritableStream<EncodedAudioChunk> 
     node?: AudioWorkletNode;
 }
 
-export type XMPImage = {
-    mime: string;
-    length: number;
-    semantic: string;
-    rawData?: Uint8Array;
-    url?: string;
-};
-
 declare global {
     interface Window {
         VideoTrackGenerator: {
@@ -213,9 +205,10 @@ interface WorkerPostMessage {
     readonly transferable?: Transferable[];
 }
 
+/** Timestamp and duration in Microseconds */
 export interface WorkerVideoFrame extends WorkerPostMessage {
     readonly kind: "videoFrame";
-    /** Timestamp and duration in Microseconds */
+
     readonly streamIndex: number;
     readonly videoFrame: VideoFrame;
     readonly transferable: VideoFrame[];
@@ -231,25 +224,25 @@ export interface WorkerVideoFrameBufferInit extends WorkerPostMessage {
     readonly transferable: ArrayBufferLike[];
 }
 
+/** Timestamp and duration in Microseconds */
 export interface WorkerVideoFrameImageBitmap extends WorkerPostMessage {
     readonly kind: "FrameBitmapConstructor";
-    /** Timestamp and duration in Microseconds */
     readonly streamIndex: number;
     readonly videoInfo: VideoFrameBufferInit;
     readonly imageBitmap: ImageBitmap;
 }
 
+/** Timestamp and duration in Microseconds */
 export interface WorkerAudioData extends WorkerPostMessage {
     readonly kind: "audioData";
-    /** Timestamp and duration in Microseconds */
     readonly streamIndex: number;
     readonly audioData: AudioData;
     readonly transferable: AudioData[];
 }
 
+/** Timestamp and duration in Microseconds */
 export interface WorkerAudioDataInit extends WorkerPostMessage {
     readonly kind: "audioDataInit";
-    /** Timestamp and duration in Microseconds */
     readonly streamIndex: number;
     readonly dataBuffer: AudioDataInitArrayBuffer;
     readonly transferable: ArrayBufferLike[];
@@ -380,16 +373,11 @@ export interface WorkerPostPort extends WorkerPostMessage {
     readonly port: MessagePort;
 }
 
+export type ExifTree = Record<string, { name: string, tags: { name: string, value: string | number | (string | number)[]; }[]; }>;
+
 export interface WorkerExifTags extends WorkerPostMessage {
     readonly kind: "exifTags";
-    readonly tags: {
-        title: string,
-        name: string,
-        desc: string,
-        value: string;
-    }[];
-    readonly xmpImages: XMPImage[];
-
+    readonly tree: ExifTree
 }
 
 

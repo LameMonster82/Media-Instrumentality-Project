@@ -3,7 +3,7 @@ import { createBox } from '@/JSXRuntime/Box';
 import type { AudioMediaStream, ChapterInfo, SubtitleMediaStream, VideoMediaStream } from '../SomeTypes';
 
 export interface MediaControlCallbacks {
-    onPlayToggle: (intentPlay: boolean) => void;
+    onPlayPause: (intent?:boolean) => Promise<boolean>;
     onSeekTo: (time: number) => void;
     onStepFrame: () => void;
     onVolumeChange: (volume: number) => void;
@@ -41,7 +41,7 @@ export class MediaControls {
     private transmutatedBar: HTMLSpanElement = null!;
 
     // Internal UI State
-    private isPlaying: boolean = false;
+    private isTryingToPlay: boolean = false;
     private hasHours: boolean = false;
     private lastVolume: number = 1;
     private lastProgress: string = "-1";
@@ -157,19 +157,21 @@ export class MediaControls {
         this.UpdateSubtitleTracks([]);
 
         this.UpdateCurrentTime(this.callbacks.getCurrentTime(), this.callbacks.getMediaDuration());
-        this.SyncVolumeState(this.callbacks.getVolume());
+        this.SetVolume(this.callbacks.getVolume());
     }
 
     private initListeners() {
         // --- Playback & Seeking ---
-        this.playButton.addEventListener('click', () => {
-            this.isPlaying = !this.isPlaying;
-            this.callbacks.onPlayToggle(this.isPlaying);
+        this.playButton.addEventListener('click', async () => {
+            if (this.isTryingToPlay) return;
+            this.isTryingToPlay = true;
+            await this.callbacks.onPlayPause();
+            this.isTryingToPlay = false;
         });
 
         this.progressBarRange.addEventListener('mousedown', (e) => {
             e.stopPropagation();
-            this.callbacks.onPlayToggle(false);
+            this.callbacks.onPlayPause(false);
         });
 
         this.progressBarRange.addEventListener('input', (e) => {
@@ -265,12 +267,11 @@ export class MediaControls {
         //this.transmutatedBar.style.setProperty(`--buffer-progress`, `${percent}%`);
     }
 
-    public SyncPlaybackState(isPlaying: boolean) {
-        this.isPlaying = isPlaying;
-        this.playButton.innerHTML = this.isPlaying ? 'pause' : 'play_arrow';
+    public SetPlayback(isPlaying: boolean) {
+        this.playButton.innerHTML = isPlaying ? 'pause' : 'play_arrow';
     }
 
-    public SyncVolumeState(volume: number) {
+    public SetVolume(volume: number) {
         if (volume > 0) this.lastVolume = volume;
         this.updateVolumeVisuals(volume);
     }
@@ -364,7 +365,7 @@ export class MediaControls {
         if (this.videoStreams.length <= 0 &&
             this.audioStreams.length <= 0 &&
             this.subtitleStreams.length <= 0) {
-            
+
             this.captionIcon.style.display = "none";
         } else {
             this.captionIcon.style.display = "";
@@ -396,9 +397,7 @@ export class MediaControls {
                 this.playButton.click();
                 break;
             case "e":
-                if (!this.isPlaying) {
-                    this.callbacks.onStepFrame();
-                }
+                this.callbacks.onStepFrame();
                 break;
         }
     }

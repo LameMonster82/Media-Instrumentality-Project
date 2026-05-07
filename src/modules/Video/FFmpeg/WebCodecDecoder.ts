@@ -58,7 +58,7 @@ function initDecoder(message: WebVideoDecoderMessage | WebAudioDecoderMessage, r
         decoderType = message.decoderType;
         target = message.postDataTo ?? self;
     }
-    
+
     const callbacks = {
         output: async (frame: VideoFrame | AudioData) => {
             SendQueueMessage();
@@ -130,12 +130,17 @@ function initDecoder(message: WebVideoDecoderMessage | WebAudioDecoderMessage, r
 }
 
 function SendQueueMessage() {
-    if (decoderType == null) return;
+    // Technically the decoder should never be null when
+    // calling this function but there may be a race condition
+    // where when the decoder is closed,
+    // it sends a last dequeue message but for some reason gets
+    // nulled out of nowhere
+    if (decoderType == null || decoder == null) return;
     const postMessage: WebDecoderQueueMessage = {
         kind: "decoderQueueSize",
         type: decoderType,
         streamIndex: streamIndex,
-        queue: decoder!.decodeQueueSize
+        queue: decoder.decodeQueueSize
     };
 
     target.postMessage(postMessage);

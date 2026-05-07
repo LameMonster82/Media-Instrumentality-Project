@@ -21,6 +21,7 @@
     "@uswriting/exiftool": "^1.0.9",
     "ass-compiler": "^0.1.16",
     "assjs": "^0.1.6",
-    "esbuild": "^0.27.7"
+    "esbuild": "^0.27.7",
+    "monaco-editor": "0.55.1"
   }
 }

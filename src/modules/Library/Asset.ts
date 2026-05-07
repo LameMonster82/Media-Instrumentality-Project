@@ -1,6 +1,7 @@
 import { type ThumnbnailDesc, type AssetDBFile, type Dictionary, AssetType, type AssetFile, type WorkerSubmitThumbnail, GetFolderPath, isCoverImage } from "../SomeTypes.js";
-import { ExtractThumbnail } from "../Video/ExtractThumbnailWorker.js";
+import { ExtractThumbnail as ExtractFFmpegThumbnail } from "../Video/ExtractThumbnailWorker.js";
 import { ffmpegDemuxers } from "../Video/SupportedMedia.js";
+import { ExtractExifThumbnail } from "./Exif/ExtractExifData.js";
 import { BrokenImageSVG } from "./ImageToSVG.js";
 
 
@@ -168,6 +169,9 @@ export class Asset {
         if (this.handle.mimeType.startsWith("audio/"))
             return AssetType.AUDIO;
 
+        if (this.handle.mimeType.startsWith("text/"))
+            return AssetType.TEXT;
+
 
         return AssetType.UNKNOWN;
     }
@@ -202,7 +206,14 @@ export class Asset {
 
         if (!data.thumbnail) {
             const type = this.GetType();
-            let thumbnail: WorkerSubmitThumbnail = await ExtractThumbnail(this.GetUrl());
+            if (type == AssetType.TEXT) {
+                return null;
+            }
+
+            let thumbnail = await ExtractExifThumbnail(this);
+            if(!thumbnail)
+                thumbnail = await ExtractFFmpegThumbnail(this.GetUrl());
+
             if (!thumbnail.image && type === AssetType.AUDIO) {
                 const folderPath = GetFolderPath(this.handle.path);
                 const availablePosters = Asset.FilterAssets(asset => {

@@ -1,14 +1,14 @@
 import styles from "@/css/Library.module.css";
 import LoadingIndicator, { LoadingIndicatorBase64, LoadingIndicatorURL } from "../LoadingLoop";
 import { Asset } from "./Asset";
-import { PromiseRes, type AssetFile, type Dictionary } from "../SomeTypes";
+import { AssetType, PromiseRes, type AssetFile, type Dictionary } from "../SomeTypes";
 
 
 export class Library2 {
     private mainWindow: HTMLElement = (<main class={ styles.mainWindow }></main>);
     private intersector: IntersectionObserver | undefined;
 
-    public onClick: (thumbnail: HTMLImageElement) => void = () => { };
+    public onClick: (thumbnail: HTMLElement) => void = () => { };
 
     async LoadLibrary() {
         this.mainWindow.replaceChildren();
@@ -55,13 +55,13 @@ export class Library2 {
 
             const chunk =
                 <div>
-                <span class={ styles.MediaDateSeparator }>
-                    { key }
-                </span>
-                <div class={ styles.MediaGroup }>
-                    { imagesDate.map(a => this.CreateMedia(a)) }
-                </div>
-            </div>;
+                    <span class={ styles.MediaDateSeparator }>
+                        { key }
+                    </span>
+                    <div class={ styles.MediaGroup }>
+                        { imagesDate.map(a => this.CreateMedia(a)) }
+                    </div>
+                </div>;
             this.mainWindow.appendChild(chunk);
         }
 
@@ -90,26 +90,65 @@ export class Library2 {
     }
 
     private CreateMedia(asset: Asset) {
-        let mediaObject: HTMLImageElement;
-        let loadImage = async (image: HTMLImageElement, assetFile: Asset) => {
-            console.log("Load image", assetFile.path);
-            image.setAttribute("data-loading", "true");
-
-            if (assetFile.handle.size < 1024 * 1024 * 10) {
-                image.addEventListener("error", async () => {
-                    image.setAttribute("data-loading", "try thumbnail");
-                    image.src = LoadingIndicatorURL;
-                    image.src = await assetFile.GetThumbnailUrl();
-                    image.setAttribute("data-loading", "done 1");
-                }, { once: true });
-                image.setAttribute("data-loading", "try native");
-                image.src = assetFile.GetUrl();
-            } else {
-                image.setAttribute("data-loading", "to big. try thumbnail");
-                image.src = await assetFile.GetThumbnailUrl();
-                image.setAttribute("data-loading", "done 2");
+        this.intersector ??= new IntersectionObserver((entries, observer) => {
+            for (const entry of entries) {
+                const target = entry.target as HTMLElement;
+                if (entry.isIntersecting) {
+                    const file = Asset.loadedAssets[target.getAttribute("data-src")!];
+                    if (file) {
+                        const type = file.GetType();
+                        switch (type) {
+                            case AssetType.TEXT:
+                                this.DisplayTextThumbnail(target as HTMLDivElement, file);
+                                break;
+                            default:
+                                this.DisplayImageThumbnail(target as HTMLImageElement, file);
+                                break;
+                        }
+                    }
+                    observer.unobserve(target);
+                }
             }
-        };
+        });
+
+        switch (asset.GetType()) {
+            case AssetType.TEXT:
+                return this.CreateTextMedia(asset);
+            default:
+                return this.CreateBitmapMedia(asset);
+        }
+    }
+
+    private CreateTextMedia(asset: Asset) {
+        let textObject: HTMLTextAreaElement;
+        const media = (
+            <div class={ styles.MediaContainer }>
+                <textarea
+                    placeholder="There would be text here if the file had any text"
+                    readOnly={ true }
+                    wrap="soft"
+                    autocomplete="off"
+                    autocorrect={ false }
+                    autocapitalize="off"
+                    spellcheck={ false }
+                    onclick={ () => this.onClick(textObject) }
+                    title={ asset.path }
+                    data-src={ asset.path }
+                    ref={ e => textObject = e }
+                    class={ styles.TextElement }>
+                </textarea>
+            </div>);
+
+        this.intersector?.observe(textObject!);
+        //asset.GetThumbnailUrl().then(r => {
+        //    mediaObject.src = r;
+        //});
+
+        return media;
+    }
+
+    private CreateBitmapMedia(asset: Asset) {
+        let mediaObject: HTMLImageElement;
         const media = (
             <div class={ styles.MediaContainer }>
                 <img
@@ -126,19 +165,7 @@ export class Library2 {
                 </img>
             </div>);
 
-        this.intersector ??= new IntersectionObserver((entries, observer) => {
-            for (const entry of entries) {
-                const target = entry.target as HTMLImageElement;
-                if (entry.isIntersecting) {
-                    const file = Asset.loadedAssets[target.getAttribute("data-src")!];
-                    if (file)
-                        loadImage(target, file);
-                    observer.unobserve(target);
-                }
-            }
-        });
-
-        this.intersector.observe(mediaObject!);
+        this.intersector?.observe(mediaObject!);
         //asset.GetThumbnailUrl().then(r => {
         //    mediaObject.src = r;
         //});
@@ -185,7 +212,7 @@ export class Library2 {
                     { loadServer }
                     { loadLocal }
                 </div>
-                <span class={ styles.error } style={  { display: serverErrorCode ? "unset" : "none"} }>
+                <span class={ styles.error } style={ { display: serverErrorCode ? "unset" : "none" } }>
                     { serverErrorCode ? `Could not load from server: ${serverErrorCode} ` : "" }
                 </span>
             </div>
@@ -240,4 +267,39 @@ export class Library2 {
         input.click();
         return promise;
     }
+
+    private async DisplayImageThumbnail(image: HTMLImageElement, assetFile: Asset) {
+        console.log("Load image", assetFile.path);
+        image.setAttribute("data-loading", "true");
+
+        if (assetFile.handle.size < 1024 * 1024 * 10) {
+            image.addEventListener("error", async () => {
+                image.setAttribute("data-loading", "try thumbnail");
+                image.src = LoadingIndicatorURL;
+                image.src = await assetFile.GetThumbnailUrl();
+                image.setAttribute("data-loading", "done 1");
+            }, { once: true });
+            image.setAttribute("data-loading", "try native");
+            image.src = assetFile.GetUrl();
+        } else {
+            image.setAttribute("data-loading", "to big. try thumbnail");
+            image.src = await assetFile.GetThumbnailUrl();
+            image.setAttribute("data-loading", "done 2");
+        }
+    };
+
+    private async DisplayTextThumbnail(textEl: HTMLDivElement, assetFile: Asset) {
+        console.log("Load text", assetFile.path);
+        textEl.setAttribute("data-loading", "try native");
+
+        const response = await fetch(assetFile.GetUrl(), {
+            headers: {
+                'Range': `bytes=0-${2048 - 1}`
+            }
+        });
+
+        const text = await response.text();
+        textEl.textContent = text;
+        textEl.setAttribute("data-loading", "done 2");
+    };
 }

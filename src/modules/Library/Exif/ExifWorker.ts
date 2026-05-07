@@ -1,119 +1,79 @@
-import { PromiseRes, SeekableWorkerUrl, type WorkerExifTags, type WorkerMediaInfo, type WorkerRequestExif, type WorkerShutdown } from "@/modules/SomeTypes"
 
-import type { MainModule } from "./libexif";
-import libexif_wasm from "./libexif.mjs";
+import type { WorkerExifTags, ExifTree, WorkerRequestThumbnailBlob, WorkerRequestExif, WorkerSubmitThumbnailString } from "@/modules/SomeTypes";
+import { parseMetadata } from "@uswriting/exiftool";
+import wasmUrl from '@6over3/zeroperl-ts/zeroperl.wasm';
 
-//@ts-ignore
-import exifWasmImport from "./libexif.wasm";
-import { CtrlPkg, STATE_EOF, STATE_GOOD, STATE_NOT_INIT, type SeekableWorkerCtrlBuf } from "@/modules/Video/SharedSeekableStream2";
-
-
-const exifWasm = exifWasmImport;
-let outModule: MainModule;
-let ctrlBuff: BigInt64Array;
-let readOffset: bigint = 0n;
-let endOfFile = false;
-let seekerWorker: Worker;
-let seekerChannel = new MessageChannel();
-let exifData: WorkerExifTags = {
-    kind: "exifTags",
-    tags: [],
-    xmpImages: []
-}
-
-async function LoadWasmModule(dataInfo: WorkerRequestExif) {
-    const newModule = await libexif_wasm({
-        locateFile: (file: string) => file.endsWith(".wasm") ? exifWasm : file,
-        onRuntimeInitialized: () => {
-            console.log("Libexif WebAssembly initialized.");
-        },
-    }) as MainModule;
-
-    if (dataInfo.url) {
-        const { promise, resolve } = PromiseRes<void>();
-        seekerWorker = new Worker(SeekableWorkerUrl, { type: 'module', name: "I buffer the file " + dataInfo.url });
-        seekerWorker.onmessage = (e: MessageEvent<SeekableWorkerCtrlBuf>) => {
-            if (e.data.type === "ctrlBuffer") {
-                ctrlBuff = e.data.buffer;
-                resolve();
-            }
-        };
-        const buf = dataInfo.bufferSize ?? 32768;
-        seekerWorker.postMessage({
-            type: "init",
-            url: dataInfo.url,
-            buffsize: buf,
-            port: seekerChannel.port2,
-            sharedBuffer: newModule.wasmMemory
-        }, [seekerChannel.port2]);
-        await promise;
-    }
-
-    return newModule;
-}
-
+declare var self: DedicatedWorkerGlobalScope;
 // @ts-ignore
-self.fetch_data = (ptr: number, size: number) => {
-    if (ptr <= 0) return 0;
-    //console.log(outModule.HEAPU8.buffer.byteLength);
+self.window = {};
+// @ts-ignore
+self.document = {};
 
-
-    Atomics.wait(ctrlBuff, CtrlPkg.STREAM_STATE, STATE_NOT_INIT);
-
-    Atomics.store(ctrlBuff, CtrlPkg.REQ_OFFSET, readOffset);
-    Atomics.store(ctrlBuff, CtrlPkg.REQ_SIZE, BigInt(size));
-    Atomics.store(ctrlBuff, CtrlPkg.REQ_PTR, BigInt(ptr));
-
-    Atomics.store(ctrlBuff, CtrlPkg.RET_STATE, STATE_NOT_INIT);
-    //console.log("read", ptr);
-    seekerChannel.port1?.postMessage("request");
-    Atomics.wait(ctrlBuff, CtrlPkg.RET_STATE, STATE_NOT_INIT);
-    //console.log("done read", ptr);
-
-    const state = Atomics.load(ctrlBuff, CtrlPkg.RET_STATE);
-    if (state === STATE_EOF) {
-        console.error("EOF :/");
-        endOfFile = true;
-        return -2;
-    } else if (state !== STATE_GOOD) {
-        console.error("Smth not ok?????????????????????????????????????");
-        return 0;
-    }
-
-    const byteLenght = Number(Atomics.load(ctrlBuff, CtrlPkg.RET_SIZE));
-    if (byteLenght <= 0) {
-        if (byteLenght == -2)
-            endOfFile = true;
-        return byteLenght;
-    }
-    //(outModule.HEAPU8 as Uint8Array).set(data!.subarray(0, byteLenght), ptr);
-
-    readOffset += BigInt(byteLenght);
-    //console.log(Number(readOffset) / Number(controlPkg[0]));
-    return byteLenght;
+const fetchFunc = (...args: unknown[]) => {
+    return fetch(wasmUrl);
 };
 
-// @ts-ignore
-self.submit_exif_tag = (title: string, name: string, desc: string, value: string) => {
-    exifData.tags.push({
-        title, name, desc, value
+async function ExtractExif(asset: { name: string; data: Uint8Array | Blob; }): Promise<WorkerExifTags> {
+
+    const output = await parseMetadata(asset, {
+        args: ["-a", "-all:all", "-trailer", "-j", "-G0", "-b"],
+        transform: (data) => JSON.parse(data),
+        fetch: fetchFunc,
     });
+
+    let exifTree: ExifTree = {};
+    for (const [key, val] of Object.entries(output.data[0])) {
+        if (key === 'SourceFile')
+            continue;
+
+        const [group, tag] = key.split(':');
+        if (exifTree[group] == undefined) {
+            exifTree[group] = {
+                name: group,
+                tags: []
+            };
+        }
+
+        exifTree[group].tags.push({
+            name: tag,
+            value: val as string | number | (string | number)[]
+        });
+    }
+
+    return {
+        kind: "exifTags",
+        tree: exifTree
+    };
 }
 
-self.onmessage = async (e: MessageEvent<WorkerRequestExif | WorkerShutdown>) => {
-    switch (e.data.kind) {
-        case "exifRequest": {
-            outModule = await LoadWasmModule(e.data);
-            let ret = outModule._get_exif(e.data.bufferSize);
-            console.log("Libexif returned", ret);
-            self.postMessage(exifData);
-            return;
-        }
-        case "shutdown": {
-            //seekerWorker?.postMessage({ type: "destroy" } as SeekableWorkerDestroy);
-            seekerWorker?.terminate();
-            self.postMessage({ kind: "shutdown" } as WorkerShutdown);
-            return;
-        }
+async function ExtractExifThumbnail(asset: { name: string; data: Uint8Array | Blob; }): Promise<string | null> {
+    const output = await parseMetadata(asset, {
+        args: ["-thumbnailimage", "-b", "-j"],
+        transform: (data) => JSON.parse(data),
+        fetch: fetchFunc,
+    });
+
+    if (!output.success)
+        return null;
+
+    const thumb: string | undefined = output.data[0].ThumbnailImage;
+
+    if (thumb == undefined)
+        return null;
+    return thumb;
+}
+
+
+self.onmessage = async (message: MessageEvent<WorkerRequestThumbnailBlob | WorkerRequestExif>) => {
+    switch (message.data.kind) {
+        case "thumbnailRequestBlob":
+            self.postMessage({
+                kind: "thumbnailDataString",
+                data: await ExtractExifThumbnail({ name: message.data.name, data: message.data.blob })
+            } as WorkerSubmitThumbnailString);
+            break;
+        case "exifRequest":
+            self.postMessage(await ExtractExif({ name: message.data.name, data: message.data.blob }));
+            break;
     }
 };

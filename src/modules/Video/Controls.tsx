@@ -1,9 +1,9 @@
 import styles from '@/css/VideoControls.module.css';
 import { createBox } from '@/JSXRuntime/Box';
-import type { AudioMediaStream, ChapterInfo, SubtitleMediaStream, VideoMediaStream } from '../SomeTypes';
+import type { AudioMediaStream, ChapterInfo, FFmpegMediaStream, SubtitleMediaStream, VideoMediaStream } from '../SomeTypes';
 
 export interface MediaControlCallbacks {
-    onPlayPause: (intent?:boolean) => Promise<boolean>;
+    onPlayPause: (intent?: boolean) => Promise<boolean>;
     onSeekTo: (time: number) => void;
     onStepFrame: () => void;
     onVolumeChange: (volume: number) => void;
@@ -283,9 +283,9 @@ export class MediaControls {
             this.videoSelect.appendChild(
                 <option
                     selected={ video.isUsed }
-                    value={ video.index.toString() }
-                    text={ video.metadata["title"] ?? video.metadata["TITLE"] ?? video.metadata["language"] ?? video.metadata["LANGUAGE"] ?? `Stream: ${video.index}` }
-                />);
+                    value={ video.index.toString() }>
+                    { optionText(video) }
+                </option>);
         }
 
         const visible = videos.length > 0 ? 'unset' : 'none';
@@ -301,9 +301,9 @@ export class MediaControls {
         for (const audio of audios) {
             this.audioSelect.appendChild(<option
                 selected={ audio.isUsed }
-                value={ audio.index.toString() }
-                text={ audio.metadata["title"] ?? audio.metadata["TITLE"] ?? audio.metadata["language"] ?? audio.metadata["LANGUAGE"] ?? `Stream: ${audio.index}` }
-            />);
+                value={ audio.index.toString() }>
+                { optionText(audio) }
+            </option>);
         }
 
         const visible = audios.length > 0 ? 'unset' : 'none';
@@ -319,9 +319,9 @@ export class MediaControls {
         for (const subtitle of subtitles) {
             this.subtitleSelect.appendChild(<option
                 selected={ subtitle.isUsed }
-                value={ subtitle.index.toString() }
-                text={ subtitle.metadata["title"] ?? subtitle.metadata["TITLE"] ?? subtitle.metadata["language"] ?? subtitle.metadata["LANGUAGE"] ?? `Stream: ${subtitle.index}` }
-            />);
+                value={ subtitle.index.toString() }>
+                { optionText(subtitle) }
+            </option>);
         }
 
         const visible = subtitles.length > 0 ? 'unset' : 'none';
@@ -609,4 +609,8 @@ function makeDraggable(element: HTMLElement, container?: HTMLElement) { // Added
         document.removeEventListener('touchmove', onTouchMove);
         document.removeEventListener('touchend', onTouchEnd);
     };
+}
+
+function optionText(stream: FFmpegMediaStream) {
+    return stream.metadata["title"] ?? stream.metadata["TITLE"] ?? stream.metadata["language"] ?? stream.metadata["LANGUAGE"] ?? `Stream: ${stream.index}`
 }

@@ -34,8 +34,11 @@
             "@/*": [
                 "./src/*"
             ],
-            "Resources/*": [
+            "@Resources/*": [
                 "./Resources/*"
+            ],
+            "@FFmpeg/*": [
+                "./ffmpeg/dist/lib/*"
             ],
         },
         // Some stricter flags (disabled by default)

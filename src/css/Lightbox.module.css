@@ -17,6 +17,16 @@ body {
     /* background: repeating-conic-gradient(var(--md-sys-color-surface-container-low) 0 25%, var(--md-sys-color-surface-container-lowest) 0 50%) 50% / 3rem 3rem; */
 }
 
+.LightboxTextAdditions {
+    width: 90%;
+    height: 90%;
+    color: var(--md-sys-color-primary);
+    background-color: var(--md-sys-color-surface-container-low);
+    border-radius: 1rem;
+    text-align: initial;
+    transition: none;
+}
+
 
 .Sidebar {
     /* transition: width var(--lightbox-transition-time) cubic-bezier(.16, 1, .3, 1); */

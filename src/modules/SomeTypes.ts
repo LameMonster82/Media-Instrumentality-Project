@@ -160,7 +160,7 @@ interface AudioDataInitArrayBuffer extends AudioDataInit {
     data: ArrayBuffer;
 }
 
-interface FFmpegMediaStream {
+export interface FFmpegMediaStream {
     type: string,
     index: number,
     isSupported: boolean,
@@ -274,14 +274,25 @@ export interface WorkerRequestThumbnail extends WorkerPostMessage {
     readonly url: string;
 }
 
+export interface WorkerRequestThumbnailBlob extends WorkerPostMessage {
+    readonly kind: "thumbnailRequestBlob";
+    readonly name: string;
+    readonly blob: Blob;
+}
+
+export interface WorkerSubmitThumbnailString extends WorkerPostMessage {
+    readonly kind: "thumbnailDataString";
+    readonly data: string | null;
+}
+
 export interface WorkerRequestDemuxers extends WorkerPostMessage {
     readonly kind: "demuxerRequest";
 }
 
 export interface WorkerRequestExif extends WorkerPostMessage {
     readonly kind: "exifRequest";
-    readonly url: string;
-    readonly bufferSize: number;
+    readonly name: string;
+    readonly blob: Blob;
 }
 
 export interface WorkerShutdown extends WorkerPostMessage {
@@ -450,6 +461,7 @@ export enum AssetType {
     IMAGE,
     VIDEO,
     AUDIO,
+    TEXT,
     FOLDER,
     UNKNOWN
 }
@@ -515,6 +527,14 @@ export function isCoverImage(fileName: string): boolean {
         default:
             return false;
     }
+}
+
+export function getMimeType(base64: string) {
+    if (base64.startsWith('base64:/9j/')) return 'image/jpeg';
+    if (base64.startsWith('base64:iVBORw0KGgo')) return 'image/png';
+    if (base64.startsWith('base64:R0lGOD')) return 'image/gif';
+    if (base64.startsWith('base64:UklGR')) return 'image/webp';
+    return undefined; // fallback
 }
 
 export function ReplaceWithIcon(root: HTMLElement, type: AssetType) {
@@ -620,8 +640,6 @@ export function AudioTime(audio: WorkerAudioDataInit | WorkerAudioData) {
     };
 }
 
-
-export const libexifUrl = new URL('src/modules/Library/Exif/ExifWorker.js', location.origin);
 export const ffmpegUrl = new URL('src/modules/Video/FFmpeg/FFmpegBridge.js', location.origin);
 export const SeekableWorkerUrl = new URL('src/modules/Video/SharedSeekableStream2.js', location.origin);
 export const videoStreamWorkerUrl = new URL('src/modules/Video/VideoStreamTrack.js', location.origin);

@@ -1,142 +1,84 @@
 import type { Asset } from "../Asset";
-import { libexifUrl, PromiseRes, type ExifTree, type WorkerExifTags, type WorkerRequestExif } from "@/modules/SomeTypes";
-import { dispose, parseMetadata } from '@uswriting/exiftool';
+import { getMimeType, PromiseRes, type WorkerExifTags, type WorkerRequestExif, type WorkerRequestThumbnailBlob, type WorkerSubmitThumbnail, type WorkerSubmitThumbnailString } from "@/modules/SomeTypes";
 
-
-const { promise: exifDocs, resolve } = PromiseRes<Document>();
-
-fetch("Resources/ExifTags.xml").then(async (e) => {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(await e.text(), 'application/xml');
-    resolve(doc);
-});
+const workerUrl = new URL('src/modules/Library/Exif/ExifWorker.js', import.meta.url);
+const docs = fetch("Resources/ExifTags.xml");
+const parser = new DOMParser();
 
 export async function ExtractExif(asset: Asset): Promise<WorkerExifTags> {
-    const output = await parseMetadata({ name: asset.GetName(), data: await asset.AsBlob() }, {
-        args: ["-a", "-all:all", "-trailer", "-j", "-G0", "-b"],
-        transform: (data) => JSON.parse(data),
-        fetch: (...args) => {
-            return fetch("node_modules/@6over3/zeroperl-ts/dist/esm/zeroperl.wasm");
-        },
-    });
+    const worker = new Worker(workerUrl, { type: 'module', name: "I run exiftools on your media" });
 
-    const doc = await exifDocs;
-
-    let exifTree: ExifTree = {};
-    for (const [key, val] of Object.entries(output.data[0])) {
-        if (key === 'SourceFile')
-            continue;
-
-        const [group, tag] = key.split(':');
-        if (exifTree[group] == undefined) {
-            exifTree[group] = {
-                name: doc.getElementById(group)?.querySelector("desc[lang='en']")?.textContent ?? group,
-                tags: []
-            };
+    const { promise, resolve } = PromiseRes<WorkerExifTags>();
+    worker.onmessage = (message: MessageEvent<WorkerExifTags>) => {
+        switch (message.data.kind) {
+            case "exifTags":
+                resolve(message.data);
+                worker.terminate();
+                break;
         }
-
-        exifTree[group].tags.push({
-            name: doc.querySelector(`tag[name=${tag}]`)?.querySelector("desc[lang='en']")?.textContent ?? tag,
-            value: val as string | number | (string | number)[]
-        });
-    }
-
-    return {
-        kind: "exifTags",
-        tree: exifTree
     };
 
+    worker.postMessage({
+        kind: "exifRequest",
+        name: asset.GetName(),
+        blob: await asset.AsBlob()
+    } as WorkerRequestExif);
 
-    return new Promise<WorkerExifTags>(async resolve => {
-        const exifWorker = new Worker(libexifUrl, { type: 'module', name: "I Extract Exif Data for " + asset.GetUrl() });
+    const data = await promise;
+    const doc = parser.parseFromString(await (await docs).text(), 'application/xml');
 
-        const extraImages = ExtractEmbeddedJpegs(asset.GetUrl());
+    for (const key of Object.keys(data.tree)) {
+        data.tree[key].name = doc.getElementById(key)?.querySelector("desc[lang='en']")?.textContent ?? key;
 
-        exifWorker.onerror = (e) => {
-            console.error('Worker error:', e);
-        };
+        for (const tag of data.tree[key].tags) {
+            tag.name = doc.querySelector(`tag[name=${tag.name}]`)?.querySelector("desc[lang='en']")?.textContent ?? tag.name;
+        }
+    }
 
-        exifWorker.onmessage = async (data: MessageEvent<WorkerExifTags>) => {
-            switch (data.data.kind) {
-                case "exifTags": {
-                    data.data.xmpImages.push(...await extraImages);
-                    resolve(data.data);
-                    exifWorker.postMessage({ kind: "shutdown" });
-                    exifWorker.terminate();
-                }
-            }
-        };
-
-        exifWorker.postMessage({
-            kind: "exifRequest",
-            url: asset.GetUrl(),
-            bufferSize: 32768
-        } as WorkerRequestExif);
-    });
+    return data;
 }
 
-function ExtractXMP(buffer: Uint8Array) {
-    const text = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+export async function ExtractExifThumbnail(asset: Asset): Promise<WorkerSubmitThumbnail | null> {
+    const worker = new Worker(workerUrl, { type: 'module', name: "I use exiftools for a thumbnail on " + asset.GetName() });
 
-    const start = text.indexOf("<x:xmpmeta");
-    const end = text.indexOf("</x:xmpmeta>");
+    const { promise, resolve } = PromiseRes<WorkerSubmitThumbnailString>();
+    worker.onmessage = (message: MessageEvent<WorkerSubmitThumbnailString>) => {
+        switch (message.data.kind) {
+            case "thumbnailDataString":
+                resolve(message.data);
+                break;
+        }
+    };
 
-    if (start !== -1 && end !== -1) {
-        const xmp = text.slice(start, end + "</x:xmpmeta>".length);
-        return xmp;
-    } else {
+    worker.postMessage({
+        kind: "thumbnailRequestBlob",
+        name: asset.GetName(),
+        blob: await asset.AsBlob()
+    } as WorkerRequestThumbnailBlob);
+
+    const thumb = (await promise).data;
+    worker.terminate();
+    if (thumb == null)
         return null;
-    }
-}
 
-function ParseXmpItems(xmpString: string): XMPImage[] {
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xmpString, "application/xml");
-    const items = Array.from(xmlDoc.getElementsByTagName("Container:Item"));
+    const mime = getMimeType(thumb);
+    const fixed = thumb.replace("base64:", 'base64,');
+    const src = `data:${mime};${fixed}`;
 
-    return items.map((item, index) => ({
-        mime: item.getAttribute("Item:Mime") ?? `Unknown ${index}`,
-        length: parseInt(item.getAttribute("Item:Length") ?? "0", 10),
-        semantic: item.getAttribute("Item:Semantic") ?? `Unknown ${index}`,
-    }));
-}
+    const image = new Image();
+    const { promise: imagePromise, resolve: imageResolve } = PromiseRes<WorkerSubmitThumbnail | null>();
+    image.onload = async () => {
+        imageResolve({
+            kind: "thumbnailData",
+            width: image.naturalWidth,
+            height: image.naturalHeight,
+            image: await (await fetch(src)).blob()
+        });
+    };
+    image.onerror = () => {
+        imageResolve(null);
+    };
 
-function FindEOIMarker(uint8arr: Uint8Array) {
-    for (let i = 0; i < uint8arr.length - 1; i++) {
-        if (uint8arr[i] === 0xFF && uint8arr[i + 1] === 0xD9) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-async function ExtractEmbeddedJpegs(file: string) {
-    const buffer = new Uint8Array(await (await fetch(file)).arrayBuffer());
-
-    // 1. Extract XMP
-    const xmp = ExtractXMP(buffer);
-    if (!xmp) {
-        console.warn("No XMP block found");
-        return [];
-    }
-
-    const items = ParseXmpItems(xmp);
-    const primaryEnd = FindEOIMarker(buffer);
-    if (primaryEnd === -1) {
-        console.warn("No JPEG EOI found");
-        return [];
-    }
-
-    let offset = primaryEnd + 2;
-
-    for (const item of items) {
-        if (item.length > 0) {
-            const chunk = buffer.subarray(offset, offset + item.length);
-
-            item.rawData = chunk;
-            offset += item.length;
-        }
-    }
-    console.log(items);
-    return items;
+    image.src = src;
+    return await imagePromise;
 }

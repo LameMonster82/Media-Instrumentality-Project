@@ -4,16 +4,15 @@ import { type AllTargetWorkerMessages, type WorkerSubmitStreams, type WorkerRequ
 import { AVLogLevel, AVPixelFormatToVideoFormat, supported_pxl_formats } from "./AVTypes";
 import { ImageToDataURL, VideoFrameToDataURL } from "../QuickDrawCanvas";
 import { CtrlPkg, STATE_NOT_INIT, type SeekableWorkerSeek, STATE_GOOD, type SeekableWorkerCtrlBuf } from "../SharedSeekableStream2";
-import type { FFmpegWorker } from "./ffmpeg";
-import ffwasmplayer from "./ffmpeg";
+import type { FFmpegWorker } from "@FFmpeg/FFmpegTypes";
 
 import { fetch_video_data, seek_video_data } from "./IO";
 import { submit_subtitle_config, submit_subtitle_bitmap, submit_subtitle_ass, submit_attachment } from "./Subtitles";
 import { submit_video_config, submit_video_frame } from "./Video";
 import { submit_audio_config, submit_audio_frame } from "./Audio";
 
-import ffwasmImport from "./ffmpeg.wasm";
 import { submit_raw_packet } from "./WebDecoder";
+import type { MainModule } from "@FFmpeg/ffmpeg-wasm32/ffmpeg";
 
 // Default type of `self` is `WorkerGlobalScope & typeof globalThis`
 // https://github.com/microsoft/TypeScript/issues/14877
@@ -85,12 +84,20 @@ async function AskFFmpegToSeek(time: number) {
 }
 
 async function LoadWasmModule(dataInfo: WorkerInitFFmpeg | WorkerInitFFmpegOnlyModule) {
-    const newModule = await ffwasmplayer({
-        locateFile: (file: string) => file.endsWith(".wasm") ? ffwasmImport : file,
+    const wasm64 = await supportsWasm64();
+    const wasmName = wasm64 ? "ffmpeg-wasm64" : "ffmpeg-wasm32";
+    const { default: FFmpegModule } = wasm64 ? (await import("@FFmpeg/ffmpeg-wasm64/ffmpeg.mjs")) : (await import("@FFmpeg/ffmpeg-wasm32/ffmpeg.mjs"));
+
+    const newModule = await FFmpegModule({
+        locateFile: (file: string, scriptDirectory: string) => {
+            console.log(file, scriptDirectory);
+            return `${location.origin}/ffmpeg/dist/lib/${wasmName}/${file}`
+        },
+        mainScriptUrlOrBlob: `${location.origin}/ffmpeg/dist/lib/${wasmName}/ffmpeg.js`,
         onRuntimeInitialized: () => {
             console.log("FFmpeg WebAssembly initialized.");
         },
-    });
+    }) as MainModule;
 
     if (dataInfo.url) {
         const { promise, resolve } = PromiseRes<void>();
@@ -338,5 +345,28 @@ function streamsWithoudDecoder() {
         Object.assign(newStream, workerState.streams[parseInt(key)]);
         return newStream;
     });
+}
+
+async function supportsWasm64() {
+  const wasm64Module = new Uint8Array([
+    0x00,0x61,0x73,0x6d, // magic
+    0x01,0x00,0x00,0x00, // version
+
+    // memory section
+    0x05, // section id
+    0x04, // section length
+    0x01, // one memory
+    0x04, // memory64 + max present
+    0x01, // min = 1
+    0x01  // max = 1
+  ]);
+
+  // WebAssembly.validate checks if the module is valid
+  try {
+    await WebAssembly.compile(wasm64Module);
+    return true;
+  } catch {
+    return false;
+  }
 }
 

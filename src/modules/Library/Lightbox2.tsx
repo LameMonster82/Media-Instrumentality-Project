@@ -3,52 +3,77 @@ import videoStyles from "@/css/VideoControls.module.css";
 import { Asset } from "./Asset";
 import { ExtractExif } from "./Exif/ExtractExifData";
 import { LoadingIndicatorURL } from "../LoadingLoop";
-import { AssetType, FormatBytes, type ExifTree } from "../SomeTypes";
+import { AssetType, FormatBytes, getMimeType, type ExifTree } from "../SomeTypes";
 import { VideoPlayer } from "@/modules/Video/VideoPlayer";
 
 export class Lightbox2 {
     private dialog: HTMLDialogElement | undefined;
     private sideMenu: HTMLElement | undefined;
-    private currentlyOpenImages: { srcImage: HTMLImageElement; image: HTMLElement; zoom: ZoomStuff; }[] = [];
+    private currentlyOpenImages: { srcImage: HTMLElement; image: HTMLElement; zoom: ZoomStuff; }[] = [];
     private videoPlayer: VideoPlayer | undefined;
 
-    openDialog(srcImage: HTMLImageElement) {
+    openDialog(srcElement: HTMLElement) {
         if (!this.dialog) return;
 
-        const imageStyle = window.getComputedStyle(srcImage);
-        const thing = srcImage.getBoundingClientRect();
-        const filePath = srcImage.getAttribute("data-src");
+        const elStyle = window.getComputedStyle(srcElement);
+        const thing = srcElement.getBoundingClientRect();
+        const filePath = srcElement.getAttribute("data-src");
         const asset = filePath ? (Asset.loadedAssets[filePath] ?? undefined) : undefined;
 
         document.body.style.overflow = "hidden";
 
-        const image =
-            <img
+        let tempView;
+        if (srcElement instanceof HTMLImageElement) {
+            tempView = <img
                 style={ {
-                    borderRadius: imageStyle.getPropertyValue("border-radius")
+                    borderRadius: elStyle.getPropertyValue("border-radius")
                 } }
                 class={ styles.LightboxPreview }
-                src={ asset?.GetUrl() ?? srcImage.src }>
+                src={ asset?.GetUrl() ?? srcElement.src }>
             </img> as HTMLImageElement;
+        } else {
+            tempView = <textarea
+                placeholder="There would be text here if the file had any text"
+                readOnly={ true }
+                wrap="soft"
+                autocomplete="off"
+                autocorrect={ false }
+                autocapitalize="off"
+                spellcheck={ false }
+                class={ `${styles.LightboxPreview} ${styles.LightboxTextAdditions}` }>
+                { srcElement.textContent }
+            </textarea>;
+        }
 
-        setRect(image, thing);
-        const openImage = () => {
-
-            this.dialog!.appendChild(image);
+        setRect(tempView, thing);
+        const openImage = async () => {
+            this.dialog!.appendChild(tempView);
             this.dialog!.showModal();
 
-            srcImage.style.opacity = "0";
+            srcElement.style.opacity = "0";
 
             requestAnimationFrame(() => {
-                image.style.left = "";
-                image.style.top = "";
-                image.style.width = "";
-                image.style.height = "";
+                tempView.style.left = "";
+                tempView.style.top = "";
+                tempView.style.width = "";
+                tempView.style.height = "";
             });
 
             if (asset) {
-                if (asset.GetType() !== AssetType.IMAGE) {
-                    this.playMedia(asset, image);
+                const type = asset.GetType();
+                if (type == AssetType.VIDEO) {
+                    this.playMedia(asset, tempView as HTMLImageElement);
+                } else if (type == AssetType.TEXT) {
+                    const monaco = await import("monaco-editor");
+                    tempView.style.display = "none";
+
+                    const container = <div class={ `${styles.LightboxPreview} ${styles.LightboxTextAdditions}` }></div>
+                    this.dialog!.append(container);
+
+                    monaco.editor.create(container, {
+                        value: await (await fetch(asset.GetUrl())).text(),
+                        theme: 'vs-dark',
+                    });
                 }
                 this.appendExifData(asset);
 
@@ -58,14 +83,20 @@ export class Lightbox2 {
         };
 
         //this.image.classList.add(styles.open);
-        this.currentlyOpenImages.push({ srcImage, image, zoom: new ZoomStuff(this.dialog, image) });
-        image.decode().then(s => {
+        this.currentlyOpenImages.push({ srcImage: srcElement, image: tempView, zoom: new ZoomStuff(this.dialog, tempView) });
+
+        if (tempView instanceof HTMLImageElement) {
+            tempView.decode().then(s => {
+                openImage();
+            }, e => {
+                console.warn(`Could not decode image ${asset?.handle.path ?? srcElement.title}: ${e}`);
+                tempView.src = (srcElement as HTMLImageElement).src;
+                openImage();
+            });
+        } else {
             openImage();
-        }, e => {
-            console.warn(`Could not decode image ${asset?.handle.path ?? srcImage.title}: ${e}`);
-            image.src = srcImage.src;
-            openImage();
-        });
+        }
+
     }
 
     appendExifData(asset: Asset) {
@@ -141,7 +172,7 @@ export class Lightbox2 {
             element.classList.add("viewAsset", "focused", "zoomin", "zoominVideo");
             element.style.width = videoElement.videoWidth + "px";
             element.style.height = videoElement.videoWidth + "px";
-            this.dialog!.insertBefore(element, controls);
+            videoBox.insertBefore(element, controls);
             lightboxImage.style.display = "none";
         }, 327680);
     }
@@ -331,14 +362,7 @@ function setRect(target: HTMLElement, rect: DOMRect) {
     target.style.height = rect.height + "px";
 }
 
-function getMimeType(base64: any) {
-    if (typeof base64 !== "string") return undefined;
-    if (base64.startsWith('base64:/9j/')) return 'image/jpeg';
-    if (base64.startsWith('base64:iVBORw0KGgo')) return 'image/png';
-    if (base64.startsWith('base64:R0lGOD')) return 'image/gif';
-    if (base64.startsWith('base64:UklGR')) return 'image/webp';
-    return undefined; // fallback
-}
+
 
 function renderExifDetails(tree: ExifTree): HTMLElement[] {
     let detailList = [];
@@ -352,12 +376,12 @@ function renderExifDetails(tree: ExifTree): HTMLElement[] {
             </details>;
 
         for (const tag of group.tags) {
-            const isImage = getMimeType(tag.value);
+            const isImage = typeof tag.value == "string" ? getMimeType(tag.value) : undefined;
 
             let theThing: HTMLElement | string;
             if (isImage) {
                 const fixed = (tag.value as string).replace("base64:", 'base64,');
-                theThing = <img src={`data:${isImage};${fixed}`}></img>
+                theThing = <img src={ `data:${isImage};${fixed}` }></img>;
             } else {
                 theThing = tag.value.toString();
             }

@@ -18,15 +18,23 @@ await esbuild.build({
         "src/modules/Video/ExtractThumbnailWorker.ts",
         "src/modules/Video/FFmpeg/WebCodecDecoder.ts",
         "src/modules/Video/SharedSeekableStream2.ts",
-        "src/modules/Video/FFmpeg/ffmpeg.js",
-        "node_modules/@6over3/zeroperl-ts/dist/esm/zeroperl.wasm",
+        "ffmpeg/dist/lib/ffmpeg-wasm32/ffmpeg.mjs",
+        "ffmpeg/dist/lib/ffmpeg-wasm64/ffmpeg.mjs",
+        "ffmpeg/dist/lib/ffmpeg-wasm32/ffmpeg-wasm32.wasm",
+        "ffmpeg/dist/lib/ffmpeg-wasm64/ffmpeg-wasm64.wasm",
         "Resources/ExifTags.xml"
     ],
     outdir: serveDir,
+    sourcemap: 'external',
+
+    // Esbuild automatically appends the extension, so omit `.[ext]`
     entryNames: '[dir]/[name]',
     assetNames: '[dir]/[name]',
+
+    // Required for `chunkNames` to take effect in esbuild
     bundle: true,
     format: 'esm',
+    splitting: true,
     platform: 'browser',
     plugins: [htmlPlugin(), {
         name: "node-externals",
@@ -41,11 +49,15 @@ await esbuild.build({
     supported: {
         'top-level-await': true
     },
+
     sourcemap: true,
+    outdir: 'build',
+
     loader: {
         '.wasm': 'file',
         '.module.css': 'local-css',
         '.xml': 'file',
+        '.ttf': 'file',
     },
 });
 

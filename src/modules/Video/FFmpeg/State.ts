@@ -1,4 +1,4 @@
-import { type MainModule } from "./ffmpeg.js";
+import type { MainModule } from "@FFmpeg/ffmpeg-wasm32/ffmpeg.js";
 import { type Dictionary, type FFmpegStreams } from "../../SomeTypes.ts";
 
 export class WorkerState {

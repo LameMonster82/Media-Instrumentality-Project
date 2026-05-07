@@ -14,6 +14,9 @@ import { submit_audio_config, submit_audio_frame } from "./Audio";
 import { submit_raw_packet } from "./WebDecoder";
 import type { MainModule } from "@FFmpeg/ffmpeg-wasm32/ffmpeg";
 
+import ffmpeg32 from "@FFmpeg/ffmpeg-wasm32/ffmpeg-wasm32.wasm";
+import ffmpeg64 from "@FFmpeg/ffmpeg-wasm64/ffmpeg-wasm64.wasm";
+
 // Default type of `self` is `WorkerGlobalScope & typeof globalThis`
 // https://github.com/microsoft/TypeScript/issues/14877
 declare var self: FFmpegWorker;
@@ -89,10 +92,7 @@ async function LoadWasmModule(dataInfo: WorkerInitFFmpeg | WorkerInitFFmpegOnlyM
     const { default: FFmpegModule } = wasm64 ? (await import("@FFmpeg/ffmpeg-wasm64/ffmpeg.mjs")) : (await import("@FFmpeg/ffmpeg-wasm32/ffmpeg.mjs"));
 
     const newModule = await FFmpegModule({
-        locateFile: (file: string, scriptDirectory: string) => {
-            console.log(file, scriptDirectory);
-            return `${location.origin}/ffmpeg/dist/lib/${wasmName}/${file}`
-        },
+        locateFile: (file: string, scriptDirectory: string) => `${location.origin}/${wasm64 ? ffmpeg64 : ffmpeg32}`,
         mainScriptUrlOrBlob: `${location.origin}/ffmpeg/dist/lib/${wasmName}/ffmpeg.js`,
         onRuntimeInitialized: () => {
             console.log("FFmpeg WebAssembly initialized.");

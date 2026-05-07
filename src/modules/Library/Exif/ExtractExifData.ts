@@ -1,9 +1,19 @@
 import type { Asset } from "../Asset";
 import { getMimeType, PromiseRes, type WorkerExifTags, type WorkerRequestExif, type WorkerRequestThumbnailBlob, type WorkerSubmitThumbnail, type WorkerSubmitThumbnailString } from "@/modules/SomeTypes";
+import exifXml from "@Resources/ExifTags.xml";
 
 const workerUrl = new URL('src/modules/Library/Exif/ExifWorker.js', import.meta.url);
-const docs = fetch("Resources/ExifTags.xml");
+const docs = fetch(exifXml);
 const parser = new DOMParser();
+
+const { promise: docPromise, resolve: docResolve } = PromiseRes<Document>();
+docs.then(async t => {
+    const text = await t.text();
+    const doc = parser.parseFromString(text, 'application/xml');
+    docResolve(doc);
+})
+
+
 
 export async function ExtractExif(asset: Asset): Promise<WorkerExifTags> {
     const worker = new Worker(workerUrl, { type: 'module', name: "I run exiftools on your media" });
@@ -25,7 +35,7 @@ export async function ExtractExif(asset: Asset): Promise<WorkerExifTags> {
     } as WorkerRequestExif);
 
     const data = await promise;
-    const doc = parser.parseFromString(await (await docs).text(), 'application/xml');
+    const doc = await docPromise;
 
     for (const key of Object.keys(data.tree)) {
         data.tree[key].name = doc.getElementById(key)?.querySelector("desc[lang='en']")?.textContent ?? key;

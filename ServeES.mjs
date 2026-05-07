@@ -48,7 +48,7 @@ const ctx = await esbuild.context({
 
     // Esbuild automatically appends the extension, so omit `.[ext]`
     entryNames: '[dir]/[name]',
-    assetNames: '[dir]/[name]',
+    assetNames: 'Resources/[name]-[hash]',
 
     // Required for `chunkNames` to take effect in esbuild
     bundle: true,

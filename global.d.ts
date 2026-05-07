@@ -8,6 +8,11 @@ declare module "*.wasm" {
 	export = path;
 }
 
+declare module "*.xml" {
+	const path: `${string}.xml`;
+	export = path;
+}
+
 declare module "*.module.css" {
   const classes: { [key: string]: string };
   export default classes;

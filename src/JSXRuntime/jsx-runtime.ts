@@ -18,7 +18,7 @@ export function jsx<K extends keyof HTMLElementTagNameMap>(
                 (value as Box).element = el;
             } else if (typeof value === "function") {
                 (value as (e: HTMLElementTagNameMap[K]) => void)(el)
-            }   
+            }
         } else if (key.startsWith("on") && typeof value === "function") {
             el.addEventListener(key.substring(2).toLowerCase(), value as any);
         } else if (key == 'style') {

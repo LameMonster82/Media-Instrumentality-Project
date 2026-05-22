@@ -18,10 +18,13 @@
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2",
     "@chialab/esbuild-plugin-html": "^0.19.1",
+    "@types/three": "^0.184.1",
+    "@types/webxr": "^0.5.24",
     "@uswriting/exiftool": "^1.0.9",
     "ass-compiler": "^0.1.16",
     "assjs": "^0.1.6",
     "esbuild": "^0.27.7",
-    "monaco-editor": "0.55.1"
+    "monaco-editor": "0.55.1",
+    "three": "^0.184.0"
   }
 }

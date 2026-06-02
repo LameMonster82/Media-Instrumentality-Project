@@ -12,6 +12,8 @@
         "jsx": "react-jsx",
         "jsxImportSource": "custom-jsx",
         "allowJs": true,
+        "isolatedModules": true,
+        "esModuleInterop":true,
         // Bundler mode
         "moduleResolution": "bundler",
         "allowImportingTsExtensions": true,
@@ -26,10 +28,10 @@
         "libReplacement": true,
         "paths": {
             "custom-jsx/jsx-runtime": [
-                "./src/JSXRuntime/jsx-runtime.ts"
+                "./src/core/jsx/runtime.ts"
             ],
             "custom-jsx/jsx-dev-runtime": [
-                "./src/JSXRuntime/jsx-runtime.ts"
+                "./src/core/jsx/runtime.ts"
             ],
             "@/*": [
                 "./src/*"
@@ -54,7 +56,7 @@
             }
         ]
     },
-    "include": ["src/**/*", "global.d.ts", "src/JSXRuntime/jsx.d.ts"],
+    "include": ["src/**/*", "src/core/global.d.ts", "src/core/jsx/jsx.d.ts"],
     "exclude": [
         "dist",
         "node_modules",

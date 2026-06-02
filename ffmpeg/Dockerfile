@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # For d.ts
-RUN npm install -g typescript@5.5
+RUN npm install -g typescript@5.5 tsx
 
 # ---- Stage 1: Build zlib for wasm32 --------------------------------
 FROM base AS zlib-wasm32
@@ -90,12 +90,14 @@ EOF
 RUN bash /src/configure-ffmpeg.sh wasm32
 RUN emmake make -j$(nproc) && emmake make install
 
-WORKDIR /src/custom
-COPY glue.c thumbnail.c ./
+WORKDIR /src
+COPY src/ ./src/
+COPY include/ ./include/
 RUN mkdir -p /output
 RUN emcc \
     -O3 -flto -msimd128 -pthread \
     -I$INSTALL_DIR/include \
+    -Iinclude \
     -L$INSTALL_DIR/lib \
     -sMALLOC=mimalloc \
     -sFILESYSTEM=1 \
@@ -106,13 +108,19 @@ RUN emcc \
     -sEXPORT_ES6=1 \
     -sENVIRONMENT=web,worker \
     -sEXPORTED_FUNCTIONS='["_malloc","_free","setValue","_init_ffmpeg","_get_supported_demuxers","_get_exif","_open_file","_get_data","_seek_to","_cleanup","_extract_thumbnail"]' \
-    -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","wasmMemory"]' \
+    -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","wasmMemory", "setValue", "UTF8ToString", "HEAPU8", "HEAPU32"]' \
     -sALLOW_MEMORY_GROWTH=1 \
     -sINITIAL_MEMORY=32MB \
-    glue.c thumbnail.c \
+    src/main.c src/demux.c src/decode.c src/convert.c \
+    src/codec_config.c src/subtitle.c src/notify.c src/thumbnail.c \
     -lavcodec -lavformat -lavutil -lswscale -lswresample -lavfilter -lz \
     -o /output/ffmpeg-wasm32.mjs \
     --emit-tsd /output/ffmpeg-wasm32.d.ts
+
+# ---- Generate preprocessed headers ----
+COPY gen_struct.ts ./gen_struct.ts
+RUN emcc -sMEMORY64=0 -E -P include/events.h -o /tmp/events-wasm32.h
+RUN tsx gen_struct.ts --pointer-size 4 /tmp/events-wasm32.h -o /output/events-wasm32.ts
 
 # ---- Stage 4: Build FFmpeg for Wasm64 ------------------------------
 FROM base AS build-wasm64
@@ -165,12 +173,14 @@ EOF
 RUN bash /src/configure-ffmpeg.sh wasm64
 RUN emmake make -j$(nproc) && emmake make install
 
-WORKDIR /src/custom
-COPY glue.c thumbnail.c ./
+WORKDIR /src
+COPY src/ ./src/
+COPY include/ ./include/
 RUN mkdir -p /output
 RUN emcc \
     -O3 -flto -msimd128 -pthread \
     -I$INSTALL_DIR/include \
+    -Iinclude \
     -L$INSTALL_DIR/lib \
     -sMEMORY64=1 \
     -sMALLOC=mimalloc \
@@ -182,13 +192,19 @@ RUN emcc \
     -sEXPORT_ES6=1 \
     -sENVIRONMENT=web,worker \
     -sEXPORTED_FUNCTIONS='["_malloc","_free","setValue","_init_ffmpeg","_get_supported_demuxers","_get_exif","_open_file","_get_data","_seek_to","_cleanup","_extract_thumbnail"]' \
-    -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","wasmMemory"]' \
+    -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","wasmMemory", "setValue", "UTF8ToString", "HEAPU8", "HEAPU32"]' \
     -sALLOW_MEMORY_GROWTH=1 \
     -sINITIAL_MEMORY=32MB \
-    glue.c thumbnail.c \
+    src/main.c src/demux.c src/decode.c src/convert.c \
+    src/codec_config.c src/subtitle.c src/notify.c src/thumbnail.c \
     -lavcodec -lavformat -lavutil -lswscale -lswresample -lavfilter -lz \
     -o /output/ffmpeg-wasm64.mjs \
     --emit-tsd /output/ffmpeg-wasm64.d.ts
+
+# ---- Generate preprocessed headers ----
+COPY gen_struct.ts ./gen_struct.ts
+RUN emcc -sMEMORY64=1 -E -P include/events.h -o /tmp/events-wasm64.h
+RUN tsx gen_struct.ts --pointer-size 8 /tmp/events-wasm64.h -o /output/events-wasm64.ts
 
 # ---- Stage 5: Export artifacts ------------------------------------
 FROM scratch AS export
@@ -198,6 +214,11 @@ COPY --from=build-wasm32 /output/ffmpeg-wasm32.d.ts /lib/ffmpeg-wasm32/ffmpeg.d.
 COPY --from=build-wasm64 /output/ffmpeg-wasm64.wasm /lib/ffmpeg-wasm64/ffmpeg-wasm64.wasm
 COPY --from=build-wasm64 /output/ffmpeg-wasm64.mjs /lib/ffmpeg-wasm64/ffmpeg.mjs
 COPY --from=build-wasm64 /output/ffmpeg-wasm64.d.ts /lib/ffmpeg-wasm64/ffmpeg.d.ts
+
+# COPY --from=build-wasm64 /output/ /lib/ffmpeg-wasm64/testOut
+
+COPY --from=build-wasm32 /output/events-wasm32.ts /lib/ffmpeg-wasm32/events-wasm32.ts
+COPY --from=build-wasm64 /output/events-wasm64.ts /lib/ffmpeg-wasm64/events-wasm64.ts
 
 COPY --from=build-wasm32 /src/ffbuild/config.log /config-wasm32.log
 COPY --from=build-wasm64 /src/ffbuild/config.log /config-wasm64.log

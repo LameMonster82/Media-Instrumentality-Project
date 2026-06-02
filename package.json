@@ -3,21 +3,26 @@
   "module": "index.ts",
   "type": "module",
   "scripts": {
-    "build": "bun build.ts"
+    "build": "bun build.ts",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit"
   },
   "private": true,
   "devDependencies": {
-    "@chialab/esbuild-plugin-worker": "^0.19.1",
     "@types/audioworklet": "^0.0.100",
     "@types/bun": "^1.3.13",
-    "typescript-plugin-css-modules": "^5.2.0"
+    "@typescript-eslint/eslint-plugin": "^8.59.4",
+    "@typescript-eslint/parser": "^8.59.4",
+    "eslint": "^10.4.0",
+    "typescript-plugin-css-modules": "^5.2.0",
+    "vite": "^8.0.16"
   },
   "peerDependencies": {
     "typescript": "^5.9.2"
   },
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2",
-    "@chialab/esbuild-plugin-html": "^0.19.1",
     "@types/three": "^0.184.1",
     "@types/webxr": "^0.5.24",
     "@uswriting/exiftool": "^1.0.9",

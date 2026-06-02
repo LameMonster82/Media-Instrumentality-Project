@@ -29,19 +29,20 @@ fs.writeFileSync(
 const ctx = await esbuild.context({
     entryPoints: [
         "VideoControls.html",
-        "index.html",
-        "src/modules/Library/Exif/ExifWorker.ts",
-        "src/modules/Library/Exif/libexif.mjs",
-        "src/modules/Video/FFmpeg/FFmpegBridge.ts",
-        "src/modules/Video/Tracks/VideoStreamTrack.ts",
-        "src/modules/Video/ExtractThumbnailWorker.ts",
-        "src/modules/Video/FFmpeg/WebCodecDecoder.ts",
-        "src/modules/Video/SharedSeekableStream2.ts",
+        //"index.html",
+        //"src/modules/Library/Exif/ExifWorker.ts",
+        //"src/modules/Library/Exif/libexif.mjs",
+        //"src/modules/Video/FFmpeg/FFmpegBridge.ts",
+        //"src/modules/Video/Tracks/VideoStreamTrack.ts",
+        //"src/modules/Video/ExtractThumbnailWorker.ts",
+        //"src/modules/Video/FFmpeg/WebCodecDecoder.ts",
+        //"src/modules/Video/SharedSeekableStream2.ts",
         "ffmpeg/dist/lib/ffmpeg-wasm32/ffmpeg.mjs",
         "ffmpeg/dist/lib/ffmpeg-wasm64/ffmpeg.mjs",
         "ffmpeg/dist/lib/ffmpeg-wasm32/ffmpeg-wasm32.wasm",
         "ffmpeg/dist/lib/ffmpeg-wasm64/ffmpeg-wasm64.wasm",
-        "Resources/ExifTags.xml"
+        "Resources/ExifTags.xml",
+        "Resources/IMG_9223.MP4",
     ],
     outdir: serveDir,
     sourcemap: 'external',
@@ -77,6 +78,7 @@ const ctx = await esbuild.context({
         '.module.css': 'local-css',
         '.xml': 'file',
         '.ttf': 'file',
+        '.MP4': 'file',
     },
 });
 

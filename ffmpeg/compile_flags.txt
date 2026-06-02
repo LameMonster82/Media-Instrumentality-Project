@@ -1,0 +1,7 @@
+-IFFmpeg
+-Iinclude
+-Iinclude/compat
+-std=c11
+-pthread
+-D__EMSCRIPTEN__
+-D_POSIX_C_SOURCE=200809L

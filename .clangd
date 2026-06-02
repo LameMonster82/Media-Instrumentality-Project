@@ -1,0 +1,18 @@
+If:
+  PathMatch: ffmpeg/src/.*\.c
+CompileFlags:
+  Add:
+    - -Iffmpeg/FFmpeg
+    - -Iffmpeg/include
+    - -Iffmpeg/include/compat
+    - -std=c11
+    - -pthread
+    - -D__EMSCRIPTEN__
+    - -D_POSIX_C_SOURCE=200809L
+---
+If:
+  PathMatch: ffmpeg/src/.*\.c
+Diagnostics:
+  Suppress:
+    - unused-function
+    - unused-variable

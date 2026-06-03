@@ -1,6 +1,9 @@
+import type { Dictionary } from "@/core/types";
 import { AtomicEventer } from "../atomicEventer/atomicEventer";
-import type { AtomicEventerBuffers, SerializableEventMap } from "../atomicEventer/types";
-import { seekerRequestTemplates, seekerResponseTemplates, SeekerResponseType, type SeekerRequestType } from "./types";
+import type { AtomicEventerBuffers, DecodeTemplate, SerializableEventMap, SerializableStuff } from "../atomicEventer/types";
+import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type SeekableWorkerInit } from "./types";
+import { waitATick } from "@/core/utils";
+import RingBuffer from "./ringBuffer";
 
 
 export const STATE_NOT_INIT = 0n;
@@ -22,15 +25,22 @@ export enum CtrlPkg {
 }
 
 
-export class SharedSeekableStream2 {
+class UrlSeeker {
     private url: string;
+    private totalFileSize: number = 0;
+    private fetchOffset: number = 0;
+    private fetchOffsetLimit: number = 0;
+    private ringBuffer: RingBuffer;
+    private fetchStream: WritableStream<Uint8Array> | undefined;
+
+
+
     private currentOffset: number = 0;
     private keepOldBuffers: number = 1;
-    private totalSize: number = 0;
+
 
     private fetchBuffer: { buffer: Uint8Array, offset: number; }[] = [];
     private isDoingStuff: boolean = false;
-    private bufferSize: number;
     private readerLoop: Promise<void> = Promise.resolve();
     private currReader: ReadableStreamDefaultReader | null = null;
     private sharedBuffer: SharedArrayBuffer;
@@ -40,109 +50,111 @@ export class SharedSeekableStream2 {
 
     private bufferPopedResolve: ((isAllOk: boolean) => void) | null = null;
 
-    constructor(url: string, targetBuffer: SharedArrayBuffer, atomicBuffers: AtomicEventerBuffers, bufferSize: number = 16384) {
+    constructor(url: string, targetBuffer: SharedArrayBuffer, atomicBuffers: AtomicEventerBuffers, bufferSize: number = 32 * 1024 * 1024) {
         this.url = url;
-        this.bufferSize = bufferSize;
+        this.ringBuffer = new RingBuffer(bufferSize)
 
         this.sharedBuffer = targetBuffer;
         this.uIntArray = new Uint8Array(targetBuffer);
 
         this.eventer = new AtomicEventer(atomicBuffers, seekerResponseTemplates, seekerRequestTemplates);
+        this.eventer.receiveEvent(this.handleEvents.bind(this));
     }
 
-    public async start(offset: number = 0, url: string = this.url) {
-        offset = Math.max(offset - 1, 0);
-        if ((this.url === url || url === undefined) && this.getBufferIndex(offset) !== -1) {
-            // Offset is inside already buffered buffer. Speed up stuff
-            // Cleanup will happen at next read
-            //this.currentOffset = offset;
-            this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, { result: 0 });
-            return;
+    private handleEvents(type: SeekerRequestType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
+        switch (type) {
+            case SeekerRequestType.SEEK: {
+                const dataThing = data as { offset: number, urlChange: string; };
+                return this.seek(dataThing.offset, dataThing.urlChange);
+            }
+            case SeekerRequestType.REQUEST_DATA: {
+                const dataThing = data as {
+                    size: number,
+                    ptr: bigint,
+                    offset: bigint;
+                };
+                return this.copyDataToWorker(dataThing.size, dataThing.ptr, Number(dataThing.offset));
+            }
+            case SeekerRequestType.DESTROY: {
+                return this.destroy();
+            }
         }
+    }
 
+    public async seek(offset: number = 0, url: string = this.url) {
         this.url = url;
+        this.ringBuffer.emptyBuffer();
 
-        // Abort the old stream
-        this.isDoingStuff = false;
-        this.bufferPopedResolve?.(false);
-        this.bufferPopedResolve = null;
-        this.currReader?.cancel();
-        await this.readerLoop;
-        console.log("Starting fetch");
-
-        this.currentOffset = offset;
-        this.fetchBuffer = [];
         const headers = {
             'Range': `bytes=${offset}-`
         };
 
-        const response = await new Promise<Response | null>(resolve => {
-            fetch(this.url, {
-                headers,
-            }).then(response => {
-                if (!response.ok || !response.body) {
-                    console.error(`Fetch failed with range: ${headers.Range} on url ${url}`);
-                    return resolve(null);
-                }
-                if (!response.headers.get('content-range')?.startsWith(`bytes ${offset}-`)) {
-                    console.error(`Requested range not met: ${response.headers.get('content-range')} on url ${url}`);
-                    return resolve(null);
-                }
+        let response: Response;
+        try {
+            response = await fetch(this.url, { headers });
+            if (!response.ok || !response.body) {
+                console.error(`Failed to fetch requested resouce: ${headers.Range} on url ${url}`);
+                this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, {
+                    result: -1,
+                    fileSize: 0n
+                });
+                return;
+            }
 
-                resolve(response);
-            }, err => {
-                console.error(`Misc error on fetch: ${err} with url ${url}`);
-                resolve(null);
-            });
-        });
+            const contentRange = response.headers.get('Content-Range');
+            const match = contentRange?.match(/(^bytes)\s+(\d+)\s?-\s?(\d+)?\s?\/?\s?(\d+|\*)?/);
+            if (contentRange && match) {
+                const start = parseInt(match[2], 10);
+                const end = parseInt(match[3] ?? "-1", 10);
+                const total = match[4] === '*' ? -1 : parseInt(match[4], 10);
 
-        if (response === null || !response.body) {
-            this.eventer.sendEvent(SeekerResponseType.INIT_DONE, {
+                this.totalFileSize = total;
+                this.fetchOffset = start;
+                this.fetchOffsetLimit = end === -1 ? total : end;
+
+                if (offset !== start)
+                    console.warn(`When requesting the web resources, the server did not respect my wishes of an offset of ${offset} and decided to give me ${start}. Fix yo shit`);
+            } else {
+                const contentRange = response.headers.get('Content-Lenght')!;
+
+                this.totalFileSize = parseInt(contentRange, 10);
+                this.fetchOffset = 0;
+                this.fetchOffsetLimit = this.totalFileSize;
+
+                console.warn("The server does not support seeking ranges. This may be slow so bear with me");
+            }
+        } catch (e) {
+            console.error(`Failed to fetch your asset ${this.url}. The reason being is that`, e);
+            this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, {
                 result: -1,
-                fileSize: -1n,
+                fileSize: 0n
             });
             return;
         }
 
-
-        const reader = response.body.getReader();
-        await new Promise<void>(res => this.readerLoop = this.readStream(reader, res));
-        this.currReader = reader;
-
-        this.totalSize = parseInt(response.headers.get('Content-Length') || '0') + offset;
-        this.eventer.sendEvent(SeekerResponseType.INIT_DONE, {
-            result: 0,
-            fileSize: BigInt(this.totalSize),
-        });
+        const reader = response.body.pipeTo(destination);
     }
 
-    private async readStream(reader: ReadableStreamDefaultReader<Uint8Array>, resolveFirst: () => void) {
-        this.isDoingStuff = true;
-        while (this.isDoingStuff) {
-            if (this.fetchBuffer.length > 1) {
-                const fullSize = this.fetchBuffer.map(buf => buf.buffer.byteLength - buf.offset).reduce((p1, p2) => p1 + p2);
-                if (fullSize >= this.bufferSize) {
-                    const isOk = await new Promise<boolean>(res => this.bufferPopedResolve = res);
-                    if (!isOk) {
-                        reader.cancel();
-                        return;
+    private writableStream() {
+        
+        this.fetchStream = new WritableStream<Uint8Array>({
+            write(chunk) {
+                let bytesWritten = 0;
+                while (bytesWritten < chunk.byteLength) {
+                    const n = this.ringBuffer.append(chunk.subarray(bytesWritten));
+                    bytesWritten += n;
+                    if (bytesWritten < chunk.byteLength) {
+                        // Buffer is full – wait until more space becomes available.
+                        // We need a way to be woken up when the consumer discards data.
+                        // This requires a promise that discarding can resolve.
+                        // For now, we'll outline the mechanism.
                     }
-                    continue;
                 }
-            }
-            const { value, done } = await reader.read();
-
-            if (!this.isDoingStuff || done) {
-                reader.cancel();
-                console.log("Stopping fetch");
-                return;
-            }
-
-
-            this.fetchBuffer.push({ buffer: value, offset: this.currentOffset });
-            this.currentOffset += value.buffer.byteLength;
-            resolveFirst();
-        }
+                return Promise.resolve(); // or return a promise that resolves when free space exists
+            },
+            close() { /* optional: signal end of stream to your logic */ },
+            abort(reason) { /* optional: handle cancellation */ },
+        });
     }
 
     private getBufferIndex(offset: number) {
@@ -154,15 +166,11 @@ export class SharedSeekableStream2 {
         return -1;
     }
 
-    async copyDataToWorker() {
-        const bufSize = Number(Atomics.load(this.controlView, CtrlPkg.REQ_SIZE));
-        const offset = Number(Atomics.load(this.controlView, CtrlPkg.REQ_OFFSET));
-        const targetPtr = Number(Atomics.load(this.controlView, CtrlPkg.REQ_PTR));
+    async copyDataToWorker(size: number, ptr: bigint, offset: number) {
 
-        if (offset >= this.totalSize) {
+        if (offset >= this.totalFileSize) {
             console.warn("End of file reached");
-            Atomics.store(this.controlView, CtrlPkg.RET_STATE, STATE_EOF);
-            Atomics.notify(this.controlView, CtrlPkg.RET_STATE);
+            this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, { written: -1n });
             return;
         }
 
@@ -180,35 +188,26 @@ export class SharedSeekableStream2 {
                 }
 
                 console.log("No buffer available. Fetching");
-                await WaitATick();
+                await waitATick();
             }
 
         }
 
-
-
         const buf = this.fetchBuffer[index]!;
         const startOffset = offset - buf.offset;
-        const allowedSize = Math.min(buf.buffer.byteLength - startOffset, bufSize);
+        const allowedSize = Math.min(buf.buffer.byteLength - startOffset, size);
 
         //console.log("giving data to", offset);
-        if (targetPtr + allowedSize > this.uIntArray.length) {
-            const oldSize = this.uIntArray.length;
+        if (Number(ptr) + allowedSize > this.uIntArray.byteLength) {
+            const oldSize = this.uIntArray.byteLength;
             this.uIntArray = new Uint8Array(this.sharedBuffer);
-            console.log(`Uhh buffer not enough. Lets recreate it ${oldSize} -> ${this.uIntArray.length}`);
+            console.log(`Uhh buffer not enough. Lets recreate it ${oldSize} -> ${this.uIntArray.byteLength}`);
         }
-        this.uIntArray.set(this.fetchBuffer[index]!.buffer.subarray(startOffset, startOffset + allowedSize), targetPtr);
+        this.uIntArray.set(this.fetchBuffer[index]!.buffer.subarray(startOffset, startOffset + allowedSize), Number(ptr));
 
-        if (allowedSize <= 0) {
-            console.warn("End of file");
-            Atomics.store(this.controlView, CtrlPkg.RET_SIZE, -1n);
-        } else {
-            Atomics.store(this.controlView, CtrlPkg.RET_SIZE, BigInt(allowedSize));
-        }
-
-        Atomics.store(this.controlView, CtrlPkg.RET_STATE, STATE_GOOD);
-        //console.log("done giving data to", offset);
-        Atomics.notify(this.controlView, CtrlPkg.RET_STATE);
+        this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, {
+            written: allowedSize > 0 ? BigInt(allowedSize) : -1n,
+        });
 
         while (index > this.keepOldBuffers) {
             this.fetchBuffer.shift();
@@ -219,58 +218,19 @@ export class SharedSeekableStream2 {
         this.bufferPopedResolve = null;
     }
 
-    RequestWatcher() {
-        if (this.isDoingStuff && Atomics.load(this.controlView, CtrlPkg.RET_STATE) == STATE_NOT_INIT) {
-            this.copyDataToWorker().then(() => {
-                this.RequestWatcher();
-            });
-        } else {
-            WaitATick().then(() => {
-                this.RequestWatcher();
-            });
-        }
-    }
-
-    Destroy() {
+    destroy() {
         this.isDoingStuff = false;
         this.currReader?.cancel();
         this.fetchBuffer = [];
     }
 }
 
-export interface SeekableWorkerInit { type: "init", url: string, buffsize: number, port: MessagePort, sharedBuffer: WebAssembly.Memory; }
-export interface SeekableWorkerSeek { type: "seek", offset: number; urlChange?: string; };
-export interface SeekableWorkerRequest { type: "request"; target: SharedArrayBuffer; }
-export interface SeekableWorkerDestroy { type: "destroy"; }
-export interface SeekableWorkerCtrlBuf { type: "ctrlBuffer", buffer: BigInt64Array<SharedArrayBuffer>; }
-
-let seekableStream: SharedSeekableStream2;
-let port: MessagePort;
-
-// Fast-path "request" maybe??
-const messageEvent = async (e: MessageEvent<"request" | SeekableWorkerInit | SeekableWorkerSeek | SeekableWorkerDestroy>) => {
-    let type = typeof (e.data) == "string" ? e.data : e.data.type;
-    switch (type) {
+let seekableStream: UrlSeeker;
+self.onmessage = async (e: MessageEvent<SeekableWorkerInit>) => {
+    switch (e.data.type) {
         case "init": {
-            const data = e.data as SeekableWorkerInit;
-            seekableStream = new SharedSeekableStream2(data.url, data.buffsize, data.sharedBuffer);
-            await seekableStream.start();
-            const ctrlBuf = seekableStream.GetCtrlBuff();
-            port = data.port;
-            port.onmessage = messageEvent;
-            return self.postMessage({ type: "ctrlBuffer", buffer: ctrlBuf });
+            seekableStream = new UrlSeeker(e.data.url, e.data.targetBuffer, e.data.atomicBuffers, e.data.fetchBufferSize);
+            await seekableStream.seek();
         }
-        case "seek": {
-            const data = e.data as SeekableWorkerSeek;
-            return seekableStream.start(data.offset, data.urlChange);
-        }
-        case "request": {
-            return seekableStream.copyDataToWorker();
-        }
-        case "destroy": {
-            return seekableStream.Destroy();
-        }
-
     }
-};
-self.onmessage = messageEvent;
+};;

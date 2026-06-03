@@ -1,4 +1,4 @@
-import { emptyRequest, stringConst, uBigNumConst, uByteConst, uIntConst, type SerializableEventMap } from "../atomicEventer/types";
+import { emptyRequest, iBigNumConst, iByteConst, stringConst, uBigNumConst, uByteConst, uIntConst, type AtomicEventerBuffers, type EventDataMap, type SerializableEventMap } from "../atomicEventer/types";
 
 export enum SeekerRequestType {
     SEEK = 0,
@@ -7,12 +7,11 @@ export enum SeekerRequestType {
 }
 
 export enum SeekerResponseType {
-    INIT_DONE = 0,
     SEEK_DONE,
     BUFFER_COPIED
 }
 
-export const seekerRequestTemplates: SerializableEventMap<SeekerRequestType> = {
+export const seekerRequestTemplates = {
     [SeekerRequestType.SEEK]: {
         offset: uIntConst,
         urlChange: stringConst
@@ -25,15 +24,20 @@ export const seekerRequestTemplates: SerializableEventMap<SeekerRequestType> = {
     [SeekerRequestType.DESTROY]: emptyRequest
 } as const satisfies SerializableEventMap<SeekerRequestType>;
 
-export const seekerResponseTemplates: SerializableEventMap<SeekerResponseType> = {
-    [SeekerResponseType.INIT_DONE]: {
-        result: uByteConst,
-        fileSize: uBigNumConst,
-    },
+export const seekerResponseTemplates = {
     [SeekerResponseType.SEEK_DONE]: {
-        result: uByteConst,
+        result: iByteConst,
+        fileSize: iBigNumConst,
     },
     [SeekerResponseType.BUFFER_COPIED]: {
-        written: uBigNumConst,
+        written: iBigNumConst,
     }
 } as const satisfies SerializableEventMap<SeekerResponseType>;
+
+export interface SeekableWorkerInit {
+    type: "init",
+    url: string,
+    targetBuffer: SharedArrayBuffer,
+    atomicBuffers: AtomicEventerBuffers,
+    fetchBufferSize: number;
+}

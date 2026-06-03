@@ -1,5 +1,5 @@
 import type { Dictionary } from "@/core/types";
-import type { AtomicEventerBuffers, EventData, SerializableEventMap, SerializableStuff } from "./types";
+import type { AtomicEventerBuffers, EventDataMap, SerializableEventMap, SerializableStuff } from "./types";
 
 /**
  * A type of way to send data between threads. This method uses
@@ -51,16 +51,15 @@ export class AtomicEventer<  // enums
      * @param typeOfData A template of the data that will be sent. Use the same template to receive the data back
      *
      */
-    async sendEvent<E extends Extract<keyof SendMap, number>>(type: E, data: EventData<SendMap[E]>, awaitable: boolean = false) {
+    async sendEvent<E extends Extract<keyof SendMap, number>>(type: E, data: EventDataMap<SendMap>[E], awaitable: boolean = false) {
         const typeOfData = this.sendTemplate[type] as Dictionary<SerializableStuff>;
-        const data2 = data as Record<string, unknown>;
         const entries = Object.entries(typeOfData);
         const totalEventSize = entries.map(e => {
             if (e[1].type === "str") {
-                return this.textEncoder.encode(data2[e[0]] as string).length + 4;
+                return this.textEncoder.encode(data[e[0]] as string).length + 4;
             }
             if (e[1].type === "byteArray") {
-                return (data2[e[0]] as Uint8Array).length + 4;
+                return (data[e[0]] as Uint8Array).length + 4;
             }
             return e[1].size;
         }).reduce((a, b) => a + b);
@@ -82,39 +81,39 @@ export class AtomicEventer<  // enums
         for (const entry of entries) {
             switch (entry[1].type) {
                 case "bool":
-                    view.setUint8(offset, (data2[entry[0]] as boolean) ? 1 : 0);
+                    view.setUint8(offset, (data[entry[0]] as boolean) ? 1 : 0);
                     break;
                 case "u8":
-                    view.setUint8(offset, data2[entry[0]] as number);
+                    view.setUint8(offset, data[entry[0]] as number);
                     break;
                 case "i8":
-                    view.setInt8(offset, data2[entry[0]] as number);
+                    view.setInt8(offset, data[entry[0]] as number);
                     break;
                 case "u32":
-                    view.setUint32(offset, data2[entry[0]] as number);
+                    view.setUint32(offset, data[entry[0]] as number);
                     break;
                 case "i32":
-                    view.setInt32(offset, data2[entry[0]] as number);
+                    view.setInt32(offset, data[entry[0]] as number);
                     break;
                 case "f32":
-                    view.setFloat32(offset, data2[entry[0]] as number);
+                    view.setFloat32(offset, data[entry[0]] as number);
                     break;
                 case "u64":
-                    view.setBigUint64(offset, data2[entry[0]] as bigint);
+                    view.setBigUint64(offset, data[entry[0]] as bigint);
                     break;
                 case "i64":
-                    view.setBigInt64(offset, data2[entry[0]] as bigint);
+                    view.setBigInt64(offset, data[entry[0]] as bigint);
                     break;
 
                 case "str": {
                     const targetArray = new Uint8Array(this.bufferToSendTo, offset + 4);
-                    const result = this.textEncoder.encodeInto(data2[entry[0]] as string, targetArray);
+                    const result = this.textEncoder.encodeInto(data[entry[0]] as string, targetArray);
                     view.setUint32(offset, result.written);
                     offset += result.written + 4;
                     break;
                 }
                 case "byteArray": {
-                    const array = data2[entry[0]] as Uint8Array;
+                    const array = data[entry[0]] as Uint8Array;
                     uintBuffer.set(array, offset + 4);
                     view.setUint32(offset, array.length);
                     offset += array.length + 4;
@@ -139,7 +138,7 @@ export class AtomicEventer<  // enums
      * @param eventMap A map that maps Enums to templates of the event data
      * @param callback A callback that to receive the event
      */
-    receiveEvent<E extends Extract<keyof RecMap, number>>(callback: (type: E, data: EventData<RecMap[E]>) => void) {
+    receiveEvent<E extends Extract<keyof RecMap, number>>(callback: (type: E, data: EventDataMap<RecMap>[E]) => void) {
         const intArray = new Int32Array(this.bufferToReceiveFrom);
         const uintArray = new Uint8Array(this.bufferToReceiveFrom);
         const infiniteLoop = async () => {
@@ -172,7 +171,7 @@ export class AtomicEventer<  // enums
         this.destroyedResolver();
     }
 
-    private readEvent<E extends keyof RecMap>(template: Dictionary<SerializableStuff>): EventData<RecMap[E]> {
+    private readEvent<E extends keyof RecMap>(template: Dictionary<SerializableStuff>): EventDataMap<RecMap>[E] {
         const view = new DataView(this.bufferToReceiveFrom);
         const uintBuffer = new Uint8Array(this.bufferToReceiveFrom);
         const entries = Object.entries(template);
@@ -231,6 +230,6 @@ export class AtomicEventer<  // enums
                 offset += entry[1].size;
         }
 
-        return data as EventData<RecMap[E]>;
+        return data as EventDataMap<RecMap>[E];
     }
 }

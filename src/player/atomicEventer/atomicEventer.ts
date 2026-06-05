@@ -1,5 +1,5 @@
 import type { Dictionary } from "@/core/types";
-import type { AtomicEventerBuffers, EventDataMap, SerializableEventMap, SerializableStuff } from "./types";
+import type { AtomicEventerBuffers, DecodeTemplate, SerializableStuff } from "./types";
 
 /**
  * A type of way to send data between threads. This method uses
@@ -8,10 +8,23 @@ import type { AtomicEventerBuffers, EventDataMap, SerializableEventMap, Serializ
  *
  * @param T type is the enum event youre going to send to the other thread
  * @param K type is the enum event youre goung to receive from the other thread
+ *
+ * I know the type definition may get a bit long but trust me on this one
+ * @example AtomicEventer<
+                SeekerResponseType,
+                SeekerRequestType,
+                typeof seekerResponseTemplates,
+                typeof seekerRequestTemplates
+            >;
+
+            this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, { dataToSend: genericType })
+
  */
-export class AtomicEventer<  // enums
-    SendMap extends SerializableEventMap<number>,
-    RecMap extends SerializableEventMap<number>
+export default class AtomicEventer<
+    SendEnum extends number,
+    ReceiveEnum extends number,
+    SendMap extends Record<SendEnum, Record<string, SerializableStuff>>,
+    ReceiveMap extends Record<ReceiveEnum, Record<string, SerializableStuff>>,
 > {
     /**
      * memory layout goes like
@@ -29,9 +42,9 @@ export class AtomicEventer<  // enums
     private destroyedResolver: () => void;
 
     private readonly sendTemplate: SendMap;
-    private readonly receiveTemplate: RecMap;
+    private readonly receiveTemplate: ReceiveMap;
 
-    constructor(buffers: AtomicEventerBuffers | undefined, sendTemplate: SendMap, receiveTemplate: RecMap) {
+    constructor(buffers: AtomicEventerBuffers | undefined, sendTemplate: SendMap, receiveTemplate: ReceiveMap) {
         this.bufferToReceiveFrom = buffers?.senderBuffer ?? new SharedArrayBuffer(512, { maxByteLength: 16384 });
         this.bufferToSendTo = buffers?.receiverBuffer ?? new SharedArrayBuffer(512, { maxByteLength: 16384 });
 
@@ -51,7 +64,7 @@ export class AtomicEventer<  // enums
      * @param typeOfData A template of the data that will be sent. Use the same template to receive the data back
      *
      */
-    async sendEvent<E extends Extract<keyof SendMap, number>>(type: E, data: EventDataMap<SendMap>[E], awaitable: boolean = false) {
+    async sendEvent<E extends SendEnum>(type: E, data: DecodeTemplate<(typeof this.sendTemplate)[E]>, awaitable: boolean = false) {
         const typeOfData = this.sendTemplate[type] as Dictionary<SerializableStuff>;
         const entries = Object.entries(typeOfData);
         const totalEventSize = entries.map(e => {
@@ -138,7 +151,7 @@ export class AtomicEventer<  // enums
      * @param eventMap A map that maps Enums to templates of the event data
      * @param callback A callback that to receive the event
      */
-    receiveEvent<E extends Extract<keyof RecMap, number>>(callback: (type: E, data: EventDataMap<RecMap>[E]) => void) {
+    receiveEvent<E extends ReceiveEnum>(callback: (type: E, data: DecodeTemplate<(typeof this.receiveTemplate)[E]>) => void) {
         const intArray = new Int32Array(this.bufferToReceiveFrom);
         const uintArray = new Uint8Array(this.bufferToReceiveFrom);
         const infiniteLoop = async () => {
@@ -171,7 +184,7 @@ export class AtomicEventer<  // enums
         this.destroyedResolver();
     }
 
-    private readEvent<E extends keyof RecMap>(template: Dictionary<SerializableStuff>): EventDataMap<RecMap>[E] {
+    private readEvent<E extends ReceiveEnum>(template: Dictionary<SerializableStuff>): DecodeTemplate<(typeof this.receiveTemplate)[E]> {
         const view = new DataView(this.bufferToReceiveFrom);
         const uintBuffer = new Uint8Array(this.bufferToReceiveFrom);
         const entries = Object.entries(template);
@@ -230,6 +243,6 @@ export class AtomicEventer<  // enums
                 offset += entry[1].size;
         }
 
-        return data as EventDataMap<RecMap>[E];
+        return data as DecodeTemplate<(typeof this.receiveTemplate)[E]>;
     }
 }

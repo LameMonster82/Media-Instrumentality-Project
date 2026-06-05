@@ -1,58 +1,36 @@
 import type { Dictionary } from "@/core/types";
-import { AtomicEventer } from "../atomicEventer/atomicEventer";
-import type { AtomicEventerBuffers, DecodeTemplate, SerializableEventMap, SerializableStuff } from "../atomicEventer/types";
+import AtomicEventer from "../atomicEventer/atomicEventer";
+import type { AtomicEventerBuffers, DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
 import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type SeekableWorkerInit } from "./types";
-import { waitATick } from "@/core/utils";
 import RingBuffer from "./ringBuffer";
-
-
-export const STATE_NOT_INIT = 0n;
-export const STATE_GOOD = 1n;
-export const STATE_EOF = 2n;
-export const STATE_UHHHH = 3n;
-
-export enum CtrlPkg {
-    STREAM_STATE,
-    FILE_TOTAL_SIZE,
-    REQ_STATE,
-    REQ_SIZE,
-    REQ_OFFSET,
-    REQ_PTR,
-    RET_SIZE,
-    RET_STATE,
-    // eslint-disable-next-line @typescript-eslint/naming-convention
-    __LENGTH
-}
-
 
 class UrlSeeker {
     private url: string;
+
     private totalFileSize: number = 0;
     private fetchOffset: number = 0;
     private fetchOffsetLimit: number = 0;
-    private ringBuffer: RingBuffer;
+
     private fetchStream: WritableStream<Uint8Array> | undefined;
 
+    private ringBuffer: RingBuffer;
+    private ringBufferSpaceNotify: () => void = () => { };
+    private ringBufferFileCursor = 0;
 
-
-    private currentOffset: number = 0;
-    private keepOldBuffers: number = 1;
-
-
-    private fetchBuffer: { buffer: Uint8Array, offset: number; }[] = [];
-    private isDoingStuff: boolean = false;
-    private readerLoop: Promise<void> = Promise.resolve();
-    private currReader: ReadableStreamDefaultReader | null = null;
     private sharedBuffer: SharedArrayBuffer;
     private uIntArray: Uint8Array;
+    private eventer: AtomicEventer<
+        SeekerResponseType,
+        SeekerRequestType,
+        typeof seekerResponseTemplates,
+        typeof seekerRequestTemplates>;
 
-    private eventer: AtomicEventer<SerializableEventMap<SeekerResponseType>, SerializableEventMap<SeekerRequestType>>;
-
-    private bufferPopedResolve: ((isAllOk: boolean) => void) | null = null;
+    private destroyed = false;
+    private lastSeek: Promise<void> = Promise.resolve();
 
     constructor(url: string, targetBuffer: SharedArrayBuffer, atomicBuffers: AtomicEventerBuffers, bufferSize: number = 32 * 1024 * 1024) {
         this.url = url;
-        this.ringBuffer = new RingBuffer(bufferSize)
+        this.ringBuffer = new RingBuffer(bufferSize);
 
         this.sharedBuffer = targetBuffer;
         this.uIntArray = new Uint8Array(targetBuffer);
@@ -61,11 +39,14 @@ class UrlSeeker {
         this.eventer.receiveEvent(this.handleEvents.bind(this));
     }
 
-    private handleEvents(type: SeekerRequestType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
+    private async handleEvents(type: SeekerRequestType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
         switch (type) {
             case SeekerRequestType.SEEK: {
                 const dataThing = data as { offset: number, urlChange: string; };
-                return this.seek(dataThing.offset, dataThing.urlChange);
+                this.fetchStream?.abort();
+                await this.lastSeek;
+                this.lastSeek = this.seek(dataThing.offset, dataThing.urlChange);
+                return;
             }
             case SeekerRequestType.REQUEST_DATA: {
                 const dataThing = data as {
@@ -81,7 +62,21 @@ class UrlSeeker {
         }
     }
 
-    public async seek(offset: number = 0, url: string = this.url) {
+    public async seek(offset: number = 0, url: string = this.url): Promise<void> {
+        if (this.destroyed) return;
+
+        if (this.url === url &&
+            this.ringBufferFileCursor <= offset &&
+            this.fetchOffsetLimit > offset) {
+
+            // We seeked in already available data. We will be ok
+            this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, {
+                result: 0,
+                fileSize: BigInt(this.totalFileSize),
+            });
+            return;
+        }
+
         this.url = url;
         this.ringBuffer.emptyBuffer();
 
@@ -102,10 +97,10 @@ class UrlSeeker {
             }
 
             const contentRange = response.headers.get('Content-Range');
-            const match = contentRange?.match(/(^bytes)\s+(\d+)\s?-\s?(\d+)?\s?\/?\s?(\d+|\*)?/);
+            const match = contentRange?.match(/^bytes\s+(\d+)\s?-\s?(\d+)?\s?\/?\s?(\d+|\*)?/);
             if (contentRange && match) {
                 const start = parseInt(match[2], 10);
-                const end = parseInt(match[3] ?? "-1", 10);
+                const end = match[3] === '*' ? -1 : parseInt(match[3], 10);
                 const total = match[4] === '*' ? -1 : parseInt(match[4], 10);
 
                 this.totalFileSize = total;
@@ -115,7 +110,7 @@ class UrlSeeker {
                 if (offset !== start)
                     console.warn(`When requesting the web resources, the server did not respect my wishes of an offset of ${offset} and decided to give me ${start}. Fix yo shit`);
             } else {
-                const contentRange = response.headers.get('Content-Lenght')!;
+                const contentRange = response.headers.get('Content-Length')!;
 
                 this.totalFileSize = parseInt(contentRange, 10);
                 this.fetchOffset = 0;
@@ -132,96 +127,92 @@ class UrlSeeker {
             return;
         }
 
-        const reader = response.body.pipeTo(destination);
-    }
+        if (this.destroyed) return;
 
-    private writableStream() {
-        
+        this.ringBufferFileCursor = this.fetchOffset;
+
+        let streamAbort = false;
+        let { promise, resolve } = Promise.withResolvers<void>();
+        this.ringBufferSpaceNotify = resolve;
+
         this.fetchStream = new WritableStream<Uint8Array>({
-            write(chunk) {
+            start: () => {
+                this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, {
+                    result: 0,
+                    fileSize: BigInt(this.totalFileSize)
+                });
+            },
+            write: async (chunk) => {
+                if (this.destroyed) return;
+
                 let bytesWritten = 0;
                 while (bytesWritten < chunk.byteLength) {
                     const n = this.ringBuffer.append(chunk.subarray(bytesWritten));
                     bytesWritten += n;
                     if (bytesWritten < chunk.byteLength) {
-                        // Buffer is full – wait until more space becomes available.
-                        // We need a way to be woken up when the consumer discards data.
-                        // This requires a promise that discarding can resolve.
-                        // For now, we'll outline the mechanism.
+                        // Buffer is full - wait until more space becomes available.
+                        await promise;
+                        const { promise: promise2, resolve: resolve2 } = Promise.withResolvers<void>();
+                        promise = promise2;
+                        resolve = resolve2;
+                        this.ringBufferSpaceNotify = resolve;
                     }
                 }
-                return Promise.resolve(); // or return a promise that resolves when free space exists
             },
             close() { /* optional: signal end of stream to your logic */ },
-            abort(reason) { /* optional: handle cancellation */ },
+            abort(_reason) {
+                streamAbort = true;
+            },
         });
+
+        const reader = response.body.pipeTo(this.fetchStream);
+        await reader;
+        if (this.destroyed) return;
+
+        if (!streamAbort && this.fetchOffsetLimit < this.totalFileSize)
+            return this.seek(this.fetchOffsetLimit);
     }
 
-    private getBufferIndex(offset: number) {
-        for (let i = 0; i < this.fetchBuffer.length; i++) {
-            const buffer = this.fetchBuffer[i];
-            if (buffer.offset <= offset && buffer.offset + buffer.buffer.byteLength > offset)
-                return i;
-        }
-        return -1;
-    }
-
-    async copyDataToWorker(size: number, ptr: bigint, offset: number) {
-
+    copyDataToWorker(size: number, ptr: bigint, offset: number) {
         if (offset >= this.totalFileSize) {
             console.warn("End of file reached");
             this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, { written: -1n });
             return;
         }
 
-        let index = -1;
-        while (index === -1) {
-            index = this.getBufferIndex(offset);
-            if (index === -1) {
-                // try evicting old buffers
-                const oldBufCount = this.fetchBuffer.length;
-                this.fetchBuffer = this.fetchBuffer.filter(b => b.offset > offset);
-
-                if (this.fetchBuffer.length < oldBufCount) {
-                    this.bufferPopedResolve?.(true);
-                    this.bufferPopedResolve = null;
-                }
-
-                console.log("No buffer available. Fetching");
-                await waitATick();
-            }
-
+        const currentData = this.ringBuffer.getUsedSpace();
+        if (offset < this.ringBufferFileCursor || offset >= this.ringBufferFileCursor + currentData) {
+            this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, {
+                written: 0n,
+            });
+            return;
         }
 
-        const buf = this.fetchBuffer[index]!;
-        const startOffset = offset - buf.offset;
-        const allowedSize = Math.min(buf.buffer.byteLength - startOffset, size);
+        const slightOffset = offset - this.ringBufferFileCursor;
+        const allowedSize = Math.min(currentData - slightOffset, size);
 
-        //console.log("giving data to", offset);
         if (Number(ptr) + allowedSize > this.uIntArray.byteLength) {
             const oldSize = this.uIntArray.byteLength;
             this.uIntArray = new Uint8Array(this.sharedBuffer);
             console.log(`Uhh buffer not enough. Lets recreate it ${oldSize} -> ${this.uIntArray.byteLength}`);
         }
-        this.uIntArray.set(this.fetchBuffer[index]!.buffer.subarray(startOffset, startOffset + allowedSize), Number(ptr));
 
+        const writtenData = this.ringBuffer.copyTo(this.uIntArray, Number(ptr), allowedSize, slightOffset);
         this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, {
-            written: allowedSize > 0 ? BigInt(allowedSize) : -1n,
+            written: BigInt(writtenData),
         });
 
-        while (index > this.keepOldBuffers) {
-            this.fetchBuffer.shift();
-            index--;
-        }
-
-        this.bufferPopedResolve?.(true);
-        this.bufferPopedResolve = null;
+        this.ringBufferSpaceNotify();
+        this.ringBufferFileCursor = offset + writtenData;
     }
 
     destroy() {
-        this.isDoingStuff = false;
-        this.currReader?.cancel();
-        this.fetchBuffer = [];
+        this.destroyed = true;
+        this.fetchStream?.abort();
+
+        // If the writer is full, this will force it free
+        // and return when it sees that its destroyed
+        this.ringBufferSpaceNotify();
     }
 }
 
@@ -233,4 +224,4 @@ self.onmessage = async (e: MessageEvent<SeekableWorkerInit>) => {
             await seekableStream.seek();
         }
     }
-};;
+};

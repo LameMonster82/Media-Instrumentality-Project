@@ -1,4 +1,4 @@
-import { emptyRequest, iBigNumConst, iByteConst, stringConst, uBigNumConst, uByteConst, uIntConst, type AtomicEventerBuffers, type EventDataMap, type SerializableEventMap } from "../atomicEventer/types";
+import { emptyRequest, iBigNumConst, iByteConst, stringConst, uBigNumConst, uIntConst, type AtomicEventerBuffers, type SerializableEventMap } from "../atomicEventer/types";
 
 export enum SeekerRequestType {
     SEEK = 0,

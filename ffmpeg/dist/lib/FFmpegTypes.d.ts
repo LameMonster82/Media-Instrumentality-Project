@@ -1,4 +1,4 @@
-import type { AVColorPrimaries, AVColorRange, AVColorSpace, AVColorTransferCharacteristic } from "@/player/FFmpeg/hold on/AVTypes";
+import type { AVColorRange, AVColorSpace, AVColorPrimaries, AVColorTransferCharacteristic } from "@/player/FFmpeg/advancedTypes/AVTypes";
 
 export interface FFmpegWorker extends DedicatedWorkerGlobalScope {
     _ffmpeg_notify: (eventType: number, ptr: number) => number;

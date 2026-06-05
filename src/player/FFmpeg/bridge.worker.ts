@@ -1,27 +1,89 @@
-import { workerState } from "./State";
-
-import { CtrlPkg, STATE_NOT_INIT, type SeekableWorkerSeek, STATE_GOOD, type SeekableWorkerCtrlBuf } from "../SharedSeekableStream2";
+import seekerWorker from "../seeker/urlSeeker.worker?worker";
 import type { FFmpegWorker } from "@FFmpeg/FFmpegTypes";
 
 import type { MainModule } from "@FFmpeg/ffmpeg-wasm32/ffmpeg";
 
 import ffmpeg32 from "@FFmpeg/ffmpeg-wasm32/ffmpeg-wasm32.wasm";
 import ffmpeg64 from "@FFmpeg/ffmpeg-wasm64/ffmpeg-wasm64.wasm";
-import { SeekableWorkerUrl } from "@/modules_old/SomeTypes";
 
 import { WaitATick } from "../older stuff/VideoUtils";
 import type { WorkerSubmitThumbnail } from "@/exif/types";
 
-import type { AllTargetWorkerMessages, WorkerSubmitStreams } from "./types";
+import type { AllTargetWorkerMessages, WorkerInitFFmpeg, WorkerInitFFmpegOnlyModule, WorkerSubmitStreams } from "./types";
 import type { AllStreamTrackTypes } from "../Tracks/types";
+import { AVLogLevel } from "./advancedTypes/AVTypes";
+import getSupportedPixelFormats from "./advancedTypes/supportedPixelFormats";
 
 // Default type of `self` is `WorkerGlobalScope & typeof globalThis`
 // https://github.com/microsoft/TypeScript/issues/14877
 // eslint-disable-next-line no-var
 declare var self: FFmpegWorker;
 
-/** Slow communication between main thread and the FFmpeg TS bridge
- *  Used for stuff that is rarely called and is not latency dependant
+class FFmpegBridge {
+    private module: MainModule | undefined;
+
+    async initialize(dataInfo: WorkerInitFFmpeg) {
+        this.module = await this.loadWasmModule();
+
+        this.module._init_ffmpeg(dataInfo.bufferSize, AVLogLevel.AV_LOG_INFO);
+
+        const pixFmts = getSupportedPixelFormats();
+        const pixFmtPtr = this.module._malloc(pixFmts.length * 4);
+        for (let i = 0; i < pixFmts.length; i++) {
+            this.module.setValue(pixFmtPtr + i * 4, pixFmts[i], 'i32');
+        }
+
+        const result = this.module._open_file(4, pixFmtPtr);
+        console.log("File opened with result:", result);
+
+
+        //////////////////////////////////////////////////////
+
+        Promise.all(workerState.configPromises).then(() => {
+            for (const keyS of Object.keys(workerState.streams)) {
+                const key = parseInt(keyS);
+                workerState.streams[key]!.metadata = workerState.streamMetadatas[key]!;
+            }
+            const strippedStreams = streamsWithoudDecoder();
+            self.postMessage({ kind: "streams", streams: strippedStreams } as WorkerSubmitStreams);
+        });
+    }
+
+    async loadWasmModule() {
+        const wasm64 = true; //await supportsWasm64();
+        const wasmName = wasm64 ? "ffmpeg-wasm64" : "ffmpeg-wasm32";
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        const { default: FFmpegModule } = wasm64 ? (await import("@FFmpeg/ffmpeg-wasm64/ffmpeg.mjs")) : (await import("@FFmpeg/ffmpeg-wasm32/ffmpeg.mjs"));
+
+        const newModule = await FFmpegModule({
+            locateFile: (_file: string, _scriptDirectory: string) => `${location.origin}/${wasm64 ? ffmpeg64 : ffmpeg32}`,
+            mainScriptUrlOrBlob: `${location.origin}/ffmpeg/dist/lib/${wasmName}/ffmpeg.js`,
+            onRuntimeInitialized: () => {
+                console.log("FFmpeg WebAssembly initialized.");
+            },
+        }) as MainModule;
+
+        return newModule;
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ * Slow communication between main thread and the FFmpeg TS bridge
+ * Used for stuff that is rarely called and is not latency dependant
  */
 self.onmessage = async (e: MessageEvent<AllTargetWorkerMessages>) => {
     switch (e.data.kind) {
@@ -54,7 +116,7 @@ self.onmessage = async (e: MessageEvent<AllTargetWorkerMessages>) => {
 
                 const postData: WorkerSubmitThumbnail = {
                     kind: "thumbnailData",
-                    image: blob,omething is happening here. See you soon!
+                    image: blob, omething is happening here.See you soon!
                     width: bitmap.width,
                     height: bitmap.height,
                     transferable: [blob]
@@ -78,7 +140,7 @@ self.onmessage = async (e: MessageEvent<AllTargetWorkerMessages>) => {
                 self.postMessage({ kind: "thumbnailDone", return: -1 } as WorkerThumbnailDone);
             } else {
                 try {
-                   const ret = workerState.outModule._extract_thumbnail();
+                    const ret = workerState.outModule._extract_thumbnail();
                     self.postMessage({ kind: "thumbnailDone", return: ret } as WorkerThumbnailDone);
                 } catch {
                     self.postMessage({ kind: "thumbnailDone", return: -1 } as WorkerThumbnailDone);
@@ -185,66 +247,9 @@ async function askFFmpegToSeek(time: number) {
     return;
 }
 
-async function loadWasmModule(dataInfo: WorkerInitFFmpeg | WorkerInitFFmpegOnlyModule) {
-    const wasm64 = true; //await supportsWasm64();
-    const wasmName = wasm64 ? "ffmpeg-wasm64" : "ffmpeg-wasm32";
-    // eslint-disable-next-line @typescript-eslint/naming-convention
-    const { default: FFmpegModule } = wasm64 ? (await import("@FFmpeg/ffmpeg-wasm64/ffmpeg.mjs")) : (await import("@FFmpeg/ffmpeg-wasm32/ffmpeg.mjs"));
 
-    const newModule = await FFmpegModule({
-        locateFile: (_file: string, _scriptDirectory: string) => `${location.origin}/${wasm64 ? ffmpeg64 : ffmpeg32}`,
-        mainScriptUrlOrBlob: `${location.origin}/ffmpeg/dist/lib/${wasmName}/ffmpeg.js`,
-        onRuntimeInitialized: () => {
-            console.log("FFmpeg WebAssembly initialized.");
-        },
-    }) as MainModule;
 
-    if (dataInfo.url) {
-        const { promise, resolve } = Promise.withResolvers<void>();
-        workerState.seekerWorker = new Worker(SeekableWorkerUrl, { type: 'module', name: `I buffer the file ${dataInfo.url}` });
-        workerState.seekerWorker.onmessage = (e: MessageEvent<SeekableWorkerCtrlBuf>) => {
-            if (e.data.type === "ctrlBuffer") {
-                workerState.ctrlBuff = e.data.buffer;
-                resolve();
-            }
-        };
-        const buf = (dataInfo as WorkerInitFFmpeg).bufferSize ?? 32768;
-        workerState.seekerWorker.postMessage({
-            type: "init",
-            url: dataInfo.url,
-            buffsize: buf,
-            port: workerState.seekerChannel.port2,
-            sharedBuffer: newModule.wasmMemory
-        }, [workerState.seekerChannel.port2]);
-        await promise;
-    }
 
-    return newModule;
-}
-
-async function initializeFFmpeg(dataInfo: WorkerInitFFmpeg) {
-    workerState.outModule = await loadWasmModule(dataInfo);
-
-    workerState.outModule._init_ffmpeg(dataInfo.bufferSize, AVLogLevel.AV_LOG_INFO);
-
-    const pixFmts = getSupportedPixelFormats();
-    const pixFmtPtr = workerState.outModule._malloc(pixFmts.length * 4);
-    for (let i = 0; i < pixFmts.length; i++) {
-        workerState.outModule.setValue(pixFmtPtr + i * 4, pixFmts[i], 'i32');
-    }
-
-    const result = workerState.outModule._open_file(4, pixFmtPtr);
-    console.log("File opened with result:", result);
-
-    Promise.all(workerState.configPromises).then(() => {
-        for (const keyS of Object.keys(workerState.streams)) {
-            const key = parseInt(keyS);
-            workerState.streams[key]!.metadata = workerState.streamMetadatas[key]!;
-        }
-        const strippedStreams = streamsWithoudDecoder();
-        self.postMessage({ kind: "streams", streams: strippedStreams } as WorkerSubmitStreams);
-    });
-}
 
 
 self.onerror = (e) => {

@@ -1,3 +1,6 @@
+// Its fineeeee
+/* eslint-disable @typescript-eslint/naming-convention */
+
 export type ExtendedVideoFormats = "BGRA" | "BGRX" | "I420" | "I422" | "I444" | "NV12" | "RGBA" | "RGBX"
     | "I420P10" | "I422P10" | "I444P10" | "I420AP10" | "I422AP10" | "I444AP10"
     | "I420P12" | "I422P12" | "I444P12" | "I420AP12" | "I422AP12" | "I444AP12"
@@ -309,6 +312,7 @@ export function AVPixelFormatToVideoFormat(fmt: AVPixelFormat): ExtendedVideoFor
 }
 
 // fuck it. All formats from <libavutil/pixfmt.h>
+// TODO: We can probably make an auto import with @ffmpeg/gen_struct.ts
 export enum AVPixelFormat {
     AV_PIX_FMT_NONE = -1,
     AV_PIX_FMT_YUV420P,   ///< planar YUV 4:2:0, 12bpp, (1 Cr & Cb sample per 2x2 Y samples)

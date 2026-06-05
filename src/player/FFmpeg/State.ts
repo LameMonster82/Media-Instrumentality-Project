@@ -1,9 +1,18 @@
 import type { Dictionary } from "@/core/types";
 import type { MainModule } from "@FFmpeg/ffmpeg-wasm32/ffmpeg.js";
 import type { AllStreamTrackTypes } from "../Tracks/types";
+import type { AtomicEventer } from "../atomicEventer/atomicEventer";
+import type { SeekerRequestType, SeekerResponseType } from "../seeker/types";
+import type { SerializableEventMap } from "../atomicEventer/types";
 
 
 export class WorkerState {
+    public seekerEventer: AtomicEventer<SerializableEventMap<SeekerRequestType>, SerializableEventMap<SeekerResponseType>> = null!;
+
+
+
+
+
     public outModule: MainModule = null!;
     public streams: Dictionary<AllStreamTrackTypes> = {};
     public streamMetadatas: Dictionary<Dictionary<string>> = {};

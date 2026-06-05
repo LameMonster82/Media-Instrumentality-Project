@@ -29,26 +29,17 @@ export type SerializableEventMap<T extends number> = {
     [key in T]: Dictionary<SerializableStuff>;
 };
 
-// Assuming Dictionary<T> = Record<string, T>
 
-// 1. One descriptor -> its runtime TS type
-type DecodePrimitive<S> =
-    S extends { type: "bool" }                                ? boolean :
-    S extends { type: "i8" | "u8" | "i32" | "u32" | "f32" }   ? number  :
-    S extends { type: "i64" | "u64" }                         ? bigint  :
-    S extends { type: "str" }                                 ? string  :
-    S extends { type: "byteArray" }                           ? Uint8Array :
+// Types used in the eventer itself for nefarious reasons
+type RuntimeType<S> =
+    S extends { castTo: infer C } ? C :
+    S extends { type: "bool" } ? boolean :
+    S extends { type: "i8" | "u8" | "i32" | "u32" | "f32" } ? number :
+    S extends { type: "i64" | "u64" } ? bigint :
+    S extends { type: "str" } ? string :
+    S extends { type: "byteArray" } ? Uint8Array :
     never;
 
-type Decode<S> =
-    S extends { castTo: infer C }
-        ? ([unknown] extends [C] ? DecodePrimitive<S> : C)
-        : DecodePrimitive<S>;
-
 export type DecodeTemplate<T> = {
-    -readonly [K in keyof T]: Decode<T[K]>;
-};
-
-export type EventDataMap<M> = {
-    [K in keyof M]: DecodeTemplate<M[K]>;
+    -readonly [K in keyof T]: RuntimeType<T[K]>;
 };

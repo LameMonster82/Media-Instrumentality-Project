@@ -7,6 +7,10 @@ export default class RingBuffer {
         this.buffer = new Uint8Array(bufferSize);
     }
 
+    get totalSpace(): number {
+        return this.buffer.length - 1;
+    }
+
     getFreeSpace(): number {
         if (this.writtenCursor >= this.cursor) {
             return this.buffer.byteLength - (this.writtenCursor - this.cursor) - 1;
@@ -36,19 +40,20 @@ export default class RingBuffer {
         return toCopy;
     }
 
-    copyTo(target: Uint8Array, size: number, offset: number, eatTheData = true): number {
-        const readable = (this.writtenCursor - this.cursor + this.buffer.length) % this.buffer.length;
+    copyTo(target: Uint8Array, targetPtr: number, size: number, sourceOffset = 0, eatTheData = true): number {
+        const offsetCursor = this.cursor + sourceOffset;
+        const readable = (this.writtenCursor - offsetCursor + this.buffer.length) % this.buffer.length;
         const toCopy = Math.min(size, readable);
         if (toCopy === 0) return 0;
 
-        const firstPart = Math.min(toCopy, this.buffer.length - this.cursor);
-        target.set(this.buffer.subarray(this.cursor, this.cursor + firstPart), offset);
+        const firstPart = Math.min(toCopy, this.buffer.length - offsetCursor);
+        target.set(this.buffer.subarray(offsetCursor, offsetCursor + firstPart), targetPtr);
         const secondPart = toCopy - firstPart;
         if (secondPart > 0) {
-            target.set(this.buffer.subarray(0, secondPart), offset + firstPart);
+            target.set(this.buffer.subarray(0, secondPart), targetPtr + firstPart);
         }
         if (eatTheData) {
-            this.cursor = (this.cursor + toCopy) % this.buffer.length;
+            this.cursor = (offsetCursor + toCopy) % this.buffer.length;
         }
         return toCopy;
     }

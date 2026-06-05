@@ -1,18 +1,28 @@
 import MediaControls from "@/components/controls/Controls";
 import ffmpegWorker from "@/player/FFmpeg/bridge.worker?worker"
+import AtomicEventer from "./atomicEventer/atomicEventer";
+import { ffmpegRequestTemplate, FFmpegResponseEvent, ffmpegResponseTemplate, type FFmpegRequestEvent } from "./FFmpeg/atomicTypes";
+import type { DecodeTemplate } from "./atomicEventer/types";
 
 export class VideoPlayer2 {
     private video = document.createElement('video');
     private mediaSource = new MediaSource();
     private controls: MediaControls;
 
+    private workerEventer: AtomicEventer<
+        FFmpegRequestEvent,
+        FFmpegResponseEvent,
+        typeof ffmpegRequestTemplate,
+        typeof ffmpegResponseTemplate
+    > = new AtomicEventer(undefined, ffmpegRequestTemplate, ffmpegResponseTemplate);
+
     constructor(videoUrl: string) {
         this.video = document.createElement('video');
         //this.video.srcObject = this.mediaSource;
-        this.video.src = videoUrl;
+        this.video.src = videoUrl;https://youtu.be/dLtRtdg67PU?si=GmVoSW4Bpt43rDTm
 
-        console.log(ffmpegWorker)
-        const worker = ffmpegWorker({name: "I tell ffmpeg to do the work2"})
+        this.workerEventer.receiveEvent(this.handleAtomicEvents.bind(this));
+        const worker = ffmpegWorker({ name: "I tell ffmpeg to do the work but kinda better" });
 
         this.controls = new MediaControls(this.video, {
             onPlayPause: async (intent?: boolean) => {
@@ -46,6 +56,14 @@ export class VideoPlayer2 {
             onSubtitleTrackSelect: (index: number) => this.updateTrack("subtitle", index),
         });
         this.setupEventListeners();
+    }
+
+    private handleAtomicEvents(type: FFmpegResponseEvent, data: DecodeTemplate<(typeof ffmpegResponseTemplate)[FFmpegResponseEvent]>) {
+        switch (type) {
+            case FFmpegResponseEvent.INIT_STATUS:
+            case FFmpegResponseEvent.REQUEST_STATUS:
+            case FFmpegResponseEvent.SEEK_STATUS:
+        }
     }
 
     private setupEventListeners(): void {

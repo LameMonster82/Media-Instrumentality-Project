@@ -76,7 +76,7 @@ export const extendedVideoFormatsArray: ExtendedVideoFormats[] = [
 ];
 
 let supportedFormats: AVPixelFormat[] | undefined;
-export function getSupportedPixelFormats() {
+export default function getSupportedPixelFormats() {
     supportedFormats ??= testSupportedPixelFormats();
     return supportedFormats;
 }

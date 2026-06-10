@@ -1023,7 +1023,7 @@ int get_data(void) {
   int ret = av_read_frame(formatContext, packet);
   if (ret < 0) {
     printf("Error reading frame: %s\n", av_err2str(ret));
-    av_packet_unref(packet);dur_js
+    av_packet_unref(packet);
     if (ret == AVERROR_EOF) {
       return AVERROR_EOF;
     }

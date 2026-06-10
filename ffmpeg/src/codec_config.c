@@ -23,9 +23,6 @@ static unsigned int reverse_bits(unsigned int val) {
 }
 
 AudioDecoderConfig *audio_stream_to_config(AVCodecParameters *codecpar) {
-    if (!codecpar)
-        return NULL;
-
     const char *codecString = avcodec_get_name(codecpar->codec_id);
     AudioDecoderConfig *ret = calloc(1, sizeof(AudioDecoderConfig));
     if (!ret)
@@ -66,9 +63,6 @@ AudioDecoderConfig *audio_stream_to_config(AVCodecParameters *codecpar) {
 }
 
 VideoDecoderConfig *video_stream_to_config(AVCodecParameters *codecpar) {
-    if (!codecpar)
-        return NULL;
-
     const char *codecString = avcodec_get_name(codecpar->codec_id);
     VideoDecoderConfig *ret = calloc(1, sizeof(VideoDecoderConfig));
     if (!ret)

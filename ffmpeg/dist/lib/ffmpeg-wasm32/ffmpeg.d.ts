@@ -38,16 +38,17 @@ declare namespace RuntimeExports {
     let HEAPU32: Uint32Array;
 }
 interface WasmModule {
-  _init_ffmpeg(_0: number, _1: number): void;
-  _get_supported_demuxers(): void;
+  _init_ffmpeg(_0: number, _1: number, _2: number, _3: number, _4: number): number;
   _malloc(_0: number): number;
+  _open_file(): number;
+  _set_stream_support(_0: number): void;
+  _cleanup_video_frame(_0: number): void;
   _free(_0: number): void;
-  _get_exif(): number;
-  _open_file(_0: number, _1: number): number;
-  _get_data(): number;
+  _cleanup_audio_frame(_0: number): void;
   _seek_to(_0: number): number;
-  _cleanup(): void;
-  _extract_thumbnail(): number;
+  _poke_for_data(): number;
+  _cleanup_info(_0: number): void;
+  _get_supported_demuxers(_0: number, _1: number): number;
   _emscripten_builtin_free(_0: number): void;
   _emscripten_builtin_malloc(_0: number): number;
   ___libc_free(_0: number): void;

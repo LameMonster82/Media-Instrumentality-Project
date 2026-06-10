@@ -1,8 +1,9 @@
 import MediaControls from "@/components/controls/Controls";
 import ffmpegWorker from "@/player/FFmpeg/bridge.worker?worker"
 import AtomicEventer from "./atomicEventer/atomicEventer";
-import { ffmpegRequestTemplate, FFmpegResponseEvent, ffmpegResponseTemplate, type FFmpegRequestEvent } from "./FFmpeg/atomicTypes";
 import type { DecodeTemplate } from "./atomicEventer/types";
+import type { WorkerInitFFmpeg } from "./FFmpeg/types";
+import { ffmpegRequestTemplate, ffmpegResponseTemplate, type FFmpegRequestEvent, type FFmpegResponseEvent } from "./FFmpeg/advancedTypes/atomicTypes";
 
 export class VideoPlayer2 {
     private video = document.createElement('video');
@@ -19,10 +20,15 @@ export class VideoPlayer2 {
     constructor(videoUrl: string) {
         this.video = document.createElement('video');
         //this.video.srcObject = this.mediaSource;
-        this.video.src = videoUrl;https://youtu.be/dLtRtdg67PU?si=GmVoSW4Bpt43rDTm
+        this.video.src = videoUrl;
 
         this.workerEventer.receiveEvent(this.handleAtomicEvents.bind(this));
         const worker = ffmpegWorker({ name: "I tell ffmpeg to do the work but kinda better" });
+        worker.postMessage({
+            url: videoUrl,
+            bufferSize: 32 * 1024 * 1024,
+            kind: "initFfmpeg",
+        } as WorkerInitFFmpeg)
 
         this.controls = new MediaControls(this.video, {
             onPlayPause: async (intent?: boolean) => {

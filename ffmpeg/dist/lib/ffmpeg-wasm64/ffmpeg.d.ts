@@ -16,6 +16,11 @@ declare namespace RuntimeExports {
     let wasmMemory: any;
     /**
      * @param {number} ptr
+     * @param {string} type
+     */
+    function getValue(ptr: number, type?: string): any;
+    /**
+     * @param {number} ptr
      * @param {number} value
      * @param {string} type
      */
@@ -36,6 +41,7 @@ declare namespace RuntimeExports {
     function UTF8ToString(ptr: number, maxBytesToRead?: number | undefined, ignoreNul?: boolean | undefined): string;
     let HEAPU8: Uint8Array;
     let HEAPU32: Uint32Array;
+    let HEAPU64: any;
 }
 interface WasmModule {
   _init_ffmpeg(_0: number, _1: number, _2: number, _3: BigInt, _4: number): number;
@@ -47,8 +53,10 @@ interface WasmModule {
   _cleanup_audio_frame(_0: BigInt): void;
   _seek_to(_0: number): number;
   _poke_for_data(): BigInt;
+  _cleanup_packet(_0: BigInt): void;
   _cleanup_info(_0: BigInt): void;
   _get_supported_demuxers(_0: BigInt, _1: number): number;
+  _av_dict_iterate(_0: BigInt, _1: BigInt): BigInt;
   _emscripten_builtin_free(_0: BigInt): void;
   _emscripten_builtin_malloc(_0: BigInt): BigInt;
   ___libc_free(_0: BigInt): void;

@@ -1,4 +1,4 @@
-import { emptyRequest, iBigNumConst, iByteConst, stringConst, uBigNumConst, uIntConst, type AtomicEventerBuffers, type SerializableEventMap } from "../atomicEventer/types";
+import { emptyRequest, floatConst, iBigNumConst, stringConst, uBigNumConst, type AtomicEventerBuffers, type SerializableEventMap } from "../atomicEventer/types";
 
 export enum SeekerRequestType {
     SEEK = 0,
@@ -13,11 +13,11 @@ export enum SeekerResponseType {
 
 export const seekerRequestTemplates = {
     [SeekerRequestType.SEEK]: {
-        offset: uIntConst,
+        offset: floatConst,
         urlChange: stringConst
     },
     [SeekerRequestType.REQUEST_DATA]: {
-        size: uIntConst,
+        size: floatConst,
         ptr: uBigNumConst,
         offset: uBigNumConst
     },
@@ -26,7 +26,7 @@ export const seekerRequestTemplates = {
 
 export const seekerResponseTemplates = {
     [SeekerResponseType.SEEK_DONE]: {
-        result: iByteConst,
+        result: floatConst,
         fileSize: iBigNumConst,
     },
     [SeekerResponseType.BUFFER_COPIED]: {
@@ -37,7 +37,7 @@ export const seekerResponseTemplates = {
 export interface SeekableWorkerInit {
     type: "init",
     url: string,
-    targetBuffer: SharedArrayBuffer,
+    targetBuffer: WebAssembly.Memory,
     atomicBuffers: AtomicEventerBuffers,
     fetchBufferSize: number;
 }

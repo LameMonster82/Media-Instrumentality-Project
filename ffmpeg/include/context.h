@@ -103,11 +103,13 @@ typedef struct {
 
 typedef struct {
   int32_t status;
+  uint32_t stream_index;
   enum MediaType type;
   VideoFrame *video_frame;
   AudioFrame *audio_frame;
 
-  AVPacket *packet;
+  uint8_t *packet_data;
+  int      packet_size;
 } ReturnType;
 
 typedef struct {

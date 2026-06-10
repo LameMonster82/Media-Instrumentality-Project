@@ -285,15 +285,6 @@ COPY include/ ./include/
 RUN mkdir -p /output
 RUN bash /src/link-ffmpeg.sh wasm32
 
-# ---- Generate preprocessed headers ----
-# COPY gen_struct.ts ./gen_struct.ts
-# RUN emcc -sMEMORY64=0 -E \
-    # -P include/context.h \
-    # -I$INSTALL_DIR/include \
-    # -Iinclude \
-    # -o /tmp/context-wasm32.h
-# RUN tsx gen_struct.ts --pointer-size 4 /tmp/context-wasm32.h -o /output/context-wasm32.ts
-
 # ---- Stage 4: Build FFmpeg for Wasm64 ------------------------------
 FROM base AS build-wasm64
 ENV FFMPEG_VERSION=8.1
@@ -325,15 +316,6 @@ COPY src/ ./src/
 COPY include/ ./include/
 RUN mkdir -p /output
 RUN bash /src/link-ffmpeg.sh wasm64
-
-# ---- Generate preprocessed headers ----
-# COPY gen_struct.ts ./gen_struct.ts
-# RUN emcc -sMEMORY64=1 -E \
-    # -P include/context.h \
-    # -I$INSTALL_DIR/include \
-    # -Iinclude \
-    # -o /tmp/context-wasm64.h
-# RUN tsx gen_struct.ts --pointer-size 8 /tmp/context-wasm64.h -o /output/context-wasm64.ts
 
 # ---- Stage 5: Export artifacts ------------------------------------
 FROM scratch AS export

@@ -5,6 +5,7 @@ import path from 'node:path';
 
 export default defineConfig({
     root: '.',
+    base: "",
     resolve: {
         alias: {
             '@': path.resolve(__dirname, 'src'),
@@ -17,6 +18,7 @@ export default defineConfig({
     },
 
     assetsInclude: ['**/*.MP4', '**/*.xml', '**/*.wasm'],
+
     esbuild: {
         jsxImportSource: "custom-jsx",
         jsxFactory: 'custom-jsx/jsx-runtime.jsx', // or whatever you export

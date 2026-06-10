@@ -39,7 +39,8 @@ int init_ffmpeg(int buffer_size, int is_stream, int debug_level,
 
   ReturnType *data_return = malloc(sizeof(*data_return));
   data_return->status = 0;
-  data_return->packet = NULL;
+  data_return->packet_data = NULL;
+  data_return->packet_size = 0;
   g_ctx.data_return = data_return;
 
   fprintf(stderr, "FFmpeg initialized with buffer size %d\n", buffer_size);
@@ -317,7 +318,6 @@ ReturnType *poke_for_data() {
   int ret = av_read_frame(g_ctx.fmt_ctx, packet);
 
   g_ctx.data_return->status = RESULT_ERR_GENERIC;
-  g_ctx.data_return->packet = packet;
 
   if (ret < 0) {
     fprintf(stderr, "Error reading frame: %s\n", av_err2str(ret));
@@ -328,6 +328,10 @@ ReturnType *poke_for_data() {
     }
     return g_ctx.data_return;
   }
+
+  g_ctx.data_return->stream_index = packet->stream_index;
+  g_ctx.data_return->packet_data = packet->data;
+  g_ctx.data_return->packet_size = packet->size;
 
   int stream_index = packet->stream_index;
 
@@ -411,6 +415,11 @@ ReturnType *poke_for_data() {
   //g_ctx.data_return->status = RESULT_UNREACHABLE;
 
   return g_ctx.data_return;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void cleanup_packet(AVPacket *packet) {
+  av_packet_free(&packet);
 }
 
 EMSCRIPTEN_KEEPALIVE

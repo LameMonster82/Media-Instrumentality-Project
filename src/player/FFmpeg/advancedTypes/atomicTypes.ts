@@ -1,4 +1,4 @@
-import { emptyRequest, iByteConst, uIntConst, type SerializableEventMap } from "@/player/atomicEventer/types";
+import { emptyRequest, floatConst, type SerializableEventMap } from "@/player/atomicEventer/types";
 
 export enum FFmpegRequestEvent {
     REQUEST_DATA,
@@ -14,18 +14,18 @@ export enum FFmpegResponseEvent {
 export const ffmpegRequestTemplate = {
     [FFmpegRequestEvent.REQUEST_DATA]: emptyRequest,
     [FFmpegRequestEvent.SEEK]: {
-        time: uIntConst
+        time: floatConst
     },
 } as const satisfies SerializableEventMap<FFmpegRequestEvent>;
 
 export const ffmpegResponseTemplate = {
     [FFmpegResponseEvent.INIT_STATUS]: {
-        status: iByteConst
+        status: floatConst
     },
     [FFmpegResponseEvent.REQUEST_STATUS]: {
-        status: iByteConst
+        status: floatConst
     },
     [FFmpegResponseEvent.SEEK_STATUS]: {
-        status: iByteConst
+        status: floatConst
     },
 } as const satisfies SerializableEventMap<FFmpegResponseEvent>;

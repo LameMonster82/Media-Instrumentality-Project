@@ -96,20 +96,8 @@ export default class AtomicEventer<
                 case "bool":
                     view.setUint8(offset, (data[entry[0]] as boolean) ? 1 : 0);
                     break;
-                case "u8":
-                    view.setUint8(offset, data[entry[0]] as number);
-                    break;
-                case "i8":
-                    view.setInt8(offset, data[entry[0]] as number);
-                    break;
-                case "u32":
-                    view.setUint32(offset, data[entry[0]] as number);
-                    break;
-                case "i32":
-                    view.setInt32(offset, data[entry[0]] as number);
-                    break;
-                case "f32":
-                    view.setFloat32(offset, data[entry[0]] as number);
+                case "f64":
+                    view.setFloat64(offset, data[entry[0]] as number);
                     break;
                 case "u64":
                     view.setBigUint64(offset, data[entry[0]] as bigint);
@@ -119,10 +107,11 @@ export default class AtomicEventer<
                     break;
 
                 case "str": {
-                    const targetArray = new Uint8Array(this.bufferToSendTo, offset + 4);
-                    const result = this.textEncoder.encodeInto(data[entry[0]] as string, targetArray);
-                    view.setUint32(offset, result.written);
-                    offset += result.written + 4;
+                    const targetArray = new Uint8Array(this.bufferToSendTo);
+                    const result = this.textEncoder.encode(data[entry[0]] as string);
+                    targetArray.set(result, offset + 4);
+                    view.setUint32(offset, result.byteLength);
+                    offset += result.byteLength + 4;
                     break;
                 }
                 case "byteArray": {
@@ -175,6 +164,22 @@ export default class AtomicEventer<
         infiniteLoop();
     }
 
+    lockUntilEvent<E extends ReceiveEnum>(event: E): DecodeTemplate<(typeof this.receiveTemplate)[E]> {
+        const intArray = new Int32Array(this.bufferToReceiveFrom);
+        const uintArray = new Uint8Array(this.bufferToReceiveFrom);
+        while (true) {
+            Atomics.wait(intArray, 0, 0);
+            const event = Atomics.load(uintArray, 4) as E;
+            if (event === event) break;
+        }
+
+        const data = this.readEvent<E>(this.receiveTemplate[event as E]);
+        Atomics.store(intArray, 0, 0);
+        Atomics.notify(intArray, 0);
+
+        return data;
+    }
+
     getBuffers(): AtomicEventerBuffers {
         return { senderBuffer: this.bufferToSendTo, receiverBuffer: this.bufferToReceiveFrom };
     }
@@ -198,20 +203,8 @@ export default class AtomicEventer<
                 case "bool":
                     data[name] = view.getUint8(offset) > 0 ? true : false;
                     break;
-                case "u8":
-                    data[name] = view.getUint8(offset);
-                    break;
-                case "i8":
-                    data[name] = view.getInt8(offset);
-                    break;
-                case "u32":
-                    data[name] = view.getUint32(offset);
-                    break;
-                case "i32":
-                    data[name] = view.getInt32(offset);
-                    break;
-                case "f32":
-                    data[name] = view.getFloat32(offset);
+                case "f64":
+                    data[name] = view.getFloat64(offset);
                     break;
                 case "u64":
                     data[name] = view.getBigUint64(offset);
@@ -222,8 +215,9 @@ export default class AtomicEventer<
 
                 case "str": {
                     const length = view.getUint32(offset);
-                    const targetArray = new Uint8Array(this.bufferToReceiveFrom, offset + 4, length);
-                    const result = this.textDecoder.decode(targetArray);
+                    const targetArray = new Uint8Array(this.bufferToReceiveFrom);
+                    const tempArray = targetArray.slice(offset + 4, length);
+                    const result = this.textDecoder.decode(tempArray);
                     data[name] = result;
                     offset += length + 4;
                     break;

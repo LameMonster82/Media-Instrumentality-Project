@@ -11,6 +11,18 @@ CompileFlags:
     - -D_POSIX_C_SOURCE=200809L
 ---
 If:
+  PathMatch: ffmpeg/src/.*\.cpp
+CompileFlags:
+  Add:
+    - -Iffmpeg/FFmpeg
+    - -Iffmpeg/include
+    - -I/usr/lib/emscripten/system/include/
+    - -std=c++17
+    - -pthread
+    - -D__EMSCRIPTEN__
+    - -D_POSIX_C_SOURCE=200809L
+---
+If:
   PathMatch: ffmpeg/src/.*\.c
 Diagnostics:
   Suppress:

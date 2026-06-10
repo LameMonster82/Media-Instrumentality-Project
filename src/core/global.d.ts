@@ -29,3 +29,18 @@ declare module '*.ts?worker' {
   // eslint-disable-next-line @typescript-eslint/naming-convention
   export default function WorkerConstructor(options?: { name?: string }): Worker;
 }
+
+declare module '*.mjs?raw' {
+    const path: `${string}.mjs`;
+	export = path;
+}
+
+declare module '*.mjs?url' {
+    const path: `${string}.mjs`;
+	export = path;
+}
+
+declare module '*.wasm?url' {
+    const path: `${string}.mjs`;
+	export = path;
+}

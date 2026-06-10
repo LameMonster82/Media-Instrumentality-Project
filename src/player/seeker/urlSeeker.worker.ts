@@ -1,3 +1,5 @@
+
+
 import type { Dictionary } from "@/core/types";
 import AtomicEventer from "../atomicEventer/atomicEventer";
 import type { AtomicEventerBuffers, DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
@@ -17,7 +19,7 @@ class UrlSeeker {
     private ringBufferSpaceNotify: () => void = () => { };
     private ringBufferFileCursor = 0;
 
-    private sharedBuffer: SharedArrayBuffer;
+    private sharedBuffer: WebAssembly.Memory;
     private uIntArray: Uint8Array;
     private eventer: AtomicEventer<
         SeekerResponseType,
@@ -28,12 +30,12 @@ class UrlSeeker {
     private destroyed = false;
     private lastSeek: Promise<void> = Promise.resolve();
 
-    constructor(url: string, targetBuffer: SharedArrayBuffer, atomicBuffers: AtomicEventerBuffers, bufferSize: number = 32 * 1024 * 1024) {
+    constructor(url: string, targetBuffer: WebAssembly.Memory, atomicBuffers: AtomicEventerBuffers, bufferSize: number = 32 * 1024 * 1024) {
         this.url = url;
         this.ringBuffer = new RingBuffer(bufferSize);
 
         this.sharedBuffer = targetBuffer;
-        this.uIntArray = new Uint8Array(targetBuffer);
+        this.uIntArray = new Uint8Array(targetBuffer.buffer);
 
         this.eventer = new AtomicEventer(atomicBuffers, seekerResponseTemplates, seekerRequestTemplates);
         this.eventer.receiveEvent(this.handleEvents.bind(this));
@@ -62,7 +64,7 @@ class UrlSeeker {
         }
     }
 
-    public async seek(offset: number = 0, url: string = this.url): Promise<void> {
+    public async seek(offset: number = 0, url: string = this.url, emptyBuffer: boolean = true): Promise<void> {
         if (this.destroyed) return;
 
         if (this.url === url &&
@@ -78,7 +80,8 @@ class UrlSeeker {
         }
 
         this.url = url;
-        this.ringBuffer.emptyBuffer();
+        if (emptyBuffer)
+            this.ringBuffer.emptyBuffer();
 
         const headers = {
             'Range': `bytes=${offset}-`
@@ -99,13 +102,13 @@ class UrlSeeker {
             const contentRange = response.headers.get('Content-Range');
             const match = contentRange?.match(/^bytes\s+(\d+)\s?-\s?(\d+)?\s?\/?\s?(\d+|\*)?/);
             if (contentRange && match) {
-                const start = parseInt(match[2], 10);
-                const end = match[3] === '*' ? -1 : parseInt(match[3], 10);
-                const total = match[4] === '*' ? -1 : parseInt(match[4], 10);
+                const start = parseInt(match[1], 10);
+                const end = match[2] === '*' ? -1 : parseInt(match[2], 10);
+                const total = match[3] === '*' ? -1 : parseInt(match[3], 10);
 
                 this.totalFileSize = total;
                 this.fetchOffset = start;
-                this.fetchOffsetLimit = end === -1 ? total : end;
+                this.fetchOffsetLimit = end === -1 ? total - 1 : end;
 
                 if (offset !== start)
                     console.warn(`When requesting the web resources, the server did not respect my wishes of an offset of ${offset} and decided to give me ${start}. Fix yo shit`);
@@ -114,7 +117,7 @@ class UrlSeeker {
 
                 this.totalFileSize = parseInt(contentRange, 10);
                 this.fetchOffset = 0;
-                this.fetchOffsetLimit = this.totalFileSize;
+                this.fetchOffsetLimit = this.totalFileSize - 1;
 
                 console.warn("The server does not support seeking ranges. This may be slow so bear with me");
             }
@@ -159,7 +162,15 @@ class UrlSeeker {
                     }
                 }
             },
-            close() { /* optional: signal end of stream to your logic */ },
+            close: async () => {
+                while (this.ringBuffer.getUsedSpace() > 0) {
+                    await promise;
+                    const { promise: promise2, resolve: resolve2 } = Promise.withResolvers<void>();
+                    promise = promise2;
+                    resolve = resolve2;
+                    this.ringBufferSpaceNotify = resolve;
+                }
+            },
             abort(_reason) {
                 streamAbort = true;
             },
@@ -169,8 +180,8 @@ class UrlSeeker {
         await reader;
         if (this.destroyed) return;
 
-        if (!streamAbort && this.fetchOffsetLimit < this.totalFileSize)
-            return this.seek(this.fetchOffsetLimit);
+        if (!streamAbort && this.fetchOffsetLimit < this.totalFileSize - 1)
+            return this.seek(this.fetchOffsetLimit, this.url, false);
     }
 
     copyDataToWorker(size: number, ptr: bigint, offset: number) {
@@ -193,7 +204,7 @@ class UrlSeeker {
 
         if (Number(ptr) + allowedSize > this.uIntArray.byteLength) {
             const oldSize = this.uIntArray.byteLength;
-            this.uIntArray = new Uint8Array(this.sharedBuffer);
+            this.uIntArray = new Uint8Array(this.sharedBuffer.buffer);
             console.log(`Uhh buffer not enough. Lets recreate it ${oldSize} -> ${this.uIntArray.byteLength}`);
         }
 

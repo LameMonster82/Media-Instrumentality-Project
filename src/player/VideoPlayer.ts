@@ -1,5 +1,5 @@
 import MediaControls from "@/components/controls/Controls";
-import ffmpegWorker from "@/player/FFmpeg/bridge.worker?worker"
+import ffmpegWorker from "@/player/FFmpeg/bridge.worker?worker";
 import AtomicEventer from "./atomicEventer/atomicEventer";
 import type { DecodeTemplate } from "./atomicEventer/types";
 import type { WorkerInitFFmpeg } from "./FFmpeg/types";
@@ -28,7 +28,12 @@ export class VideoPlayer2 {
             url: videoUrl,
             bufferSize: 32 * 1024 * 1024,
             kind: "initFfmpeg",
-        } as WorkerInitFFmpeg)
+        } as WorkerInitFFmpeg);
+
+
+        window.onbeforeunload = () => {
+            worker.terminate();
+        };
 
         this.controls = new MediaControls(this.video, {
             onPlayPause: async (intent?: boolean) => {
@@ -119,6 +124,8 @@ export class VideoPlayer2 {
     }
 
     public getVideo() {
-        return this.video
+        return this.video;
     }
 }
+
+

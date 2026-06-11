@@ -14,6 +14,7 @@ class UrlSeeker {
     private fetchOffsetLimit: number = 0;
 
     private fetchStream: WritableStream<Uint8Array> | undefined;
+    private fetchAbortController = new AbortController();
 
     private ringBuffer: RingBuffer;
     private ringBufferSpaceNotify: () => void = () => { };
@@ -45,8 +46,6 @@ class UrlSeeker {
         switch (type) {
             case SeekerRequestType.SEEK: {
                 const dataThing = data as { offset: number, urlChange: string; };
-                this.fetchStream?.abort();
-                await this.lastSeek;
                 this.lastSeek = this.seek(dataThing.offset, dataThing.urlChange);
                 return;
             }
@@ -78,6 +77,14 @@ class UrlSeeker {
             });
             return;
         }
+
+        try {
+            this.fetchAbortController.abort()
+        } catch {
+            
+        }
+
+        await this.lastSeek;
 
         this.url = url;
         if (emptyBuffer)
@@ -176,7 +183,8 @@ class UrlSeeker {
             },
         });
 
-        const reader = response.body.pipeTo(this.fetchStream);
+        this.fetchAbortController = new AbortController();
+        const reader = response.body.pipeTo(this.fetchStream, { signal: this.fetchAbortController.signal });
         await reader;
         if (this.destroyed) return;
 

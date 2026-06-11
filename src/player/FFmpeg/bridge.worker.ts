@@ -100,6 +100,8 @@ class FFmpegBridge {
         const fileInfo = readFileInfo(this.module, Number(ret), this.is64Bit);
         console.log(fileInfo);
 
+        this.module._cleanup_info(ret as never);
+
 
 
 

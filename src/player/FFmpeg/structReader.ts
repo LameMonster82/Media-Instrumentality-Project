@@ -56,9 +56,9 @@ export interface ChapterInfo {
 export interface StreamInfo {
     type: MediaType;
     duration: number;
-    video_config: VideoDecoderConfigStruct | null;
-    audio_config: AudioDecoderConfigStruct | null;
-    subtitle_config: ASSSubtitleConfigStruct | null;
+    video_config: VideoDecoderConfigStruct | null | undefined;
+    audio_config: AudioDecoderConfigStruct | null | undefined;
+    subtitle_config: ASSSubtitleConfigStruct | null | undefined;
     metadata: Record<string, string>;     // AVDictionary*
 }
 
@@ -269,9 +269,17 @@ export function readStreamInfo(module: MainModule, offset: number, is64Bit: bool
     const metadataPtr = readPointer(view, off, is64Bit);
     const metadata = readAVDict(module, metadataPtr, is64Bit);
     // Recursively parse nested configs if pointers are non-zero
-    const video_config = videoConfigPtr !== 0 ? readVideoDecoderConfig(module, videoConfigPtr, is64Bit) : null;
-    const audio_config = audioConfigPtr !== 0 ? readAudioDecoderConfig(module, audioConfigPtr, is64Bit) : null;
-    const subtitle_config = subtitleConfigPtr !== 0 ? readASSSubtitleConfig(module.wasmMemory.buffer, subtitleConfigPtr, is64Bit) : null;
+    let video_config: VideoDecoderConfigStruct | undefined | null;
+    let audio_config: AudioDecoderConfigStruct | undefined | null;
+    let subtitle_config: ASSSubtitleConfigStruct | undefined | null;
+    if (type === MediaType.RESULT_VIDEO) {
+        video_config = videoConfigPtr !== 0 ? readVideoDecoderConfig(module, videoConfigPtr, is64Bit) : null;
+    } else if (type === MediaType.RESULT_AUDIO) {
+        audio_config = audioConfigPtr !== 0 ? readAudioDecoderConfig(module, audioConfigPtr, is64Bit) : null;
+    } else if (type === MediaType.RESULT_SUBTITLE) {
+        subtitle_config = subtitleConfigPtr !== 0 ? readASSSubtitleConfig(module.wasmMemory.buffer, subtitleConfigPtr, is64Bit) : null;
+    }
+
     return { type, duration, video_config, audio_config, subtitle_config, metadata };
 }
 

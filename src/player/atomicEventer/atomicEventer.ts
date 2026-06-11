@@ -216,7 +216,7 @@ export default class AtomicEventer<
                 case "str": {
                     const length = view.getUint32(offset);
                     const targetArray = new Uint8Array(this.bufferToReceiveFrom);
-                    const tempArray = targetArray.slice(offset + 4, length);
+                    const tempArray = targetArray.slice(offset + 4, offset + 4 + length);
                     const result = this.textDecoder.decode(tempArray);
                     data[name] = result;
                     offset += length + 4;

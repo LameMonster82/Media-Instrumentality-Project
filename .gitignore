@@ -36,3 +36,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # ffmpeg stuff
 ffmpeg/FFmpeg
+
+# dw about that file
+Resources/Arcane.mkv

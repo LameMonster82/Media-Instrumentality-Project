@@ -108,8 +108,11 @@ typedef struct {
   VideoFrame *video_frame;
   AudioFrame *audio_frame;
 
+  int flags;
   uint8_t *packet_data;
-  int      packet_size;
+  int packet_size;
+  int64_t timestamp;
+  int64_t duration;
 } ReturnType;
 
 typedef struct {

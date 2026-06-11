@@ -1,12 +1,14 @@
 import type { Dictionary, WorkerPostMessage, WorkerShutdown } from "@/core/types";
 import type { ChapterInfo } from "../Tracks/subtitles/subtitleStream";
-
+import type { FileInfo } from "./structReader";
+import type { AtomicEventerBuffers } from "../atomicEventer/types";
 
 //#region Main -> FFmpeg Worker
 export interface WorkerInitFFmpeg extends WorkerPostMessage {
     readonly kind: "initFfmpeg";
     readonly url: string;
     readonly bufferSize: number;
+    readonly eventerBuffers: AtomicEventerBuffers
 }
 
 export interface WorkerInitFFmpegOnlyModule extends WorkerPostMessage {
@@ -113,9 +115,26 @@ export type AllTargetWorkerMessages =
 
 //#region FFmpeg Worker -> Main Thread
 
-export interface WorkerSubmitStreams extends WorkerPostMessage {
-    readonly kind: "streams";
-    readonly streams: FFmpegStreams[];
+export interface WorkerFFmpegInitComplete extends WorkerPostMessage {
+    readonly kind: "initComplete";
+    readonly info: FileInfo;
+    readonly streamPorts: MessagePort[];
 }
 
+export type AllRespondWorkerEvents = WorkerFFmpegInitComplete;
+
 //#endregion
+
+export type AllRespondWorkerEventsKind = AllRespondWorkerEvents["kind"];
+export type RespondEventByKind<E extends AllRespondWorkerEventsKind> = Extract<AllRespondWorkerEvents, { kind: E }>;
+export type DictionaryWorkerEvent = {
+  [K in AllRespondWorkerEventsKind]: ((data: RespondEventByKind<K>) => void)[];
+};
+
+
+export enum StreamSupport {
+    HW_SUPPORT = 1,
+    SW_SUPPORT = 0,
+    UNUSED = -1,
+    NO_SUPPORT = -2,
+}

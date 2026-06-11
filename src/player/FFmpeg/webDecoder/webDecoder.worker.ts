@@ -30,8 +30,14 @@ class WebDecoder {
 
         try {
             if (this.isVideo) {
+                if (!config.videoConfig)
+                    throw Error("Trying to init Video decoder without a video config");
+                
                 this.decoder = this.initializeVideo(config.videoConfig);
             } else {
+                if (!config.audioConfig)
+                    throw Error("Trying to init Audio decoder without an audio config");
+                
                 this.decoder = this.initializeAudio(config.audioConfig);
             }
         } catch (_e) {
@@ -113,6 +119,15 @@ class WebDecoder {
     }
 
     private output(output: VideoFrame | AudioData) {
+        // NOTE: Depending on how firefox feels like, it
+        // might be beneficial to convert the VideoFrame
+        // to an ImageBitmap or similar. Firefox DOES support
+        // YUV and similar color formats but sometimes it ends
+        // up converting them to an RGBX one. That is not much
+        // of an issue but it tends to be very slow.
+        // If this happens with WebGPU too then we better
+        // get the performance penatly here at a decoder stage
+        // instead at the presentation stage
         this.outputChannel.postMessage(output, [output]);
     }
 

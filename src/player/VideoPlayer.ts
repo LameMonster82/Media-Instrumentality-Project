@@ -2,12 +2,13 @@ import MediaControls from "@/components/controls/Controls";
 import ffmpegWorker from "@/player/FFmpeg/bridge.worker?worker";
 import AtomicEventer from "./atomicEventer/atomicEventer";
 import type { DecodeTemplate } from "./atomicEventer/types";
-import type { WorkerInitFFmpeg } from "./FFmpeg/types";
-import { ffmpegRequestTemplate, ffmpegResponseTemplate, type FFmpegRequestEvent, type FFmpegResponseEvent } from "./FFmpeg/advancedTypes/atomicTypes";
+import type { AllRespondWorkerEventsKind, DictionaryWorkerEvent, RespondEventByKind, WorkerFFmpegInitComplete, WorkerInitFFmpeg } from "./FFmpeg/types";
+import { FFmpegRequestEvent, ffmpegRequestTemplate, FFmpegResponseEvent, ffmpegResponseTemplate } from "./FFmpeg/advancedTypes/atomicTypes";
+import { MediaType } from "./FFmpeg/structReader";
+import WebGPUCompositor from "./webgpu/composer";
 
 export class VideoPlayer2 {
     private video = document.createElement('video');
-    private mediaSource = new MediaSource();
     private controls: MediaControls;
 
     private workerEventer: AtomicEventer<
@@ -17,19 +18,22 @@ export class VideoPlayer2 {
         typeof ffmpegResponseTemplate
     > = new AtomicEventer(undefined, ffmpegRequestTemplate, ffmpegResponseTemplate);
 
+    private eventCallback: DictionaryWorkerEvent = { initComplete: [] };
+
     constructor(videoUrl: string) {
         this.video = document.createElement('video');
         //this.video.srcObject = this.mediaSource;
         this.video.src = videoUrl;
 
         this.workerEventer.receiveEvent(this.handleAtomicEvents.bind(this));
-        const worker = ffmpegWorker({ name: "I tell ffmpeg to do the work but kinda better" });
+        const worker = ffmpegWorker({ name: "I tell ffmpeg to do the work" });
+        worker.onmessage = this.handleSlowEvent.bind(this);
         worker.postMessage({
             url: videoUrl,
             bufferSize: 32 * 1024 * 1024,
             kind: "initFfmpeg",
+            eventerBuffers: this.workerEventer.getBuffers(),
         } as WorkerInitFFmpeg);
-
 
         window.onbeforeunload = () => {
             worker.terminate();
@@ -67,13 +71,30 @@ export class VideoPlayer2 {
             onSubtitleTrackSelect: (index: number) => this.updateTrack("subtitle", index),
         });
         this.setupEventListeners();
+
+        this.initialize();
     }
 
-    private handleAtomicEvents(type: FFmpegResponseEvent, data: DecodeTemplate<(typeof ffmpegResponseTemplate)[FFmpegResponseEvent]>) {
-        switch (type) {
-            case FFmpegResponseEvent.INIT_STATUS:
-            case FFmpegResponseEvent.REQUEST_STATUS:
-            case FFmpegResponseEvent.SEEK_STATUS:
+    async initialize() {
+        const data = await this.waitForSlowEvent("initComplete");
+        
+        const canvas = document.createElement('canvas');
+        const videoStream = data.info.streams.find(s => s.type == MediaType.RESULT_VIDEO)!;
+
+        canvas.width = videoStream.video_config!.coded_width;
+        canvas.height = videoStream.video_config!.coded_height;
+
+        const composer = new WebGPUCompositor();
+        await composer.init(canvas);
+
+        data.streamPorts[data.info.streams.indexOf(videoStream)].onmessage = (e: MessageEvent<VideoFrame>) => {
+            composer.renderVideoFrame(e.data);
+        }
+
+        while (true) {
+            this.workerEventer.sendEvent(FFmpegRequestEvent.REQUEST_DATA, {});
+            const data = await this.workerEventer.waitUntilEvent(FFmpegResponseEvent.REQUEST_STATUS);
+            console.log(data);
         }
     }
 
@@ -125,6 +146,41 @@ export class VideoPlayer2 {
 
     public getVideo() {
         return this.video;
+    }
+
+
+
+
+
+
+
+
+
+    private handleAtomicEvents(type: FFmpegResponseEvent, data: DecodeTemplate<(typeof ffmpegResponseTemplate)[FFmpegResponseEvent]>) {
+        switch (type) {
+            case FFmpegResponseEvent.INIT_STATUS:
+            case FFmpegResponseEvent.REQUEST_STATUS:
+            case FFmpegResponseEvent.SEEK_STATUS:
+        }
+    }
+
+
+    private handleSlowEvent(e: MessageEvent<WorkerFFmpegInitComplete>) {
+        const events = this.eventCallback[e.data.kind];
+        if (!events) return;
+
+        for (const callback of events) {
+            callback(e.data);
+        }
+
+        this.eventCallback[e.data.kind] = [];
+    }
+
+    private waitForSlowEvent<E extends AllRespondWorkerEventsKind>(event: E): Promise<RespondEventByKind<E>> {
+        const { promise, resolve } = Promise.withResolvers<RespondEventByKind<E>>();
+        this.eventCallback[event] ??= [];
+        this.eventCallback[event].push(resolve);
+        return promise;
     }
 }
 

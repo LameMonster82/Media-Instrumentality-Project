@@ -5,15 +5,18 @@ import type { FFmpegWorker } from "@FFmpeg/FFmpegTypes";
 import type { MainModule as MainModule32 } from "@FFmpeg/ffmpeg-wasm32/ffmpeg";
 import type { MainModule as MainModule64 } from "@FFmpeg/ffmpeg-wasm64/ffmpeg";
 
-import type { AllTargetWorkerMessages, WorkerInitFFmpeg } from "./types";
+import { StreamSupport, type AllTargetWorkerMessages, type WorkerFFmpegInitComplete, type WorkerInitFFmpeg } from "./types";
 import { AVColorPrimarieToColorPrimative, AVColorRangeToColorRange, AVColorSpaceToColorMatrixCoeff, AVColorTransferToTransferChar, AVLogLevel } from "./advancedTypes/AVTypes";
 import getSupportedPixelFormats from "./advancedTypes/supportedPixelFormats";
 import canWasm64 from "./advancedTypes/isWasm64";
-import { readFileInfo, type VideoDecoderConfigStruct } from "./structReader";
+import { MediaType, readFileInfo, readReturnType, ResultStatus, type AudioDecoderConfigStruct, type VideoDecoderConfigStruct } from "./structReader";
 import AtomicEventer from "../atomicEventer/atomicEventer";
 import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type SeekableWorkerInit } from "../seeker/types";
 import type { DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
 import type { Dictionary } from "@/core/types";
+import { decoderRequestTemplates, decoderResponseTemplates, WebDecoderRequestType, WebDecoderResponseType, type WebDecoderWorkerInit } from "./webDecoder/types";
+import { initialize } from "esbuild";
+import { FFmpegRequestEvent, ffmpegRequestTemplate, type FFmpegResponseEvent, ffmpegResponseTemplate } from "./advancedTypes/atomicTypes";
 
 // Default type of `self` is `WorkerGlobalScope & typeof globalThis`
 // https://github.com/microsoft/TypeScript/issues/14877
@@ -21,8 +24,15 @@ import type { Dictionary } from "@/core/types";
 declare var self: FFmpegWorker;
 
 type MainModule = MainModule32 | MainModule64;
-
-let bridge: FFmpegBridge;
+type Stream = {
+    streamIndex: number,
+    type: MediaType,
+    isSupported: boolean,
+    isUsed: boolean,
+    worker: Worker | undefined,
+    messageChannel: MessageChannel,
+    eventer: AtomicEventer<WebDecoderRequestType, WebDecoderResponseType, typeof decoderRequestTemplates, typeof decoderResponseTemplates> | undefined;
+};
 
 class FFmpegBridge {
     private module: MainModule | undefined;
@@ -33,6 +43,9 @@ class FFmpegBridge {
     private fileOffset: bigint = 0n;
     private url: string = "";
 
+    private streams: Record<number, Stream> = {};
+    private streamSupportPtr: number | BigInt = 0;
+
     private seekerEventer: AtomicEventer<
         SeekerRequestType,
         SeekerResponseType,
@@ -40,6 +53,12 @@ class FFmpegBridge {
         typeof seekerResponseTemplates> = new AtomicEventer(undefined, seekerRequestTemplates, seekerResponseTemplates);
 
     private seekerSeekDone = (_data: { result: number, fileSize: bigint; }) => { };
+
+    private videoEventer: AtomicEventer<
+        FFmpegResponseEvent,
+        FFmpegRequestEvent,
+        typeof ffmpegResponseTemplate,
+        typeof ffmpegRequestTemplate> | undefined;
 
     constructor() {
         this.seekerWorker = seekerWorker({ name: "I download and give data to the ffmpeg thread" });
@@ -51,13 +70,16 @@ class FFmpegBridge {
         this.bufferSize = dataInfo.bufferSize;
         this.url = dataInfo.url;
 
+        this.videoEventer = new AtomicEventer(dataInfo.eventerBuffers, ffmpegResponseTemplate, ffmpegRequestTemplate);
+
+        this.videoEventer.receiveEvent(this.handleVideoEvents.bind(this));
         const { promise, resolve } = Promise.withResolvers<{ result: number, fileSize: bigint; }>();
         this.seekerSeekDone = resolve;
 
         this.seekerWorker.postMessage({
             url: dataInfo.url,
             atomicBuffers: this.seekerEventer.getBuffers(),
-            fetchBufferSize: 32 * 1024 * 1024,
+            fetchBufferSize: this.bufferSize,
             targetBuffer: this.module.wasmMemory,
             type: "init"
         } as SeekableWorkerInit);
@@ -88,40 +110,53 @@ class FFmpegBridge {
             }
         }
 
-        let ret: number | BigInt = this.module._init_ffmpeg(dataInfo.bufferSize, 0, AVLogLevel.AV_LOG_INFO, pixFmtPtr as never, 4);
+        let ret = this.module._init_ffmpeg(dataInfo.bufferSize, 0, AVLogLevel.AV_LOG_INFO, pixFmtPtr as never, 4);
         if (ret < 0) {
             throw Error("FFmpeg didnt init properly. Dying");
         }
 
-        ret = this.module._open_file();
-        if (Number(ret) === 0)
+        let fileInfoPtr = this.module._open_file();
+        if (Number(fileInfoPtr) === 0)
             throw Error("Could not open the file. Your problem now");
 
-        const fileInfo = readFileInfo(this.module, Number(ret), this.is64Bit);
+        const fileInfo = readFileInfo(this.module, Number(fileInfoPtr), this.is64Bit);
         console.log(fileInfo);
 
-        this.module._cleanup_info(ret as never);
+        this.streamSupportPtr = this.module._malloc((this.is64Bit ? BigInt(fileInfo.nb_streams * 4) : fileInfo.nb_streams * 4) as never);
 
+        const streamPromises = fileInfo.streams.map((stream, i) => {
+            switch (stream.type) {
+                case MediaType.RESULT_VIDEO: return this.initVideoStream(i, stream.video_config!);
+                case MediaType.RESULT_AUDIO: return this.initAudioStream(i, stream.audio_config!);
+                default:
+                    console.warn("Unsupported stream type", stream.type);
+                    return Promise.resolve({
+                        streamIndex: i,
+                        type: stream.type,
+                        isSupported: false,
+                        isUsed: false,
+                        messageChannel: new MessageChannel(),
+                        worker: undefined,
+                        eventer: undefined
+                    });
+            }
+        });
 
+        const streams = await Promise.all(streamPromises);
 
+        for (const stream of streams) {
+            this.streams[stream.streamIndex] = stream;
+        }
+        this.updateFFmpegSupportedStreams();
 
+        const port1s = streams.map(s => s.messageChannel.port1);
+        self.postMessage({
+            kind: "initComplete",
+            info: fileInfo,
+            streamPorts: port1s
+        } as WorkerFFmpegInitComplete, port1s);
 
-
-
-
-        // console.log("File opened with result:", result);
-
-
-        // //////////////////////////////////////////////////////
-
-        // Promise.all(workerState.configPromises).then(() => {
-        //     for (const keyS of Object.keys(workerState.streams)) {
-        //         const key = parseInt(keyS);
-        //         workerState.streams[key]!.metadata = workerState.streamMetadatas[key]!;
-        //     }
-        //     const strippedStreams = streamsWithoudDecoder();
-        //     self.postMessage({ kind: "streams", streams: strippedStreams } as WorkerSubmitStreams);
-        // });
+        this.module._cleanup_info(fileInfoPtr as never);
     }
 
     async loadWasmModule(canWasm64: boolean) {
@@ -143,19 +178,72 @@ class FFmpegBridge {
         return newModule as MainModule;
     }
 
-    private async handleSeekerEvents(type: SeekerResponseType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
+    private handleSeekerEvents(type: SeekerResponseType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
         switch (type) {
             case SeekerResponseType.SEEK_DONE: {
                 this.seekerSeekDone(data as { result: number, fileSize: bigint; });
                 break;
             }
             case SeekerResponseType.BUFFER_COPIED: {
-                console.log(" buffer copioed")
+                console.log(" buffer copioed");
             }
         }
     }
 
-    public readPacket(ptr: bigint, size: number)  {
+    private handleVideoEvents(type: FFmpegRequestEvent, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
+        switch (type) {
+            case FFmpegRequestEvent.REQUEST_DATA: {
+                while (true) {
+                    const resPtr = this.module!._poke_for_data();
+                    const rsult = readReturnType(this.module!.wasmMemory.buffer, Number(resPtr), this.is64Bit);
+
+                    switch (rsult.status) {
+                        case ResultStatus.RESULT_OK: {
+                            console.error("Not yet to handle that");
+                            continue;
+                        }
+                        case ResultStatus.RESULT_ERR_SKIP:
+                        case ResultStatus.RESULT_NEED_MORE: {
+                            continue;
+                        }
+                        case ResultStatus.RESULT_EOF: {
+                            console.error("EOFFF");
+                            return;
+                        }
+                        case ResultStatus.RESULT_RAW_PACKET: {
+                            const streamIndex = rsult.stream_index;
+                            let event = WebDecoderRequestType.DECODE_VIDEO;
+                            if (this.streams[streamIndex].type === MediaType.RESULT_AUDIO) {
+                                event = WebDecoderRequestType.DECODE_AUDIO;
+                            } else if (this.streams[streamIndex].type !== MediaType.RESULT_VIDEO) {
+                                throw Error("We got a packet to HW decode that is not a video or audio???");
+                            }
+                            
+                            this.streams[streamIndex].eventer!.sendEvent(event, {
+                                ptr: rsult.packet_data,
+                                size: rsult.packet_size,
+                                duration: Number(rsult.duration),
+                                timestamp: Number(rsult.timestamp),
+                                isKey: (rsult.flags & 1) == 1
+                            });
+                            break;
+                        }
+                        case ResultStatus.RESULT_ERR_GENERIC: {
+                            console.error("We got an error from FFmpeg :/");
+                            break;
+                        }
+                        case ResultStatus.RESULT_UNREACHABLE: {
+                            debugger
+                        }
+                    }
+                }
+                break;
+            }
+            case FFmpegRequestEvent.SEEK:
+        }
+    }
+
+    public readPacket(ptr: bigint, size: number) {
         if (ptr <= 0) return 0;
 
         this.seekerEventer.sendEvent(SeekerRequestType.REQUEST_DATA, { offset: this.fileOffset, size, ptr });
@@ -193,10 +281,10 @@ class FFmpegBridge {
             return -1n;
         }
 
-        this.seekerEventer.sendEvent(SeekerRequestType.SEEK, {offset: Number(offset), urlChange: this.url});
+        this.seekerEventer.sendEvent(SeekerRequestType.SEEK, { offset: Number(offset), urlChange: this.url });
         const results = this.seekerEventer.lockUntilEvent(SeekerResponseType.SEEK_DONE);
 
-        const seekerState = results.result
+        const seekerState = results.result;
         if (seekerState !== 0) {
             console.error("Seeker returned bad when tried to seek. Horrors!!!!");
         }
@@ -206,10 +294,11 @@ class FFmpegBridge {
         return this.fileOffset;
     };
 
-    private async initVideoStream(streamIndex: number, config: VideoDecoderConfigStruct) {
+    private async initVideoStream(streamIndex: number, config: VideoDecoderConfigStruct): Promise<Stream> {
         if (!this.module) throw Error("No ffmpeg module. Whate te fyucj");
 
-        const result = await VideoDecoder.isConfigSupported({
+        const messageChannel = new MessageChannel();
+        const decoderResult = await VideoDecoder.isConfigSupported({
             codec: config.codec,
             codedWidth: config.coded_width,
             codedHeight: config.coded_height,
@@ -222,12 +311,185 @@ class FFmpegBridge {
             description: this.module!.HEAPU8.slice(config.description, config.description + config.description_size),
         });
 
-        if (!result.supported) return false;
+        if (!decoderResult.supported)
+            return {
+                streamIndex,
+                type: MediaType.RESULT_VIDEO,
+                isSupported: false,
+                isUsed: false,
+                worker: undefined,
+                messageChannel,
+                eventer: undefined
+            };
 
         const worker = webDecoderWorker({ name: `I decode stream Video Stream #${streamIndex}` });
+        const eventer = new AtomicEventer(undefined, decoderRequestTemplates, decoderResponseTemplates);
+
+        eventer.receiveEvent((event, data) => {
+            this.handleWebDecoderEvent(streamIndex, event, data);
+        });
+
+        const initDonePromise = eventer.waitUntilEvent(WebDecoderResponseType.INIT_DONE);
+        worker.postMessage({
+            type: "init",
+            isVideo: true,
+            targetBuffer: this.module.wasmMemory,
+            inputAtomicBuffers: eventer.getBuffers(),
+            audioConfig: undefined,
+            videoConfig: config,
+            outputChannel: messageChannel.port2
+        } as WebDecoderWorkerInit, [messageChannel.port2]);
+
+        const result = await initDonePromise;
+
+        if (result === null || result.data.result < 0) {
+            worker.terminate();
+            return {
+                streamIndex,
+                type: MediaType.RESULT_VIDEO,
+                isSupported: false,
+                isUsed: false,
+                messageChannel,
+                worker: undefined,
+                eventer: undefined
+            };
+        }
+
+        return {
+            streamIndex,
+            type: MediaType.RESULT_VIDEO,
+            isSupported: true,
+            isUsed: false,
+            messageChannel,
+            worker: worker,
+            eventer: eventer
+        };
+    }
+
+    private async initAudioStream(streamIndex: number, config: AudioDecoderConfigStruct): Promise<Stream> {
+        if (!this.module) throw Error("No ffmpeg module. Whate te fyucj");
+
+        const messageChannel = new MessageChannel();
+        const decoderResult = await AudioDecoder.isConfigSupported({
+            codec: config.codec,
+            numberOfChannels: config.num_channels,
+            sampleRate: config.sample_rate,
+            description: this.module!.HEAPU8.slice(config.description, config.description + config.description_size),
+        });
+
+        if (!decoderResult.supported)
+            return {
+                streamIndex,
+                type: MediaType.RESULT_AUDIO,
+                isSupported: false,
+                isUsed: false,
+                messageChannel,
+                worker: undefined,
+                eventer: undefined
+            };
+
+        const worker = webDecoderWorker({ name: `I decode stream Audio Stream #${streamIndex}` });
+        const eventer = new AtomicEventer(undefined, decoderRequestTemplates, decoderResponseTemplates);
+
+        eventer.receiveEvent((event, data) => {
+            this.handleWebDecoderEvent(streamIndex, event, data);
+        });
+
+        const initDonePromise = eventer.waitUntilEvent(WebDecoderResponseType.INIT_DONE);
+        worker.postMessage({
+            type: "init",
+            isVideo: false,
+            targetBuffer: this.module.wasmMemory,
+            inputAtomicBuffers: eventer.getBuffers(),
+            audioConfig: config,
+            videoConfig: undefined,
+            outputChannel: messageChannel.port2
+        } as WebDecoderWorkerInit, [messageChannel.port2]);
+
+        const result = await initDonePromise;
+
+        if (result === null || result.data.result < 0) {
+            worker.terminate();
+            return {
+                streamIndex,
+                type: MediaType.RESULT_AUDIO,
+                isSupported: false,
+                isUsed: false,
+                messageChannel,
+                worker: undefined,
+                eventer: undefined
+            };
+        }
+
+        return {
+            streamIndex,
+            type: MediaType.RESULT_AUDIO,
+            isSupported: true,
+            isUsed: false,
+            messageChannel,
+            worker: worker,
+            eventer: eventer
+        };
+    }
+
+    private initSubtitleStream(streamIndex: number) {
+        const messageChannel = new MessageChannel();
+        return {
+            streamIndex,
+            type: MediaType.RESULT_SUBTITLE,
+            isSupported: false,
+            isUsed: false,
+            messageChannel,
+            worker: undefined,
+            eventer: undefined
+        };
+    }
+
+    private handleWebDecoderEvent(streamIndex: number, type: WebDecoderResponseType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
+        switch (type) {
+            case WebDecoderResponseType.INIT_DONE: {
+                let data2 = data as { result: number; };
+                if (data2.result < 0)
+                    console.error("Web Decoder init failed with error", data.result, `for stream #${streamIndex}`);
+                else console.log(`Web Decoder init for stream #${streamIndex} succeeded :D`);
+
+                break;
+            }
+            case WebDecoderResponseType.FATAL_ERROR: {
+                console.error(`Web decoder for stream #${streamIndex} has died. Switching to SW decoding`);
+                this.streams[streamIndex].isSupported = false;
+                this.streams[streamIndex].eventer = undefined;
+
+                this.streams[streamIndex].worker?.terminate();
+                this.streams[streamIndex].worker = undefined;
+
+                this.updateFFmpegSupportedStreams();
+                break;
+            }
+        }
+    }
+
+    private updateFFmpegSupportedStreams() {
+        if (!this.module) throw Error("No Module. What????");
+
+        const ptr = Number(this.streamSupportPtr);
+        for (const [index, stream] of Object.entries(this.streams)) {
+            let index2 = parseInt(index);
+            let streamPtr = ptr + (index2 * 4);
+
+            let streamSupport = StreamSupport.HW_SUPPORT;
+            if (!stream.isUsed) {
+                streamSupport = StreamSupport.UNUSED;
+            } else if (!stream.isSupported) {
+                streamSupport = StreamSupport.SW_SUPPORT;
+            }
+            this.module.setValue(streamPtr, streamSupport, 'i32');
+        }
     }
 }
 
+
+let bridge: FFmpegBridge;
 /**
  * Slow communication between main thread and the FFmpeg TS bridge
  * Used for stuff that is rarely called and is not latency dependant

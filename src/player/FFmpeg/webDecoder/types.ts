@@ -43,7 +43,7 @@ export interface WebDecoderWorkerInit {
     isVideo: boolean,
     targetBuffer: WebAssembly.Memory,
     inputAtomicBuffers: AtomicEventerBuffers,
-    videoConfig: VideoDecoderConfigStruct,
-    audioConfig: AudioDecoderConfigStruct,
+    videoConfig: VideoDecoderConfigStruct | undefined,
+    audioConfig: AudioDecoderConfigStruct | undefined,
     outputChannel: MessagePort
 }

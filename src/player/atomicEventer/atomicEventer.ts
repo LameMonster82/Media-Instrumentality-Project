@@ -141,27 +141,43 @@ export default class AtomicEventer<
      * @param callback A callback that to receive the event
      */
     receiveEvent<E extends ReceiveEnum>(callback: (type: E, data: DecodeTemplate<(typeof this.receiveTemplate)[E]>) => void) {
-        const intArray = new Int32Array(this.bufferToReceiveFrom);
-        const uintArray = new Uint8Array(this.bufferToReceiveFrom);
         const infiniteLoop = async () => {
             while (true) {
                 if (this.destroyed) return;
+                const result = await this.waitUntilEvent<E>(undefined);
+                if (result === null) return;
 
-                const waiter = Atomics.waitAsync(intArray, 0, 0);
-                if (waiter.async) {
-                    await Promise.race([waiter.value, this.destroyedPromise]);
-                    if (this.destroyed) return;
-                }
-
-                const event = Atomics.load(uintArray, 4) as E;
-                const data = this.readEvent<E>(this.receiveTemplate[event as E]);
-                Atomics.store(intArray, 0, 0);
-                Atomics.notify(intArray, 0);
-                callback(event, data);
+                callback(result.event, result.data);
             }
         };
 
         infiniteLoop();
+    }
+
+    async waitUntilEvent<E extends ReceiveEnum>(type: E | undefined): Promise<{event: E, data: DecodeTemplate<ReceiveMap[E]>} | null> {
+        const intArray = new Int32Array(this.bufferToReceiveFrom);
+        const uintArray = new Uint8Array(this.bufferToReceiveFrom);
+
+        let waiter = Atomics.waitAsync(intArray, 0, 0);
+        let event: E;
+        while (true) {
+            if (waiter.async) {
+                await Promise.race([waiter.value, this.destroyedPromise]);
+                if (this.destroyed) return null;
+            }
+
+            event = Atomics.load(uintArray, 4) as E;
+
+            if (type === undefined || event === type)
+                break;
+        }
+
+        
+        const data = this.readEvent<E>(this.receiveTemplate[event]);
+        Atomics.store(intArray, 0, 0);
+        Atomics.notify(intArray, 0);
+
+        return {event, data};
     }
 
     lockUntilEvent<E extends ReceiveEnum>(event: E): DecodeTemplate<(typeof this.receiveTemplate)[E]> {

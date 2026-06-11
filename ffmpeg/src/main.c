@@ -350,6 +350,10 @@ ReturnType *poke_for_data() {
   int64_t dur_js = av_rescale_q(packet->duration, stream->time_base,
                                 (AVRational){1, 1000000});
 
+  g_ctx.data_return->flags = packet->flags;
+  g_ctx.data_return->timestamp = ts_js;
+  g_ctx.data_return->duration = dur_js;
+
   if (g_ctx.stream_support[stream_index] == STREAM_HW_SUPPORT) {
     g_ctx.data_return->status = RESULT_RAW_PACKET;
     g_ctx.data_return->type = RESULT_PACKET;

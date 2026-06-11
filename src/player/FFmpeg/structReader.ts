@@ -46,6 +46,16 @@ export enum MediaType {
     RESULT_PACKET = 3,
 }
 
+export enum ResultStatus {
+    RESULT_OK = 0,           /* data consumed, frame emitted or packet forwarded */
+    RESULT_NEED_MORE = 1,    /* EAGAIN — call get_data again */
+    RESULT_EOF = 2,          /* end of file reached */
+    RESULT_RAW_PACKET = 10,  /* packet was forwarded to WebCodecs decoder */
+    RESULT_ERR_GENERIC = -1, /* fatal error */
+    RESULT_ERR_SKIP = -3,    /* stream not used — skip silently */
+    RESULT_UNREACHABLE = -4, /* Unreachable place??? */
+}
+
 export interface ChapterInfo {
     id: bigint;        // int64_t
     start: number;     // double
@@ -110,13 +120,18 @@ export interface AudioFrame {
 }
 
 export interface ReturnType {
-    status: number;
+    status: ResultStatus;
     stream_index: number;
     type: MediaType;
     video_frame: VideoFrame | null;
     audio_frame: AudioFrame | null;
+
+    flags: number;
     packet_data: number;          // AVPacket* pointer
     packet_size: number;
+
+    timestamp: bigint;
+    duration: bigint;
 }
 
 export interface VideoDecoderConfigStruct {
@@ -381,11 +396,14 @@ export function readReturnType(buffer: ArrayBuffer, offset: number, is64Bit: boo
     const type = view.getInt32(off, true) as MediaType; off += 4;
     const videoFramePtr = readPointer(view, off, is64Bit); off += is64Bit ? 8 : 4;
     const audioFramePtr = readPointer(view, off, is64Bit); off += is64Bit ? 8 : 4;
+    const flags = view.getInt32(off, true); off += 4;
     const packetPtr = readPointer(view, off, is64Bit); off += is64Bit ? 8 : 4;
     const packetSize = view.getInt32(off, true); off += 4;
     const video_frame = videoFramePtr !== 0 ? readVideoFrame(buffer, videoFramePtr, is64Bit) : null;
     const audio_frame = audioFramePtr !== 0 ? readAudioFrame(buffer, audioFramePtr, is64Bit) : null;
-    return { status, stream_index, type, video_frame, audio_frame, packet_data: packetPtr, packet_size: packetSize };
+    const timestamp = view.getBigInt64(off, true); off += 8;
+    const duration = view.getBigInt64(off, true); off += 8;
+    return { status, stream_index, type, video_frame, audio_frame, flags, packet_data: packetPtr, packet_size: packetSize, timestamp, duration };
 }
 
 export function readVideoDecoderConfig(module: MainModule, offset: number, is64Bit: boolean): VideoDecoderConfigStruct {

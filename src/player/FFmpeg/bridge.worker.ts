@@ -15,7 +15,6 @@ import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, See
 import type { DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
 import type { Dictionary } from "@/core/types";
 import { decoderRequestTemplates, decoderResponseTemplates, WebDecoderRequestType, WebDecoderResponseType, type WebDecoderWorkerInit } from "./webDecoder/types";
-import { initialize } from "esbuild";
 import { FFmpegRequestEvent, ffmpegRequestTemplate, type FFmpegResponseEvent, ffmpegResponseTemplate } from "./advancedTypes/atomicTypes";
 
 // Default type of `self` is `WorkerGlobalScope & typeof globalThis`
@@ -218,7 +217,7 @@ class FFmpegBridge {
                             } else if (this.streams[streamIndex].type !== MediaType.RESULT_VIDEO) {
                                 throw Error("We got a packet to HW decode that is not a video or audio???");
                             }
-                            
+
                             this.streams[streamIndex].eventer!.sendEvent(event, {
                                 ptr: rsult.packet_data,
                                 size: rsult.packet_size,

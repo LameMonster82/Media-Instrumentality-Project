@@ -135,8 +135,8 @@ RUN cmake --build build -j$(nproc) && cmake --install build
 # ---- Stage: Build zlib for wasm64 --------------------------------
 FROM base AS zlib-wasm64
 ENV ZLIB_VERSION=1.3.2
-ENV CFLAGS="-O3 -flto -sMEMORY64=1 -m64"
-ENV LDFLAGS="-O3 -flto -sMEMORY64=1 -m64"
+ENV CFLAGS="-g3 -sMEMORY64=1 -m64"
+ENV LDFLAGS="-g3 -sMEMORY64=1 -m64"
 ADD https://github.com/madler/zlib/archive/refs/tags/v${ZLIB_VERSION}.tar.gz /tmp/zlib.tar.gz
 RUN mkdir -p /src && tar -xzf /tmp/zlib.tar.gz -C /src --strip-components=1 && rm /tmp/zlib.tar.gz
 WORKDIR /src
@@ -146,8 +146,8 @@ RUN emmake make -j$(nproc) && emmake make install
 # ---- Stage: libogg for wasm64 ------------------------------------------------
 FROM base AS libogg-wasm64
 ENV OGG_VERSION=1.3.6
-ENV CFLAGS="-O3 -flto -sMEMORY64=1 -m64"
-ENV LDFLAGS="-O3 -flto -sMEMORY64=1 -m64"
+ENV CFLAGS="-g3 -sMEMORY64=1 -m64"
+ENV LDFLAGS="-g3 -sMEMORY64=1 -m64"
 ADD https://github.com/xiph/ogg/releases/download/v${OGG_VERSION}/libogg-${OGG_VERSION}.tar.gz /tmp/ogg.tar.gz
 RUN mkdir -p /src && tar -xzf /tmp/ogg.tar.gz -C /src --strip-components=1 && rm /tmp/ogg.tar.gz
 WORKDIR /src
@@ -158,8 +158,8 @@ RUN emmake make -j$(nproc) && emmake make install
 FROM base AS libvorbis-wasm64
 COPY --from=libogg-wasm64 $INSTALL_DIR $INSTALL_DIR
 ENV VORBIS_VERSION=1.3.7
-ENV CFLAGS="-O3 -flto -sMEMORY64=1 -m64"
-ENV LDFLAGS="-O3 -flto -sMEMORY64=1 -m64"
+ENV CFLAGS="-g3 -sMEMORY64=1 -m64"
+ENV LDFLAGS="-g3 -sMEMORY64=1 -m64"
 ADD https://github.com/xiph/vorbis/releases/download/v${VORBIS_VERSION}/libvorbis-${VORBIS_VERSION}.tar.gz /tmp/vorbis.tar.gz
 RUN mkdir -p /src && tar -xzf /tmp/vorbis.tar.gz -C /src --strip-components=1 && rm /tmp/vorbis.tar.gz
 WORKDIR /src
@@ -171,8 +171,8 @@ RUN emmake make -j$(nproc) && emmake make install
 FROM base AS libopus-wasm64
 COPY --from=libogg-wasm64 $INSTALL_DIR $INSTALL_DIR
 ENV OPUS_VERSION=1.5.2
-ENV CFLAGS="-O3 -flto -sMEMORY64=1 -m64"
-ENV LDFLAGS="-O3 -flto -sMEMORY64=1 -m64"
+ENV CFLAGS="-g3 -sMEMORY64=1 -m64"
+ENV LDFLAGS="-g3 -sMEMORY64=1 -m64"
 ADD https://github.com/xiph/opus/releases/download/v${OPUS_VERSION}/opus-${OPUS_VERSION}.tar.gz /tmp/opus.tar.gz
 RUN mkdir -p /src && tar -xzf /tmp/opus.tar.gz -C /src --strip-components=1 && rm /tmp/opus.tar.gz
 WORKDIR /src
@@ -183,8 +183,8 @@ RUN emmake make -j$(nproc) && emmake make install
 # ---- Stage: libvpx (VP8/VP9) --------------------------------------
 FROM base AS libvpx-wasm64
 ENV VPX_VERSION=1.16.0
-ENV CFLAGS="-O3 -flto -sMEMORY64=1 -m64"
-ENV LDFLAGS="-O3 -flto -sMEMORY64=1 -m64"
+ENV CFLAGS="-g3 -sMEMORY64=1 -m64"
+ENV LDFLAGS="-g3 -sMEMORY64=1 -m64"
 ADD https://github.com/webmproject/libvpx/archive/refs/tags/v${VPX_VERSION}.tar.gz /tmp/vpx.tar.gz
 RUN mkdir -p /src && tar -xzf /tmp/vpx.tar.gz -C /src --strip-components=1 && rm /tmp/vpx.tar.gz
 WORKDIR /src
@@ -196,8 +196,8 @@ RUN emmake make -j$(nproc) && emmake make install
 # ---- Stage: libdav1d (AV1, meson build) ---------------------------
 FROM base AS libdav1d-wasm64
 ENV DAV1D_VERSION=1.5.3
-ENV CFLAGS="-O3 -flto -sMEMORY64=1 -m64"
-ENV LDFLAGS="-O3 -flto -sMEMORY64=1 -m64"
+ENV CFLAGS="-g3 -sMEMORY64=1 -m64"
+ENV LDFLAGS="-g3 -sMEMORY64=1 -m64"
 ADD https://code.videolan.org/videolan/dav1d/-/archive/${DAV1D_VERSION}/dav1d-${DAV1D_VERSION}.tar.gz /tmp/dav1d.tar.gz
 RUN mkdir -p /src && tar -xzf /tmp/dav1d.tar.gz -C /src --strip-components=1 && rm /tmp/dav1d.tar.gz
 WORKDIR /src
@@ -229,8 +229,8 @@ RUN meson compile -C build && meson install -C build
 # ---- Stage: libxml2 (for DASH/IMF demuxers) -----------------------
 FROM base AS libxml2-wasm64
 ENV XML2_VERSION=2.12.6
-ENV CFLAGS="-O3 -flto -sMEMORY64=1 -m64"
-ENV LDFLAGS="-O3 -flto -sMEMORY64=1 -m64"
+ENV CFLAGS="-g3 -sMEMORY64=1 -m64"
+ENV LDFLAGS="-g3 -sMEMORY64=1 -m64"
 ADD https://github.com/GNOME/libxml2/archive/refs/tags/v${XML2_VERSION}.tar.gz /tmp/xml2.tar.gz
 
 COPY --from=zlib-wasm64 $INSTALL_DIR $INSTALL_DIR
@@ -269,9 +269,9 @@ COPY --from=zlib-wasm32        $INSTALL_DIR $INSTALL_DIR
 ENV PKG_CONFIG_PATH=$INSTALL_DIR/lib/pkgconfig
 
 # Pthreads + SIMD + optimisations
-ENV CFLAGS="-I$INSTALL_DIR/include -O3 -flto -msimd128 -pthread"
+ENV CFLAGS="-I$INSTALL_DIR/include -g3 -msimd128 -pthread"
 ENV CXXFLAGS="$CFLAGS"
-ENV LDFLAGS="-L$INSTALL_DIR/lib -O3 -flto -pthread"
+ENV LDFLAGS="-L$INSTALL_DIR/lib -g3 -pthread"
 COPY configure-ffmpeg.sh /src/
 
 WORKDIR /src
@@ -301,9 +301,9 @@ COPY --from=zlib-wasm64        $INSTALL_DIR $INSTALL_DIR
 
 ENV PKG_CONFIG_PATH=$INSTALL_DIR/lib/pkgconfig
 
-ENV CFLAGS="-I$INSTALL_DIR/include -O3 -flto -msimd128 -pthread -sMEMORY64=1"
+ENV CFLAGS="-I$INSTALL_DIR/include -g3 -msimd128 -pthread -sMEMORY64=1"
 ENV CXXFLAGS="$CFLAGS"
-ENV LDFLAGS="-L$INSTALL_DIR/lib -O3 -flto -pthread -sMEMORY64=1"
+ENV LDFLAGS="-L$INSTALL_DIR/lib -g3 -pthread -sMEMORY64=1"
 COPY configure-ffmpeg.sh /src/
 
 WORKDIR /src
@@ -317,6 +317,20 @@ COPY include/ ./include/
 RUN mkdir -p /output
 RUN bash /src/link-ffmpeg.sh wasm64
 
+# ---- Build Structs -----------------------------------------------
+FROM base AS structs-wasm32
+COPY                          struct-codegen.ts  /tmp/struct-codegen.ts
+COPY --from=build-wasm32      /output/layout.txt /tmp/layout.txt
+RUN mkdir -p /output
+RUN node --experimental-strip-types /tmp/struct-codegen.ts /tmp/layout.txt /output/structs.ts
+
+# ---- Build Structs -----------------------------------------------
+FROM base AS structs-wasm64
+COPY                          struct-codegen.ts  /tmp/struct-codegen.ts
+COPY --from=build-wasm64      /output/layout.txt /tmp/layout.txt
+RUN mkdir -p /output
+RUN node --experimental-strip-types /tmp/struct-codegen.ts /tmp/layout.txt /output/structs.ts
+
 # ---- Stage 5: Export artifacts ------------------------------------
 FROM scratch AS export
 COPY --from=build-wasm32 /output/ffmpeg-wasm32.wasm /lib/ffmpeg-wasm32/ffmpeg-wasm32.wasm
@@ -326,10 +340,8 @@ COPY --from=build-wasm64 /output/ffmpeg-wasm64.wasm /lib/ffmpeg-wasm64/ffmpeg-wa
 COPY --from=build-wasm64 /output/ffmpeg-wasm64.mjs /lib/ffmpeg-wasm64/ffmpeg.mjs
 COPY --from=build-wasm64 /output/ffmpeg-wasm64.d.ts /lib/ffmpeg-wasm64/ffmpeg.d.ts
 
-# COPY --from=build-wasm64 /output/ /lib/ffmpeg-wasm64/testOut
-
-# COPY --from=build-wasm32 /output/context-wasm32.ts /lib/ffmpeg-wasm32/context-wasm32.ts
-# COPY --from=build-wasm64 /output/context-wasm64.ts /lib/ffmpeg-wasm64/context-wasm64.ts
-
 COPY --from=build-wasm32 /src/ffbuild/config.log /config-wasm32.log
 COPY --from=build-wasm64 /src/ffbuild/config.log /config-wasm64.log
+
+COPY --from=structs-wasm32 /output/structs.ts /lib/ffmpeg-wasm32/structs-wasm32.ts
+COPY --from=structs-wasm64 /output/structs.ts /lib/ffmpeg-wasm64/structs-wasm64.ts

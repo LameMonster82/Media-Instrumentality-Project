@@ -324,7 +324,6 @@ ReturnType *poke_for_data() {
     av_packet_free(&packet);
     if (ret == AVERROR_EOF) {
       g_ctx.data_return->status = RESULT_EOF;
-      return g_ctx.data_return;
     }
     return g_ctx.data_return;
   }
@@ -335,14 +334,7 @@ ReturnType *poke_for_data() {
 
   int stream_index = packet->stream_index;
 
-  if (g_ctx.codecs[stream_index] == NULL) {
-    av_packet_free(&packet);
-    g_ctx.data_return->status = RESULT_ERR_SKIP;
-    return g_ctx.data_return;
-  }
-
   AVStream *stream = g_ctx.fmt_ctx->streams[stream_index];
-  AVCodecContext *ctx = g_ctx.codecs[stream_index];
   enum AVMediaType type = stream->codecpar->codec_type;
 
   int64_t ts_js =
@@ -357,6 +349,7 @@ ReturnType *poke_for_data() {
   if (g_ctx.stream_support[stream_index] == STREAM_HW_SUPPORT) {
     g_ctx.data_return->status = RESULT_RAW_PACKET;
     g_ctx.data_return->type = RESULT_PACKET;
+     ReturnType* going_insane = g_ctx.data_return;
     return g_ctx.data_return;
   } else if (g_ctx.stream_support[stream_index] ==
              STREAM_NO_SUPPORT) { // Dont care about this stream rn
@@ -364,6 +357,17 @@ ReturnType *poke_for_data() {
     av_packet_free(&packet);
     return g_ctx.data_return;
   }
+
+  if (g_ctx.codecs[stream_index] == NULL) {
+    av_packet_free(&packet);
+    g_ctx.data_return->status = RESULT_ERR_SKIP;
+    return g_ctx.data_return;
+  }
+
+  AVCodecContext *ctx = g_ctx.codecs[stream_index];
+
+  //fprintf(stdout, "ptr is %d\n", g_ctx.stream_support);
+  //fprintf(stdout, "State is %d\n", g_ctx.stream_support[stream_index]);
 
   ret = avcodec_send_packet(ctx, packet);
   if (ret < 0) {
@@ -398,10 +402,8 @@ ReturnType *poke_for_data() {
       g_ctx.data_return->type = RESULT_VIDEO;
       g_ctx.data_return->video_frame = final_frame;
 
-
     } else if (type == AVMEDIA_TYPE_AUDIO) {
-      AudioFrame *final_frame =
-          decode_audio(frame, stream_index, ts_js);
+      AudioFrame *final_frame = decode_audio(frame, stream_index, ts_js);
 
       g_ctx.data_return->status = RESULT_OK;
       g_ctx.data_return->type = RESULT_AUDIO;
@@ -416,15 +418,13 @@ ReturnType *poke_for_data() {
 
   av_packet_free(&packet);
 
-  //g_ctx.data_return->status = RESULT_UNREACHABLE;
+  // g_ctx.data_return->status = RESULT_UNREACHABLE;
 
   return g_ctx.data_return;
 }
 
 EMSCRIPTEN_KEEPALIVE
-void cleanup_packet(AVPacket *packet) {
-  av_packet_free(&packet);
-}
+void cleanup_packet(AVPacket *packet) { av_packet_free(&packet); }
 
 EMSCRIPTEN_KEEPALIVE
 void cleanup_info(FileInfo *info) {

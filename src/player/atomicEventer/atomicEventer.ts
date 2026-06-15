@@ -44,6 +44,8 @@ export default class AtomicEventer<
     private readonly sendTemplate: SendMap;
     private readonly receiveTemplate: ReceiveMap;
 
+    private isMainThread = typeof window !== 'undefined' && typeof document !== 'undefined';
+
     constructor(buffers: AtomicEventerBuffers | undefined, sendTemplate: SendMap, receiveTemplate: ReceiveMap) {
         this.bufferToReceiveFrom = buffers?.senderBuffer ?? new SharedArrayBuffer(512, { maxByteLength: 16384 });
         this.bufferToSendTo = buffers?.receiverBuffer ?? new SharedArrayBuffer(512, { maxByteLength: 16384 });
@@ -67,7 +69,7 @@ export default class AtomicEventer<
     async sendEvent<E extends SendEnum>(type: E, data: DecodeTemplate<(typeof this.sendTemplate)[E]>, awaitable: boolean = false) {
         const typeOfData = this.sendTemplate[type] as Dictionary<SerializableStuff>;
         const entries = Object.entries(typeOfData);
-        const totalEventSize = entries.map(e => {
+        const totalEventSize = entries.length > 0 ? entries.map(e => {
             if (e[1].type === "str") {
                 return this.textEncoder.encode(data[e[0]] as string).length + 4;
             }
@@ -75,7 +77,7 @@ export default class AtomicEventer<
                 return (data[e[0]] as Uint8Array).length + 4;
             }
             return e[1].size;
-        }).reduce((a, b) => a + b);
+        }).reduce((a, b) => a + b) : 0;
 
         if (this.bufferToSendTo.byteLength < totalEventSize + 2) { // for the event stuff
             this.bufferToSendTo.grow(totalEventSize + 2);
@@ -84,7 +86,7 @@ export default class AtomicEventer<
         const view = new DataView(this.bufferToSendTo);
         const intBuffer = new Int32Array(this.bufferToSendTo);
         const uintBuffer = new Uint8Array(this.bufferToSendTo);
-        if (awaitable)
+        if (awaitable || this.isMainThread)
             await Atomics.waitAsync(intBuffer, 0, 1).value;
         else Atomics.wait(intBuffer, 0, 1);
         Atomics.store(intBuffer, 0, 0);
@@ -158,7 +160,7 @@ export default class AtomicEventer<
         const intArray = new Int32Array(this.bufferToReceiveFrom);
         const uintArray = new Uint8Array(this.bufferToReceiveFrom);
 
-        let waiter = Atomics.waitAsync(intArray, 0, 0);
+        const waiter = Atomics.waitAsync(intArray, 0, 0);
         let event: E;
         while (true) {
             if (waiter.async) {
@@ -172,7 +174,7 @@ export default class AtomicEventer<
                 break;
         }
 
-        
+
         const data = this.readEvent<E>(this.receiveTemplate[event]);
         Atomics.store(intArray, 0, 0);
         Atomics.notify(intArray, 0);

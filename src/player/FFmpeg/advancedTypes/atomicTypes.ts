@@ -1,6 +1,7 @@
-import { emptyRequest, floatConst, type SerializableEventMap } from "@/player/atomicEventer/types";
+import { boolConst, emptyRequest, floatConst, type SerializableEventMap } from "@/player/atomicEventer/types";
 
 export enum FFmpegRequestEvent {
+    SET_STREAM_ACTIVE,
     REQUEST_DATA,
     SEEK,
 }
@@ -8,10 +9,15 @@ export enum FFmpegRequestEvent {
 export enum FFmpegResponseEvent {
     INIT_STATUS,
     REQUEST_STATUS,
+    SET_STREAM_DONE,
     SEEK_STATUS,
 }
 
 export const ffmpegRequestTemplate = {
+    [FFmpegRequestEvent.SET_STREAM_ACTIVE]: {
+        streamIndex: floatConst,
+        active: boolConst
+    },
     [FFmpegRequestEvent.REQUEST_DATA]: emptyRequest,
     [FFmpegRequestEvent.SEEK]: {
         time: floatConst
@@ -28,4 +34,5 @@ export const ffmpegResponseTemplate = {
     [FFmpegResponseEvent.SEEK_STATUS]: {
         status: floatConst
     },
+    [FFmpegResponseEvent.SET_STREAM_DONE]: emptyRequest,
 } as const satisfies SerializableEventMap<FFmpegResponseEvent>;

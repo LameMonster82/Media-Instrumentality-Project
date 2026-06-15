@@ -12,7 +12,8 @@ else
 fi
 
 emcc \
-    -O3 -flto -msimd128 -pthread \
+    -Xclang -fdump-record-layouts \
+    -g3 -msimd128 -pthread \
     -I$INSTALL_DIR/include \
     -Iinclude \
     -L$INSTALL_DIR/lib \
@@ -32,4 +33,5 @@ emcc \
     src/main.c src/demuxers.c src/sw_stuff.c src/codec_config.c src/io.c \
     -lavcodec -lavformat -lavutil -lswscale -lswresample -lavfilter -lz \
     -o /output/ffmpeg-${SUFFIX}.mjs \
-    --emit-tsd /output/ffmpeg-${SUFFIX}.d.ts
+    --emit-tsd /output/ffmpeg-${SUFFIX}.d.ts \
+    >> /output/layout.txt || true

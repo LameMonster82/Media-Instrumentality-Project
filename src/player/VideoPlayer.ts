@@ -77,9 +77,23 @@ export class VideoPlayer2 {
 
     async initialize() {
         const data = await this.waitForSlowEvent("initComplete");
-        
+
         const canvas = document.createElement('canvas');
-        const videoStream = data.info.streams.find(s => s.type == MediaType.RESULT_VIDEO)!;
+        const videoStreamIndex = data.info.streams.findIndex(s => s.type === MediaType.RESULT_VIDEO)!;
+        const audioStreamIndex = data.info.streams.findIndex(s => s.type === MediaType.RESULT_AUDIO)!;
+
+        const videoStream = data.info.streams[videoStreamIndex];
+
+        this.workerEventer.sendEvent(FFmpegRequestEvent.SET_STREAM_ACTIVE, {
+            streamIndex: videoStreamIndex,
+            active: true
+        });
+        await this.workerEventer.waitUntilEvent(FFmpegResponseEvent.SET_STREAM_DONE);
+        this.workerEventer.sendEvent(FFmpegRequestEvent.SET_STREAM_ACTIVE, {
+            streamIndex: audioStreamIndex,
+            active: true
+        });
+        await this.workerEventer.waitUntilEvent(FFmpegResponseEvent.SET_STREAM_DONE);
 
         canvas.width = videoStream.video_config!.coded_width;
         canvas.height = videoStream.video_config!.coded_height;
@@ -90,6 +104,8 @@ export class VideoPlayer2 {
         data.streamPorts[data.info.streams.indexOf(videoStream)].onmessage = (e: MessageEvent<VideoFrame>) => {
             composer.renderVideoFrame(e.data);
         }
+
+        document.getElementById("containerAgain")!.append(canvas);
 
         while (true) {
             this.workerEventer.sendEvent(FFmpegRequestEvent.REQUEST_DATA, {});

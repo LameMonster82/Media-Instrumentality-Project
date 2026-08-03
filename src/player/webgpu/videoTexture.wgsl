@@ -35,7 +35,8 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> Output {
 
 @fragment
 fn fs_main(in: Output) -> @location(0) vec4f {
-    let video = textureSampleBaseClampToEdge(videoTexture, videoSampler, in.uv);
+    let flippedUv = vec2f(in.uv.x, 1.0 - in.uv.y);
+    let video = textureSampleBaseClampToEdge(videoTexture, videoSampler, flippedUv);
 
     if (uniforms.overlayEnabled < 0.5) {
         return video;

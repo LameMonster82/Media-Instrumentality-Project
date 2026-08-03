@@ -1,5 +1,5 @@
 import { VideoPlayer2 } from "./player/VideoPlayer";
-import video from "@Resources/Arcane.mkv"
+import video from "@Resources/IMG_9223.MP4"
 
 
 const container = document.getElementById("containerAgain")!;

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import type { MainModule as MainModule32 } from "@FFmpeg/ffmpeg-wasm32/ffmpeg";
 import type { MainModule as MainModule64 } from "@FFmpeg/ffmpeg-wasm64/ffmpeg";
-import type { AVChromaLocation, AVColorPrimaries, AVColorRange, AVColorSpace, AVColorTransferCharacteristic } from "./advancedTypes/AVTypes";
+import type { AVChromaLocation, AVColorPrimaries, AVColorRange, AVColorSpace, AVColorTransferCharacteristic, AVSampleFormat } from "./advancedTypes/AVTypes";
 
 import * as Glue32 from "@FFmpeg/ffmpeg-wasm32/structs-wasm32";
 import * as Glue64 from "@FFmpeg/ffmpeg-wasm64/structs-wasm64";
@@ -58,6 +58,13 @@ export enum ResultStatus {
     RESULT_UNREACHABLE = -4, /* Unreachable place??? */
 }
 
+export enum AVSubtitleType {
+    SUBTITLE_NONE,
+    SUBTITLE_BITMAP,
+    SUBTITLE_TEXT,
+    SUBTITLE_ASS,
+};
+
 export interface ChapterInfo {
     id: bigint;        // int64_t
     start: number;     // double
@@ -68,9 +75,10 @@ export interface ChapterInfo {
 export interface StreamInfo {
     type: MediaType;
     duration: number;
+    disposition: number;
     video_config: VideoDecoderConfigStruct | null | undefined;
     audio_config: AudioDecoderConfigStruct | null | undefined;
-    subtitle_config: ASSSubtitleConfigStruct | null | undefined;
+    subtitle_config: SubtitleConfigStruct | null | undefined;
     metadata: Record<string, string>;     // AVDictionary*
 }
 
@@ -119,6 +127,21 @@ export interface AudioFrame {
     bytes_per_sample: number;
     ts_js: number;
     stream_index: number;
+    format: AVSampleFormat;
+}
+
+export interface SubtitleFrame {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    nb_colors: number;
+    pts: bigint;
+    ts_js: number;
+    dur_js: number;
+    src_data: (number | bigint)[];      // array of 4 pointers (uint8_t*)
+    src_linesize: number[];  // array of 4 int32_t
+    stream_index: number;
 }
 
 export interface ReturnType {
@@ -128,12 +151,20 @@ export interface ReturnType {
     video_frame: VideoFrame | null;
     audio_frame: AudioFrame | null;
 
+    subtitle_type: AVSubtitleType;
+    subtitle_frame: SubtitleFrame | null;
+    subtitle_text: string | null;
+
     flags: number;
-    packet_data: number;          // AVPacket* pointer
+    packet_data: number;          // AVPacket* data pointer
     packet_size: number;
 
     timestamp: bigint;
     duration: bigint;
+
+    packet: number | bigint; // AVPacket* pointer
+    video_frame_ptr: number | bigint;
+    audio_frame_ptr: number | bigint;
 }
 
 export interface VideoDecoderConfigStruct {
@@ -157,9 +188,10 @@ export interface AudioDecoderConfigStruct {
     description_size: number;
 }
 
-export interface ASSSubtitleConfigStruct {
+export interface SubtitleConfigStruct {
     subtitle_header_size: number;
     subtitle_header: number;        // uint8_t* pointer
+    type: AVSubtitleType
 }
 
 export interface SmallerDemux {
@@ -227,7 +259,7 @@ export function readStreamInfo(module: MainModule, offset: number, is64Bit: bool
     // Recursively parse nested configs if pointers are non-zero
     let video_config: VideoDecoderConfigStruct | undefined | null;
     let audio_config: AudioDecoderConfigStruct | undefined | null;
-    let subtitle_config: ASSSubtitleConfigStruct | undefined | null;
+    let subtitle_config: SubtitleConfigStruct | undefined | null;
 
     if (info.type === MediaType.RESULT_VIDEO) {
         video_config = info.video_config !== 0 ? readVideoDecoderConfig(module.wasmMemory.buffer, Number(info.video_config), is64Bit) : null;
@@ -240,6 +272,7 @@ export function readStreamInfo(module: MainModule, offset: number, is64Bit: bool
     return {
         type: info.type,
         duration: info.duration,
+        disposition: info.disposition,
         video_config,
         audio_config,
         subtitle_config,
@@ -286,20 +319,14 @@ export function readVideoFrame(buffer: ArrayBuffer, offset: number, is64Bit: boo
     const glue = is64Bit ? Glue64 : Glue32;
     const info = glue.readVideoFrame(buffer, offset);
 
-    const view = new DataView(info.src_data.buffer);
-    const src_data: (number | bigint)[] = [];
-    for (let i = 0; i < 8; i++) {
-        if (is64Bit) {
-            src_data.push(view.getBigUint64(i * 8, true));
-        } else {
-            src_data.push(view.getUint32(i * 4, true));
-        }
-    }
-
-    const view2 = new DataView(info.src_linesize.buffer);
+    const src_data: number[] = [];
     const src_linesize: number[] = [];
+
+    const actual_data = new Int32Array(buffer, info.src_data.byteOffset, 8);
+    const actual_linesize = new Int32Array(buffer, info.src_linesize.byteOffset, 8);
     for (let i = 0; i < 8; i++) {
-        src_linesize.push(view2.getInt32(i * 4));
+        src_data.push(actual_data[i]);
+        src_linesize.push(actual_linesize[i]);
     }
 
     return {
@@ -333,12 +360,43 @@ export function readAudioFrame(buffer: ArrayBuffer, offset: number, is64Bit: boo
     return glue.readAudioFrame(buffer, offset);
 }
 
+export function readSubtitleFrame(buffer: ArrayBuffer, offset: number, is64Bit: boolean): SubtitleFrame {
+    const glue = is64Bit ? Glue64 : Glue32;
+    const info = glue.readSubtitleFrame(buffer, offset);
+
+    const src_data: number[] = [];
+    const src_linesize: number[] = [];
+
+    const actual_data = new Int32Array(buffer, info.src_data.byteOffset, 8);
+    const actual_linesize = new Int32Array(buffer, info.src_linesize.byteOffset, 8);
+    for (let i = 0; i < 8; i++) {
+        src_data.push(actual_data[i]);
+        src_linesize.push(actual_linesize[i]);
+    }
+
+    return {
+        x: info.x,
+        y: info.y,
+        width: info.width,
+        height: info.height,
+        nb_colors: info.nb_colors,
+        pts: info.pts,
+        ts_js: info.ts_js,
+        dur_js: info.dur_js,
+        src_data,
+        src_linesize,
+        stream_index: info.stream_index,
+    };
+}
+
 export function readReturnType(buffer: ArrayBuffer, offset: number, is64Bit: boolean): ReturnType {
     const glue = is64Bit ? Glue64 : Glue32;
     const info = glue.readReturnType(buffer, offset);
 
     const video_frame = Number(info.video_frame) !== 0 ? readVideoFrame(buffer, Number(info.video_frame), is64Bit) : null;
     const audio_frame = Number(info.audio_frame) !== 0 ? readAudioFrame(buffer, Number(info.audio_frame), is64Bit) : null;
+    const subtitle_frame = Number(info.subtitle_frame) !== 0 ? readSubtitleFrame(buffer, Number(info.subtitle_frame), is64Bit) : null;
+    const subtitle_text = Number(info.subtitle_text) !== 0 ? readCString(new Uint8Array(buffer), Number(info.subtitle_text)) : null;
 
     return {
         status: info.status,
@@ -346,11 +404,17 @@ export function readReturnType(buffer: ArrayBuffer, offset: number, is64Bit: boo
         type: info.type,
         video_frame,
         audio_frame,
+        subtitle_type: info.subtitle_type,
+        subtitle_frame,
+        subtitle_text,
         flags: info.flags,
         packet_data: Number(info.packet_data),
         packet_size: info.packet_size,
         timestamp: info.timestamp,
-        duration: info.duration
+        duration: info.duration,
+        packet: info.packet,
+        video_frame_ptr: info.video_frame,
+        audio_frame_ptr: info.audio_frame,
     };
 }
 
@@ -384,12 +448,13 @@ export function readAudioDecoderConfig(buffer: ArrayBuffer, offset: number, is64
     };
 }
 
-export function readASSSubtitleConfig(buffer: ArrayBufferLike, offset: number, is64Bit: boolean): ASSSubtitleConfigStruct {
+export function readASSSubtitleConfig(buffer: ArrayBufferLike, offset: number, is64Bit: boolean): SubtitleConfigStruct {
     const glue = is64Bit ? Glue64 : Glue32;
-    const info = glue.readASSSubtitleConfig(buffer, offset);
+    const info = glue.readSubtitleConfig(buffer, offset);
     return {
         subtitle_header_size: info.subtitle_header_size,
-        subtitle_header: Number(info.subtitle_header)
+        subtitle_header: Number(info.subtitle_header),
+        type: info.type
     };
 }
 

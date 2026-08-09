@@ -31,7 +31,8 @@ typedef struct {
 typedef struct {
     int subtitle_header_size;
     uint8_t *subtitle_header;
-} ASSSubtitleConfig;
+    enum AVSubtitleType type;
+} SubtitleConfig;
 
 VideoDecoderConfig *video_stream_to_config(AVCodecParameters *codecpar);
 AudioDecoderConfig *audio_stream_to_config(AVCodecParameters *codecpar);

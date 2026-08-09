@@ -1,12 +1,12 @@
 import type { Dictionary, WorkerPostMessage, WorkerShutdown } from "@/core/types";
-import type { ChapterInfo } from "../Tracks/subtitles/subtitleStream";
-import type { FileInfo } from "./structReader";
+import type { ChapterInfo } from "../Tracks/subtitles old/subtitleStream";
+import type { AudioDecoderConfigStruct, FileInfo, MediaType, VideoDecoderConfigStruct } from "./structReader";
 import type { AtomicEventerBuffers } from "../atomicEventer/types";
 
 //#region Main -> FFmpeg Worker
 export interface WorkerInitFFmpeg extends WorkerPostMessage {
     readonly kind: "initFfmpeg";
-    readonly url: string;
+    readonly fileSource: string | File;
     readonly bufferSize: number;
     readonly eventerBuffers: AtomicEventerBuffers
 }
@@ -118,7 +118,8 @@ export type AllTargetWorkerMessages =
 export interface WorkerFFmpegInitComplete extends WorkerPostMessage {
     readonly kind: "initComplete";
     readonly info: FileInfo;
-    readonly streamPorts: MessagePort[];
+    readonly streamPorts: Map<number, MessagePort>;
+    readonly streamPorts2: Map<number, MessagePort>;
 }
 
 export type AllRespondWorkerEvents = WorkerFFmpegInitComplete;
@@ -131,10 +132,26 @@ export type DictionaryWorkerEvent = {
   [K in AllRespondWorkerEventsKind]: ((data: RespondEventByKind<K>) => void)[];
 };
 
-
 export enum StreamSupport {
     HW_SUPPORT = 1,
     SW_SUPPORT = 0,
     UNUSED = -1,
     NO_SUPPORT = -2,
+}
+
+export enum RequestDataStatus {
+    EOF = -2,
+    ERR = -1,
+    IMMEDIATE_RESPOSNE = 0,
+    DECODED_BY_OTHER_THREAD = 1
+}
+  
+export type ValidDecoderTypes = keyof DecoderConfig & keyof DecoderSupport;
+export type DecoderConfig = {
+    [MediaType.RESULT_VIDEO]: VideoDecoderConfig,
+    [MediaType.RESULT_AUDIO]: AudioDecoderConfig
+}
+export type DecoderSupport = {
+    [MediaType.RESULT_VIDEO]: VideoDecoderSupport,
+    [MediaType.RESULT_AUDIO]: AudioDecoderSupport
 }

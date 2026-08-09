@@ -48,8 +48,9 @@ export interface WorkerVideoFrameImageBitmap extends WorkerPostMessage {
     readonly imageBitmap: ImageBitmap;
 }
 
+export type AllVideoFrameTypes = WorkerVideoFrame; // | WorkerVideoFrameBufferInit | WorkerVideoFrameImageBitmap;
 
-export interface VideoFFmpegStream extends FFmpegStream<WorkerVideoFrame | WorkerVideoFrameBufferInit | WorkerVideoFrameImageBitmap> {
+export interface VideoFFmpegStream extends FFmpegStream<AllVideoFrameTypes> {
     type: "video";
 }
 

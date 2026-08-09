@@ -1,9 +1,10 @@
 import type { MediaStreamTrackWrapper } from "../types";
 import type { WorkerAudioData, WorkerAudioDataInit } from "./audioTypes";
 
-export class AudioStreamTrackNative implements MediaStreamTrackWrapper<WorkerAudioData | WorkerAudioDataInit> {
+export class AudioStreamTrackNative implements MediaStreamTrackWrapper<AudioData | WorkerAudioDataInit> {
     private writableStream: WritableStream<AudioData>;
     private track: MediaStreamTrackGenerator<AudioData>;
+    private writer: WritableStreamDefaultWriter<AudioData>;
 
     public static isSupported(): boolean {
         return 'MediaStreamTrackGenerator' in self && 'AudioData' in self;
@@ -16,6 +17,7 @@ export class AudioStreamTrackNative implements MediaStreamTrackWrapper<WorkerAud
         const track = new MediaStreamTrackGenerator({ kind: 'audio' });
         this.writableStream = track.writable;
         this.track = track;
+        this.writer = this.writableStream.getWriter();
     }
 
 
@@ -27,21 +29,16 @@ export class AudioStreamTrackNative implements MediaStreamTrackWrapper<WorkerAud
             this.track.enabled = enable;
     }
 
-    async writeData(audioData: WorkerAudioData | WorkerAudioDataInit): Promise<void> {
+    async writeData(audioData: AudioData | WorkerAudioDataInit): Promise<void> {
         let audio;
-        if (audioData.kind === "audioData") {
-            audio = audioData.audioData;
+        if (audioData instanceof AudioData) {
+            audio = audioData;
         } else {
-            audioData.dataBuffer.transfer = audioData.transferable as ArrayBuffer[];
-            audio = new AudioData(audioData.dataBuffer);
+            audioData.transfer = audioData.transferable as ArrayBuffer[];
+            audio = new AudioData(audioData);
         }
 
-        const writer = this.writableStream.getWriter();
-        try {
-            await writer.write(audio);
-        } finally {
-            writer.releaseLock();
-        }
+        await this.writer.write(audio);
     }
 
     getTrack(): MediaStreamTrackGenerator<AudioData> {
@@ -53,8 +50,8 @@ export class AudioStreamTrackNative implements MediaStreamTrackWrapper<WorkerAud
     }
 
     destroy(): void {
-        this.track?.stop();
-        this.writableStream?.abort();
+        this.track.stop();
+        this.writer.close();
     }
 
 }

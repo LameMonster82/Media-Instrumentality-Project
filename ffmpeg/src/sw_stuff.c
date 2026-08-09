@@ -4,7 +4,7 @@
 #include "libswscale/swscale.h"
 
 int init_sws(SwsContext **sws_ctx, AVFrame *frame,
-             AVFrame *dst, enum AVPixelFormat best_fmt) {
+             enum AVPixelFormat best_fmt) {
   if (best_fmt == AV_PIX_FMT_NONE) {
     printf("No good pix fmt found for conversion, Falling back to RGBA");
     best_fmt = AV_PIX_FMT_RGBA;

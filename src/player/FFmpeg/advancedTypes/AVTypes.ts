@@ -197,12 +197,12 @@ export enum AVColorSpace {
  */
 export enum AVChromaLocation {
     AVCHROMA_LOC_UNSPECIFIED = 0,
-    AVCHROMA_LOC_LEFT        = 1, ///< MPEG-2/4 4:2:0, H.264 default for 4:2:0
-    AVCHROMA_LOC_CENTER      = 2, ///< MPEG-1 4:2:0, JPEG 4:2:0, H.263 4:2:0
-    AVCHROMA_LOC_TOPLEFT     = 3, ///< ITU-R 601, SMPTE 274M 296M S314M(DV 4:1:1), mpeg2 4:2:2
-    AVCHROMA_LOC_TOP         = 4,
-    AVCHROMA_LOC_BOTTOMLEFT  = 5,
-    AVCHROMA_LOC_BOTTOM      = 6,
+    AVCHROMA_LOC_LEFT = 1, ///< MPEG-2/4 4:2:0, H.264 default for 4:2:0
+    AVCHROMA_LOC_CENTER = 2, ///< MPEG-1 4:2:0, JPEG 4:2:0, H.263 4:2:0
+    AVCHROMA_LOC_TOPLEFT = 3, ///< ITU-R 601, SMPTE 274M 296M S314M(DV 4:1:1), mpeg2 4:2:2
+    AVCHROMA_LOC_TOP = 4,
+    AVCHROMA_LOC_BOTTOMLEFT = 5,
+    AVCHROMA_LOC_BOTTOM = 6,
     AVCHROMA_LOC_NB               ///< Not part of ABI
 };
 
@@ -336,6 +336,42 @@ export function AVPixelFormatToVideoFormat(fmt: AVPixelFormat): ExtendedVideoFor
             throw new Error(`Unsupported AVPixelFormat: ${fmt}`);
     }
 }
+
+export function AVSampleFormatToAudioFormat(fmt: AVSampleFormat): AudioSampleFormat {
+    switch (fmt) {
+        case AVSampleFormat.AV_SAMPLE_FMT_U8: return 'u8';
+        case AVSampleFormat.AV_SAMPLE_FMT_S16: return 's16';
+        case AVSampleFormat.AV_SAMPLE_FMT_S32: return 's32';
+        case AVSampleFormat.AV_SAMPLE_FMT_FLT: return 'f32';
+
+        case AVSampleFormat.AV_SAMPLE_FMT_S16P: return 's16-planar';
+        case AVSampleFormat.AV_SAMPLE_FMT_S32P: return 's32-planar';
+        case AVSampleFormat.AV_SAMPLE_FMT_FLTP: return 'f32-planar';
+
+        default:
+            throw new Error(`Unsupported AVSampleFormat: ${fmt}`);
+    }
+}
+
+export enum AVSampleFormat {
+    AV_SAMPLE_FMT_NONE = -1,
+    AV_SAMPLE_FMT_U8,          ///< unsigned 8 bits
+    AV_SAMPLE_FMT_S16,         ///< signed 16 bits
+    AV_SAMPLE_FMT_S32,         ///< signed 32 bits
+    AV_SAMPLE_FMT_FLT,         ///< float
+    AV_SAMPLE_FMT_DBL,         ///< double
+
+    AV_SAMPLE_FMT_U8P,         ///< unsigned 8 bits, planar
+    AV_SAMPLE_FMT_S16P,        ///< signed 16 bits, planar
+    AV_SAMPLE_FMT_S32P,        ///< signed 32 bits, planar
+    AV_SAMPLE_FMT_FLTP,        ///< float, planar
+    AV_SAMPLE_FMT_DBLP,        ///< double, planar
+    AV_SAMPLE_FMT_S64,         ///< signed 64 bits
+    AV_SAMPLE_FMT_S64P,        ///< signed 64 bits, planar
+
+    AV_SAMPLE_FMT_NB           ///< Number of sample formats. DO NOT USE if linking dynamically
+};
+
 
 // fuck it. All formats from <libavutil/pixfmt.h>
 // TODO: We can probably make an auto import with @ffmpeg/gen_struct.ts
@@ -824,4 +860,109 @@ export enum AVLogLevel {
      * Extremely verbose debugging, useful for libav* development.
      */
     AV_LOG_TRACE = 56,
+}
+
+export enum Dispositions {
+    /**
+     * The stream should be chosen by default among other streams of the same type,
+     * unless the user has explicitly specified otherwise.
+     */
+    AV_DISPOSITION_DEFAULT = 1 << 0,
+    /**
+     * The stream is not in original language.
+     *
+     * @note AV_DISPOSITION_ORIGINAL is the inverse of this disposition. At most
+     *       one of them should be set in properly tagged streams.
+     * @note This disposition may apply to any stream type, not just audio.
+     */
+    AV_DISPOSITION_DUB = 1 << 1,
+    /**
+     * The stream is in original language.
+     *
+     * @see the notes for AV_DISPOSITION_DUB
+     */
+    AV_DISPOSITION_ORIGINAL = 1 << 2,
+    /**
+     * The stream is a commentary track.
+     */
+    AV_DISPOSITION_COMMENT = 1 << 3,
+    /**
+     * The stream contains song lyrics.
+     */
+    AV_DISPOSITION_LYRICS = 1 << 4,
+    /**
+     * The stream contains karaoke audio.
+     */
+    AV_DISPOSITION_KARAOKE = 1 << 5,
+
+    /**
+     * Track should be used during playback by default.
+     * Useful for subtitle track that should be displayed
+     * even when user did not explicitly ask for subtitles.
+     */
+    AV_DISPOSITION_FORCED = 1 << 6,
+    /**
+     * The stream is intended for hearing impaired audiences.
+     */
+    AV_DISPOSITION_HEARING_IMPAIRED = 1 << 7,
+    /**
+     * The stream is intended for visually impaired audiences.
+     */
+    AV_DISPOSITION_VISUAL_IMPAIRED = 1 << 8,
+    /**
+     * The audio stream contains music and sound effects without voice.
+     */
+    AV_DISPOSITION_CLEAN_EFFECTS = 1 << 9,
+    /**
+     * The stream is stored in the file as an attached picture/"cover art" (e.g.
+     * APIC frame in ID3v2). The first (usually only) packet associated with it
+     * will be returned among the first few packets read from the file unless
+     * seeking takes place. It can also be accessed at any time in
+     * AVStream.attached_pic.
+     */
+    AV_DISPOSITION_ATTACHED_PIC = 1 << 10,
+    /**
+     * The stream is sparse, and contains thumbnail images, often corresponding
+     * to chapter markers. Only ever used with AV_DISPOSITION_ATTACHED_PIC.
+     */
+    AV_DISPOSITION_TIMED_THUMBNAILS = 1 << 11,
+
+    /**
+     * The stream is intended to be mixed with a spatial audio track. For example,
+     * it could be used for narration or stereo music, and may remain unchanged by
+     * listener head rotation.
+     */
+    AV_DISPOSITION_NON_DIEGETIC = 1 << 12,
+
+    /**
+     * The subtitle stream contains captions, providing a transcription and possibly
+     * a translation of audio. Typically intended for hearing-impaired audiences.
+     */
+    AV_DISPOSITION_CAPTIONS = 1 << 16,
+    /**
+     * The subtitle stream contains a textual description of the video content.
+     * Typically intended for visually-impaired audiences or for the cases where the
+     * video cannot be seen.
+     */
+    AV_DISPOSITION_DESCRIPTIONS = 1 << 17,
+    /**
+     * The subtitle stream contains time-aligned metadata that is not intended to be
+     * directly presented to the user.
+     */
+    AV_DISPOSITION_METADATA = 1 << 18,
+    /**
+     * The stream is intended to be mixed with another stream before presentation.
+     * Used for example to signal the stream contains an image part of a HEIF grid,
+     * or for mix_type=0 in mpegts.
+     */
+    AV_DISPOSITION_DEPENDENT = 1 << 19,
+    /**
+     * The video stream contains still images.
+     */
+    AV_DISPOSITION_STILL_IMAGE = 1 << 20,
+    /**
+     * The video stream contains multiple layers, e.g. stereoscopic views (cf. H.264
+     * Annex G/H, or HEVC Annex F).
+     */
+    AV_DISPOSITION_MULTILAYER = 1 << 21,
 }

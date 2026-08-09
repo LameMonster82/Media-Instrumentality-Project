@@ -1,3 +1,4 @@
+import type { ExtendedVideoFormats } from "@/player/FFmpeg/advancedTypes/AVTypes";
 import { getFrameSize } from "./utils";
 
 export class WebGLCanvas {

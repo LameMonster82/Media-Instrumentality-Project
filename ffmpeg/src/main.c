@@ -11,6 +11,7 @@
 
 #include "context.h"
 #include "io.h"
+#include "libavcodec/codec_id.h"
 #include "libavutil/error.h"
 #include "libavutil/frame.h"
 #include "libswscale/swscale.h"
@@ -62,6 +63,8 @@ FileInfo *open_file() {
     return NULL;
   }
 
+  av_dump_format(g_ctx.fmt_ctx, 0, "", 0);
+
   FileInfo *info = malloc(sizeof(FileInfo));
   info->duration = g_ctx.fmt_ctx->duration == AV_NOPTS_VALUE
                        ? INT64_MAX
@@ -111,6 +114,7 @@ FileInfo *open_file() {
 
     info->streams[i].type = type;
     info->streams[i].metadata = stream->metadata;
+    info->streams[i].disposition = stream->disposition;
 
     if (type == AVMEDIA_TYPE_ATTACHMENT) {
       continue;
@@ -158,16 +162,27 @@ FileInfo *open_file() {
     } else if (type == AVMEDIA_TYPE_AUDIO) {
       info->streams[i].audio_config = audio_stream_to_config(stream->codecpar);
     } else if (type == AVMEDIA_TYPE_SUBTITLE) {
-      ASSSubtitleConfig *config = malloc(sizeof(ASSSubtitleConfig));
+      SubtitleConfig *config = malloc(sizeof(SubtitleConfig));
       config->subtitle_header_size = ctx->subtitle_header_size;
       config->subtitle_header = ctx->subtitle_header;
+      config->type = SUBTITLE_NONE;
+
+      const AVCodecDescriptor *desc = avcodec_descriptor_get(codec->id);
+
+      // Certain (most) subtitles can be just text instead of ASS
+      if (codec->id == AV_CODEC_ID_SUBRIP) {
+        config->type = SUBTITLE_TEXT;
+      } else if (desc->props & AV_CODEC_PROP_BITMAP_SUB) {
+        config->type = SUBTITLE_BITMAP;
+      } else if (desc->props & AV_CODEC_PROP_TEXT_SUB) {
+        config->type = SUBTITLE_ASS;
+      }
+
       info->streams[i].subtitle_config = config;
     }
 
     g_ctx.codecs[i] = ctx;
   }
-
-  av_dump_format(g_ctx.fmt_ctx, 0, "", 0);
 
   return info;
 }
@@ -232,6 +247,22 @@ VideoFrame *decode_frame(AVFrame *frame, int stream_index,
   return simple_frame;
 }
 
+static int is_browser_supported_sample_fmt(enum AVSampleFormat fmt) {
+  switch (fmt) {
+  case AV_SAMPLE_FMT_U8:
+  case AV_SAMPLE_FMT_S16:
+  case AV_SAMPLE_FMT_S32:
+  case AV_SAMPLE_FMT_FLT:
+  case AV_SAMPLE_FMT_U8P:
+  case AV_SAMPLE_FMT_S16P:
+  case AV_SAMPLE_FMT_S32P:
+  case AV_SAMPLE_FMT_FLTP:
+    return 1;
+  default:
+    return 0;
+  }
+}
+
 EMSCRIPTEN_KEEPALIVE
 void cleanup_video_frame(VideoFrame *simple_frame) {
   av_frame_free(&simple_frame->frame);
@@ -241,11 +272,10 @@ void cleanup_video_frame(VideoFrame *simple_frame) {
 AudioFrame *decode_audio(AVFrame *frame, int stream_index, double ts_js) {
 
   int ret;
-  enum AVSampleFormat out_format =
-      AV_SAMPLE_FMT_FLT; // av_get_packed_sample_fmt(frame->format);
 
   AVFrame *out_frame = frame;
-  if (out_format != frame->format) {
+  if (!is_browser_supported_sample_fmt(frame->format)) {
+    enum AVSampleFormat out_format = AV_SAMPLE_FMT_FLT;
 
     if (!g_ctx.swr_ctx[stream_index]) {
       ret = init_swr(&g_ctx.swr_ctx[stream_index], frame, out_format);
@@ -263,9 +293,10 @@ AudioFrame *decode_audio(AVFrame *frame, int stream_index, double ts_js) {
   simple_frame->samples = out_frame->nb_samples;
   simple_frame->sample_rate = out_frame->sample_rate;
   simple_frame->data = (uint32_t)(uintptr_t)out_frame->data[0];
-  simple_frame->bytes_per_sample = av_get_bytes_per_sample(out_format);
+  simple_frame->bytes_per_sample = av_get_bytes_per_sample(out_frame->format);
   simple_frame->ts_js = ts_js;
   simple_frame->stream_index = stream_index;
+  simple_frame->format = out_frame->format;
 
   simple_frame->frame = frame;
 
@@ -277,6 +308,40 @@ void cleanup_audio_frame(AudioFrame *simple_frame) {
   av_frame_free(&simple_frame->frame);
   free(simple_frame);
 }
+
+SubtitleFrame *decode_subtitle_frame(AVSubtitleRect *frame, AVSubtitle *sub,
+                                     int stream_index, AVRational time_base) {
+  int loss, ret;
+
+  int64_t pts_js = av_rescale_q(sub->pts, time_base, (AVRational){1, 1000000}) +
+                   (sub->start_display_time * 1000);
+  int64_t dur_js = av_rescale_q(sub->pts, time_base, (AVRational){1, 1000000}) +
+                   (sub->end_display_time * 1000);
+
+  SubtitleFrame *simple_frame = malloc(sizeof(*simple_frame));
+
+  simple_frame->width = frame->w;
+  simple_frame->height = frame->h;
+  simple_frame->x = frame->x;
+  simple_frame->y = frame->y;
+  simple_frame->nb_colors = frame->nb_colors;
+  simple_frame->pts = sub->pts;
+  simple_frame->ts_js = (double)pts_js;
+  simple_frame->dur_js = (double)dur_js;
+  simple_frame->stream_index = stream_index;
+
+  simple_frame->frame = sub;
+
+  for (int i = 0; i < 4; i++) {
+    simple_frame->src_data[i] = (uint32_t)(uintptr_t)frame->data[i];
+    simple_frame->src_linesize[i] = frame->linesize[i];
+  }
+
+  return simple_frame;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void cleanup_subtitle_frame(SubtitleFrame *simple_frame) { free(simple_frame); }
 
 EMSCRIPTEN_KEEPALIVE
 int seek_to(double time) {
@@ -317,6 +382,12 @@ ReturnType *poke_for_data() {
   AVPacket *packet = av_packet_alloc();
   int ret = av_read_frame(g_ctx.fmt_ctx, packet);
 
+  g_ctx.data_return->video_frame = 0;
+  g_ctx.data_return->audio_frame = 0;
+  g_ctx.data_return->subtitle_frame = 0;
+  g_ctx.data_return->subtitle_text = 0;
+  g_ctx.data_return->packet_data = 0;
+
   g_ctx.data_return->status = RESULT_ERR_GENERIC;
 
   if (ret < 0) {
@@ -349,10 +420,12 @@ ReturnType *poke_for_data() {
   if (g_ctx.stream_support[stream_index] == STREAM_HW_SUPPORT) {
     g_ctx.data_return->status = RESULT_RAW_PACKET;
     g_ctx.data_return->type = RESULT_PACKET;
-     ReturnType* going_insane = g_ctx.data_return;
+    g_ctx.data_return->packet = packet;
+    ReturnType *going_insane = g_ctx.data_return;
     return g_ctx.data_return;
-  } else if (g_ctx.stream_support[stream_index] ==
-             STREAM_NO_SUPPORT) { // Dont care about this stream rn
+  } else if (g_ctx.stream_support[stream_index] == STREAM_NO_SUPPORT ||
+             g_ctx.stream_support[stream_index] ==
+                 STREAM_UNUSED) { // Dont care about this stream rn
     g_ctx.data_return->status = RESULT_ERR_SKIP;
     av_packet_free(&packet);
     return g_ctx.data_return;
@@ -366,8 +439,66 @@ ReturnType *poke_for_data() {
 
   AVCodecContext *ctx = g_ctx.codecs[stream_index];
 
-  //fprintf(stdout, "ptr is %d\n", g_ctx.stream_support);
-  //fprintf(stdout, "State is %d\n", g_ctx.stream_support[stream_index]);
+  if (type == AVMEDIA_TYPE_SUBTITLE) {
+    AVSubtitle sub;
+    memset(&sub, 0, sizeof(sub));
+    int got_sub = 0;
+
+    ret = avcodec_decode_subtitle2(ctx, &sub, &got_sub, packet);
+    if (ret < 0) {
+      fprintf(stderr, "Error decoding subtitle: %s\n", av_err2str(ret));
+      av_packet_free(&packet);
+      g_ctx.data_return->status = RESULT_ERR_GENERIC;
+      return g_ctx.data_return;
+    }
+
+    if (got_sub == 0) {
+      fprintf(stdout, "Got no subtitle. hmmm: %s\n", av_err2str(ret));
+      av_packet_free(&packet);
+      g_ctx.data_return->status = RESULT_NEED_MORE;
+      return g_ctx.data_return;
+    }
+
+    int64_t pts_js =
+        av_rescale_q(sub.pts, packet->time_base, (AVRational){1, 1000000}) +
+        (sub.start_display_time * 1000);
+    int64_t dur_js =
+        av_rescale_q(sub.pts, packet->time_base, (AVRational){1, 1000000}) +
+        (sub.end_display_time * 1000);
+
+    g_ctx.data_return->timestamp = pts_js;
+    g_ctx.data_return->duration = dur_js;
+
+    g_ctx.data_return->status = RESULT_OK;
+    g_ctx.data_return->type = RESULT_SUBTITLE;
+
+    for (int i = 0; i < sub.num_rects; i++) {
+      AVSubtitleRect *rect = sub.rects[i];
+
+      g_ctx.data_return->subtitle_type = rect->type;
+      if (rect->type == SUBTITLE_BITMAP) {
+        SubtitleFrame *frame =
+            decode_subtitle_frame(rect, &sub, stream_index, packet->time_base);
+        g_ctx.data_return->subtitle_frame = frame;
+      } else if (rect->type == SUBTITLE_ASS) {
+        g_ctx.data_return->subtitle_text = rect->ass;
+      } else if (rect->type == SUBTITLE_TEXT) {
+        g_ctx.data_return->subtitle_text = rect->text;
+      } else {
+        fprintf(stderr, "Unknown subtitle type: %d\n", rect->type);
+        continue;
+      }
+
+      send_sw_frame(g_ctx.data_return);
+    }
+
+    avsubtitle_free(&sub);
+    av_packet_free(&packet);
+    return g_ctx.data_return;
+  }
+
+  // fprintf(stdout, "ptr is %d\n", g_ctx.stream_support);
+  // fprintf(stdout, "State is %d\n", g_ctx.stream_support[stream_index]);
 
   ret = avcodec_send_packet(ctx, packet);
   if (ret < 0) {
@@ -377,8 +508,8 @@ ReturnType *poke_for_data() {
     return g_ctx.data_return;
   }
 
-  AVFrame *frame = NULL;
-
+  int sent_sw_frame = 0;
+  AVFrame *frame = av_frame_alloc();
   while (ret >= 0) {
     ret = avcodec_receive_frame(ctx, frame);
 
@@ -386,7 +517,11 @@ ReturnType *poke_for_data() {
       g_ctx.data_return->status = RESULT_EOF;
       break;
     } else if (ret == AVERROR(EAGAIN)) {
-      g_ctx.data_return->status = RESULT_NEED_MORE;
+      if (sent_sw_frame > 0) {
+        g_ctx.data_return->status = RESULT_OK;
+      } else {
+        g_ctx.data_return->status = RESULT_NEED_MORE;
+      }
       break;
     } else if (ret < 0) {
       fprintf(stderr, "Error while getting frames out :/\n");
@@ -413,6 +548,8 @@ ReturnType *poke_for_data() {
       continue;
     }
 
+    sent_sw_frame = 1;
+    av_packet_free(&packet);
     send_sw_frame(g_ctx.data_return);
   }
 

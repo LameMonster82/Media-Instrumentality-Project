@@ -55,17 +55,14 @@ registerProcessor("${workletName}", AudioStreamProcessor);
 // AudioStreamTrack
 // ---------------------------------------------------------------------------
 
-export class AudioStreamTrack implements MediaStreamTrackWrapper<WorkerAudioData | WorkerAudioDataInit> {
-    public readonly streamindex: number;
-
+export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | WorkerAudioDataInit> {
     private readonly audioContext: AudioContext;
     private readonly destination: MediaStreamAudioDestinationNode;
     private readonly track: MediaStreamTrack;
     private readonly channels: number;
     private workletNode?: AudioWorkletNode;
 
-    constructor(streamIndex: number, sampleRate = 44100, channels = 2) {
-        this.streamindex = streamIndex;
+    constructor(sampleRate = 44100, channels = 2) {
         this.channels = channels;
         this.audioContext = new AudioContext({ sampleRate });
         this.destination = this.audioContext.createMediaStreamDestination();
@@ -91,27 +88,24 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<WorkerAudioData
         this.workletNode.connect(this.destination);
     }
 
-    public async writeData(frame: WorkerAudioData | WorkerAudioDataInit, currentTime: number): Promise<void> {
+    public async writeData(frame: AudioData | WorkerAudioDataInit, currentTime: number): Promise<void> {
         if (!this.workletNode)
             return;
 
-        const frameTime = audioTime(frame);
-        const endTimeSeconds = (frameTime.timestamp + frameTime.duration) / 1_000_000;
-        const timeRemaining = endTimeSeconds - currentTime;
+        // const frameTime = audioTime(frame);
+        // const endTimeSeconds = (frameTime.timestamp + frameTime.duration) / 1_000_000;
+        // const timeRemaining = endTimeSeconds - currentTime;
 
-        if (timeRemaining <= 0) {
-            if (frame.kind === "audioData")
-                frame.audioData.close();
+        // if (timeRemaining <= 0) {
+        //     if (frame instanceof AudioData)
+        //         frame.close();
 
-            return;
-        }
+        //     return;
+        // }
 
-        const audioBuffer = frame.kind === "audioData"
-            ? this.copyFromAudioData(frame, timeRemaining)
-            : this.viewFromDataBuffer(frame, timeRemaining);
-
-        if (frame.kind === "audioData")
-            frame.audioData.close();
+        const audioBuffer = frame instanceof AudioData
+            ? this.copyFromAudioData(frame, 9999999999999)
+            : this.viewFromDataBuffer(frame, 9999999999999);
 
         this.postToWorklet({ kind: "write", buffer: audioBuffer }, [audioBuffer.buffer]);
     }
@@ -140,14 +134,13 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<WorkerAudioData
     }
 
     /** Allocates a new buffer and copies decoded audio into it. */
-    private copyFromAudioData(frame: WorkerAudioData, timeRemaining: number): Float32Array {
-        const { audioData } = frame;
+    private copyFromAudioData(frame: AudioData, timeRemaining: number): Float32Array {
         const maxFrames = Math.min(
-            Math.floor(timeRemaining * audioData.sampleRate),
-            audioData.numberOfFrames,
+            Math.floor(timeRemaining * frame.sampleRate),
+            frame.numberOfFrames,
         );
-        const buffer = new Float32Array(maxFrames * audioData.numberOfChannels);
-        audioData.copyTo(buffer, { planeIndex: 0, format: "f32", frameCount: maxFrames });
+        const buffer = new Float32Array(maxFrames * frame.numberOfChannels);
+        frame.copyTo(buffer, { planeIndex: 0, format: "f32", frameCount: maxFrames });
         return buffer;
     }
 
@@ -156,12 +149,11 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<WorkerAudioData
      * Ownership is transferred to the worklet via postMessage.
      */
     private viewFromDataBuffer(frame: WorkerAudioDataInit, timeRemaining: number): Float32Array {
-        const { dataBuffer } = frame;
         const maxFrames = Math.min(
-            Math.floor(timeRemaining * dataBuffer.sampleRate),
-            dataBuffer.numberOfFrames);
+            Math.floor(timeRemaining * frame.sampleRate),
+            frame.numberOfFrames);
 
-        return new Float32Array(dataBuffer.data, 0, maxFrames * dataBuffer.numberOfChannels);
+        return new Float32Array(frame.data as ArrayBuffer, 0, maxFrames * frame.numberOfChannels);
     }
 
     private postToWorklet(message: WorkletMessage, transfer: Transferable[] = []): void {

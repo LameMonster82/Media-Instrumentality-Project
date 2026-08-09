@@ -9,7 +9,7 @@
  */
 
 // Skipped (foreign 'struct '-prefixed records, held only as pointers):
-//   struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVPacket, struct AVIOContext, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVFrame, struct AVBufferRef, struct AVFrameSideData, struct AVChannelCustom, struct AVInputFormat, struct AVIOInterruptCB, struct AVFormatContext, struct AVCodec, struct AVCodecContext, struct AVCodecParameters, struct AVChapter, struct AVStream, struct AVClass, struct AVPacketSideData, struct AVProfile, struct RcOverride, struct AVHWAccel, struct AVCodecDescriptor, struct SwsContext, struct AVOutputFormat, union AVStreamGroup::(unnamed at /opt/include/libavformat/avformat.h:1131:5), struct AVStreamGroup, struct AVStreamGroupTileGrid, struct AVStreamGroupTileGrid::(unnamed at /opt/include/libavformat/avformat.h:986:5), struct AVStreamGroupLCEVC, struct AVProgram, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVPacket, struct AVIOContext, struct SmallerDemux, struct AVInputFormat, struct AVClass, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct SwsContext, struct SwsFilter, struct AVClass, union AVOption::(unnamed at /opt/include/libavutil/opt.h:451:5), struct AVOption, struct AVOptionArrayDef, struct AVOptionRanges, struct AVOptionRange, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVFrame, struct AVBufferRef, struct AVFrameSideData, struct AVChannelCustom, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVPacket, struct AVComponentDescriptor, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVCodecParameters, struct AVPacketSideData, struct AVChannelCustom, struct AVPixFmtDescriptor, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVPacket, struct AVIOContext, struct AVIOInterruptCB, struct AVFormatContext, struct AVClass, struct AVInputFormat, struct AVOutputFormat, struct AVStream, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVCodecParameters, struct AVPacketSideData, struct AVChannelCustom, struct AVBufferRef, union AVStreamGroup::(unnamed at /opt/include/libavformat/avformat.h:1131:5), struct AVStreamGroup, struct AVStreamGroupTileGrid, struct AVStreamGroupTileGrid::(unnamed at /opt/include/libavformat/avformat.h:986:5), struct AVStreamGroupLCEVC, struct AVChapter, struct AVProgram, struct AVCodec, struct AVProfile, struct AVCodecContext, struct AVFrame, struct AVFrameSideData, struct RcOverride, struct AVHWAccel, struct AVCodecDescriptor, struct SwsContext
+//   struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVPacket, struct AVIOContext, struct AVInputFormat, struct AVIOInterruptCB, struct AVFormatContext, struct AVCodec, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVCodecContext, struct AVCodecParameters, struct AVFrame, struct SwsContext, struct AVSubtitle, struct AVSubtitleRect, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVPacket, struct AVIOContext, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct SwsContext, struct SwsFilter, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVFrame, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVPacket, struct AVComponentDescriptor, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVPacket, struct AVIOContext
 
 export interface BridgeContext {
   supported_pix_fmts: bigint; // @0 const enum AVPixelFormat * pointer / handle;
@@ -53,19 +53,23 @@ export function readBridgeContext(buffer: ArrayBufferLike, offset = 0): BridgeCo
 }
 
 export interface ReturnType {
-  status:       number; // @0 int32_t
-  stream_index: number; // @4 uint32_t
-  type:         number; // @8 enum MediaType assumed enum/int-sized (enum MediaType);
-  video_frame:  bigint; // @16 VideoFrame * pointer / handle;
-  audio_frame:  bigint; // @24 AudioFrame * pointer / handle;
-  flags:        number; // @32 int
-  packet_data:  bigint; // @40 uint8_t * pointer / handle;
-  packet_size:  number; // @48 int
-  timestamp:    bigint; // @56 int64_t
-  duration:     bigint; // @64 int64_t
+  status:         number; // @0 int32_t
+  stream_index:   number; // @4 uint32_t
+  type:           number; // @8 enum MediaType assumed enum/int-sized (enum MediaType);
+  video_frame:    bigint; // @16 VideoFrame * pointer / handle;
+  audio_frame:    bigint; // @24 AudioFrame * pointer / handle;
+  subtitle_type:  number; // @32 enum AVSubtitleType assumed enum/int-sized (enum AVSubtitleType);
+  subtitle_frame: bigint; // @40 SubtitleFrame * pointer / handle;
+  subtitle_text:  bigint; // @48 char * pointer / handle;
+  flags:          number; // @56 int
+  packet_data:    bigint; // @64 uint8_t * pointer / handle;
+  packet_size:    number; // @72 int
+  timestamp:      bigint; // @80 int64_t
+  duration:       bigint; // @88 int64_t
+  packet:         bigint; // @96 AVPacket * pointer / handle;
 }
 
-export const SIZEOF_ReturnType = 72;
+export const SIZEOF_ReturnType = 104;
 export const ALIGNOF_ReturnType = 8;
 export const OFFSETS_ReturnType = {
   status: 0,
@@ -73,11 +77,15 @@ export const OFFSETS_ReturnType = {
   type: 8,
   video_frame: 16,
   audio_frame: 24,
-  flags: 32,
-  packet_data: 40,
-  packet_size: 48,
-  timestamp: 56,
-  duration: 64,
+  subtitle_type: 32,
+  subtitle_frame: 40,
+  subtitle_text: 48,
+  flags: 56,
+  packet_data: 64,
+  packet_size: 72,
+  timestamp: 80,
+  duration: 88,
+  packet: 96,
 } as const;
 
 export function readReturnType(buffer: ArrayBufferLike, offset = 0): ReturnType {
@@ -88,11 +96,140 @@ export function readReturnType(buffer: ArrayBufferLike, offset = 0): ReturnType 
     type: view.getInt32(8, true),
     video_frame: view.getBigUint64(16, true),
     audio_frame: view.getBigUint64(24, true),
-    flags: view.getInt32(32, true),
-    packet_data: view.getBigUint64(40, true),
-    packet_size: view.getInt32(48, true),
-    timestamp: view.getBigInt64(56, true),
-    duration: view.getBigInt64(64, true),
+    subtitle_type: view.getInt32(32, true),
+    subtitle_frame: view.getBigUint64(40, true),
+    subtitle_text: view.getBigUint64(48, true),
+    flags: view.getInt32(56, true),
+    packet_data: view.getBigUint64(64, true),
+    packet_size: view.getInt32(72, true),
+    timestamp: view.getBigInt64(80, true),
+    duration: view.getBigInt64(88, true),
+    packet: view.getBigUint64(96, true),
+  };
+}
+
+export interface FileInfo {
+  duration:         bigint; // @0 int64_t
+  start_time:       bigint; // @8 int64_t
+  bitrate:          bigint; // @16 int64_t
+  nb_stream_groups: number; // @24 uint32_t
+  nb_chapters:      number; // @28 uint32_t
+  nb_streams:       number; // @32 uint32_t
+  metadata:         bigint; // @40 AVDictionary * pointer / handle;
+  chapters:         bigint; // @48 ChapterInfo * pointer / handle;
+  streams:          bigint; // @56 StreamInfo * pointer / handle;
+}
+
+export const SIZEOF_FileInfo = 64;
+export const ALIGNOF_FileInfo = 8;
+export const OFFSETS_FileInfo = {
+  duration: 0,
+  start_time: 8,
+  bitrate: 16,
+  nb_stream_groups: 24,
+  nb_chapters: 28,
+  nb_streams: 32,
+  metadata: 40,
+  chapters: 48,
+  streams: 56,
+} as const;
+
+export function readFileInfo(buffer: ArrayBufferLike, offset = 0): FileInfo {
+  const view = new DataView(buffer, offset, SIZEOF_FileInfo);
+  return {
+    duration: view.getBigInt64(0, true),
+    start_time: view.getBigInt64(8, true),
+    bitrate: view.getBigInt64(16, true),
+    nb_stream_groups: view.getUint32(24, true),
+    nb_chapters: view.getUint32(28, true),
+    nb_streams: view.getUint32(32, true),
+    metadata: view.getBigUint64(40, true),
+    chapters: view.getBigUint64(48, true),
+    streams: view.getBigUint64(56, true),
+  };
+}
+
+export interface ChapterInfo {
+  id:       bigint; // @0 int64_t
+  start:    number; // @8 double
+  end:      number; // @16 double
+  metadata: bigint; // @24 AVDictionary * pointer / handle;
+}
+
+export const SIZEOF_ChapterInfo = 32;
+export const ALIGNOF_ChapterInfo = 8;
+export const OFFSETS_ChapterInfo = {
+  id: 0,
+  start: 8,
+  end: 16,
+  metadata: 24,
+} as const;
+
+export function readChapterInfo(buffer: ArrayBufferLike, offset = 0): ChapterInfo {
+  const view = new DataView(buffer, offset, SIZEOF_ChapterInfo);
+  return {
+    id: view.getBigInt64(0, true),
+    start: view.getFloat64(8, true),
+    end: view.getFloat64(16, true),
+    metadata: view.getBigUint64(24, true),
+  };
+}
+
+export interface StreamInfo {
+  type:            number; // @0 enum AVMediaType assumed enum/int-sized (enum AVMediaType);
+  duration:        number; // @8 double
+  disposition:     number; // @16 int
+  video_config:    bigint; // @24 VideoDecoderConfig * pointer / handle;
+  audio_config:    bigint; // @32 AudioDecoderConfig * pointer / handle;
+  subtitle_config: bigint; // @40 SubtitleConfig * pointer / handle;
+  metadata:        bigint; // @48 AVDictionary * pointer / handle;
+}
+
+export const SIZEOF_StreamInfo = 56;
+export const ALIGNOF_StreamInfo = 8;
+export const OFFSETS_StreamInfo = {
+  type: 0,
+  duration: 8,
+  disposition: 16,
+  video_config: 24,
+  audio_config: 32,
+  subtitle_config: 40,
+  metadata: 48,
+} as const;
+
+export function readStreamInfo(buffer: ArrayBufferLike, offset = 0): StreamInfo {
+  const view = new DataView(buffer, offset, SIZEOF_StreamInfo);
+  return {
+    type: view.getInt32(0, true),
+    duration: view.getFloat64(8, true),
+    disposition: view.getInt32(16, true),
+    video_config: view.getBigUint64(24, true),
+    audio_config: view.getBigUint64(32, true),
+    subtitle_config: view.getBigUint64(40, true),
+    metadata: view.getBigUint64(48, true),
+  };
+}
+
+export interface SubtitleConfig {
+  subtitle_header_size: number; // @0 int
+  subtitle_header:      bigint; // @8 uint8_t * pointer / handle;
+  type:                 number; // @16 enum AVSubtitleType assumed enum/int-sized (enum AVSubtitleType);
+}
+
+export const SIZEOF_SubtitleConfig = 24;
+export const ALIGNOF_SubtitleConfig = 8;
+export const OFFSETS_SubtitleConfig = {
+  subtitle_header_size: 0,
+  subtitle_header: 8,
+  type: 16,
+} as const;
+
+export function readSubtitleConfig(buffer: ArrayBufferLike, offset = 0): SubtitleConfig {
+  const view = new DataView(buffer, offset, SIZEOF_SubtitleConfig);
+  return {
+    subtitle_header_size: view.getInt32(0, true),
+    subtitle_header: view.getBigUint64(8, true),
+    type: view.getInt32(16, true),
   };
 }
 
@@ -187,6 +324,7 @@ export interface AudioFrame {
   bytes_per_sample: number; // @16 int32_t
   ts_js:            number; // @24 double
   stream_index:     number; // @32 int32_t
+  format:           number; // @36 int32_t
   frame:            bigint; // @40 AVFrame * pointer / handle;
 }
 
@@ -200,6 +338,7 @@ export const OFFSETS_AudioFrame = {
   bytes_per_sample: 16,
   ts_js: 24,
   stream_index: 32,
+  format: 36,
   frame: 40,
 } as const;
 
@@ -213,126 +352,87 @@ export function readAudioFrame(buffer: ArrayBufferLike, offset = 0): AudioFrame 
     bytes_per_sample: view.getInt32(16, true),
     ts_js: view.getFloat64(24, true),
     stream_index: view.getInt32(32, true),
+    format: view.getInt32(36, true),
     frame: view.getBigUint64(40, true),
   };
 }
 
-export interface FileInfo {
-  duration:         bigint; // @0 int64_t
-  start_time:       bigint; // @8 int64_t
-  bitrate:          bigint; // @16 int64_t
-  nb_stream_groups: number; // @24 uint32_t
-  nb_chapters:      number; // @28 uint32_t
-  nb_streams:       number; // @32 uint32_t
-  metadata:         bigint; // @40 AVDictionary * pointer / handle;
-  chapters:         bigint; // @48 ChapterInfo * pointer / handle;
-  streams:          bigint; // @56 StreamInfo * pointer / handle;
+export interface SubtitleFrame {
+  x:            number; // @0 int
+  y:            number; // @4 int
+  width:        number; // @8 int
+  height:       number; // @12 int
+  nb_colors:    number; // @16 int
+  pts:          bigint; // @24 int64_t
+  ts_js:        number; // @32 double
+  dur_js:       number; // @40 double
+  src_data:     Uint8Array; // @48 uint32_t[4] uint32_t[4] — raw bytes (decode as needed);
+  src_linesize: Uint8Array; // @64 int[4] int[4] — raw bytes (decode as needed);
+  stream_index: number; // @80 int32_t
+  frame:        bigint; // @88 AVSubtitle * pointer / handle;
 }
 
-export const SIZEOF_FileInfo = 64;
-export const ALIGNOF_FileInfo = 8;
-export const OFFSETS_FileInfo = {
-  duration: 0,
-  start_time: 8,
-  bitrate: 16,
-  nb_stream_groups: 24,
-  nb_chapters: 28,
-  nb_streams: 32,
-  metadata: 40,
-  chapters: 48,
-  streams: 56,
+export const SIZEOF_SubtitleFrame = 96;
+export const ALIGNOF_SubtitleFrame = 8;
+export const OFFSETS_SubtitleFrame = {
+  x: 0,
+  y: 4,
+  width: 8,
+  height: 12,
+  nb_colors: 16,
+  pts: 24,
+  ts_js: 32,
+  dur_js: 40,
+  src_data: 48,
+  src_linesize: 64,
+  stream_index: 80,
+  frame: 88,
 } as const;
 
-export function readFileInfo(buffer: ArrayBufferLike, offset = 0): FileInfo {
-  const view = new DataView(buffer, offset, SIZEOF_FileInfo);
+export function readSubtitleFrame(buffer: ArrayBufferLike, offset = 0): SubtitleFrame {
+  const view = new DataView(buffer, offset, SIZEOF_SubtitleFrame);
   return {
-    duration: view.getBigInt64(0, true),
-    start_time: view.getBigInt64(8, true),
-    bitrate: view.getBigInt64(16, true),
-    nb_stream_groups: view.getUint32(24, true),
-    nb_chapters: view.getUint32(28, true),
-    nb_streams: view.getUint32(32, true),
-    metadata: view.getBigUint64(40, true),
-    chapters: view.getBigUint64(48, true),
-    streams: view.getBigUint64(56, true),
+    x: view.getInt32(0, true),
+    y: view.getInt32(4, true),
+    width: view.getInt32(8, true),
+    height: view.getInt32(12, true),
+    nb_colors: view.getInt32(16, true),
+    pts: view.getBigInt64(24, true),
+    ts_js: view.getFloat64(32, true),
+    dur_js: view.getFloat64(40, true),
+    src_data: new Uint8Array(buffer, offset + 48, 16),
+    src_linesize: new Uint8Array(buffer, offset + 64, 16),
+    stream_index: view.getInt32(80, true),
+    frame: view.getBigUint64(88, true),
   };
 }
 
-export interface ChapterInfo {
-  id:       bigint; // @0 int64_t
-  start:    number; // @8 double
-  end:      number; // @16 double
-  metadata: bigint; // @24 AVDictionary * pointer / handle;
+export interface AudioDecoderConfig {
+  codec:            Uint8Array; // @0 char[256] char[256] — raw bytes (decode as needed);
+  sample_rate:      number; // @256 int32_t
+  num_channels:     number; // @260 int32_t
+  description:      bigint; // @264 uint8_t * pointer / handle;
+  description_size: number; // @272 int32_t
 }
 
-export const SIZEOF_ChapterInfo = 32;
-export const ALIGNOF_ChapterInfo = 8;
-export const OFFSETS_ChapterInfo = {
-  id: 0,
-  start: 8,
-  end: 16,
-  metadata: 24,
+export const SIZEOF_AudioDecoderConfig = 280;
+export const ALIGNOF_AudioDecoderConfig = 8;
+export const OFFSETS_AudioDecoderConfig = {
+  codec: 0,
+  sample_rate: 256,
+  num_channels: 260,
+  description: 264,
+  description_size: 272,
 } as const;
 
-export function readChapterInfo(buffer: ArrayBufferLike, offset = 0): ChapterInfo {
-  const view = new DataView(buffer, offset, SIZEOF_ChapterInfo);
+export function readAudioDecoderConfig(buffer: ArrayBufferLike, offset = 0): AudioDecoderConfig {
+  const view = new DataView(buffer, offset, SIZEOF_AudioDecoderConfig);
   return {
-    id: view.getBigInt64(0, true),
-    start: view.getFloat64(8, true),
-    end: view.getFloat64(16, true),
-    metadata: view.getBigUint64(24, true),
-  };
-}
-
-export interface StreamInfo {
-  type:            number; // @0 enum AVMediaType assumed enum/int-sized (enum AVMediaType);
-  duration:        number; // @8 double
-  video_config:    bigint; // @16 VideoDecoderConfig * pointer / handle;
-  audio_config:    bigint; // @24 AudioDecoderConfig * pointer / handle;
-  subtitle_config: bigint; // @32 ASSSubtitleConfig * pointer / handle;
-  metadata:        bigint; // @40 AVDictionary * pointer / handle;
-}
-
-export const SIZEOF_StreamInfo = 48;
-export const ALIGNOF_StreamInfo = 8;
-export const OFFSETS_StreamInfo = {
-  type: 0,
-  duration: 8,
-  video_config: 16,
-  audio_config: 24,
-  subtitle_config: 32,
-  metadata: 40,
-} as const;
-
-export function readStreamInfo(buffer: ArrayBufferLike, offset = 0): StreamInfo {
-  const view = new DataView(buffer, offset, SIZEOF_StreamInfo);
-  return {
-    type: view.getInt32(0, true),
-    duration: view.getFloat64(8, true),
-    video_config: view.getBigUint64(16, true),
-    audio_config: view.getBigUint64(24, true),
-    subtitle_config: view.getBigUint64(32, true),
-    metadata: view.getBigUint64(40, true),
-  };
-}
-
-export interface ASSSubtitleConfig {
-  subtitle_header_size: number; // @0 int
-  subtitle_header:      bigint; // @8 uint8_t * pointer / handle;
-}
-
-export const SIZEOF_ASSSubtitleConfig = 16;
-export const ALIGNOF_ASSSubtitleConfig = 8;
-export const OFFSETS_ASSSubtitleConfig = {
-  subtitle_header_size: 0,
-  subtitle_header: 8,
-} as const;
-
-export function readASSSubtitleConfig(buffer: ArrayBufferLike, offset = 0): ASSSubtitleConfig {
-  const view = new DataView(buffer, offset, SIZEOF_ASSSubtitleConfig);
-  return {
-    subtitle_header_size: view.getInt32(0, true),
-    subtitle_header: view.getBigUint64(8, true),
+    codec: new Uint8Array(buffer, offset + 0, 256),
+    sample_rate: view.getInt32(256, true),
+    num_channels: view.getInt32(260, true),
+    description: view.getBigUint64(264, true),
+    description_size: view.getInt32(272, true),
   };
 }
 
@@ -377,34 +477,5 @@ export function readVideoDecoderConfig(buffer: ArrayBufferLike, offset = 0): Vid
     color_trc: view.getInt32(284, true),
     color_space: view.getInt32(288, true),
     chroma_location: view.getInt32(292, true),
-  };
-}
-
-export interface AudioDecoderConfig {
-  codec:            Uint8Array; // @0 char[256] char[256] — raw bytes (decode as needed);
-  sample_rate:      number; // @256 int32_t
-  num_channels:     number; // @260 int32_t
-  description:      bigint; // @264 uint8_t * pointer / handle;
-  description_size: number; // @272 int32_t
-}
-
-export const SIZEOF_AudioDecoderConfig = 280;
-export const ALIGNOF_AudioDecoderConfig = 8;
-export const OFFSETS_AudioDecoderConfig = {
-  codec: 0,
-  sample_rate: 256,
-  num_channels: 260,
-  description: 264,
-  description_size: 272,
-} as const;
-
-export function readAudioDecoderConfig(buffer: ArrayBufferLike, offset = 0): AudioDecoderConfig {
-  const view = new DataView(buffer, offset, SIZEOF_AudioDecoderConfig);
-  return {
-    codec: new Uint8Array(buffer, offset + 0, 256),
-    sample_rate: view.getInt32(256, true),
-    num_channels: view.getInt32(260, true),
-    description: view.getBigUint64(264, true),
-    description_size: view.getInt32(272, true),
   };
 }

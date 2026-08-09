@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # For d.ts
-RUN npm install -g typescript@5.5 tsx
+RUN npm install -g typescript@5.5
 
 # -----------
 # Wasm32 Libs
@@ -254,8 +254,8 @@ RUN cmake --build build -j$(nproc) && cmake --install build
 # ---- Stage 3: Build FFmpeg for Wasm32 ------------------------------
 FROM base AS build-wasm32
 ENV FFMPEG_VERSION=8.1
-ADD https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz /tmp/ffmpeg.tar.xz
-RUN mkdir -p /src && tar -xf /tmp/ffmpeg.tar.xz -C /src --strip-components=1 && rm /tmp/ffmpeg.tar.xz
+ADD https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n${FFMPEG_VERSION}.tar.gz /tmp/ffmpeg.tar.gz
+RUN mkdir -p /src && tar -xf /tmp/ffmpeg.tar.gz -C /src --strip-components=1 && rm /tmp/ffmpeg.tar.gz
 
 # After the existing COPY --from=zlib-wasm32 ..., add:
 COPY --from=libogg-wasm32      $INSTALL_DIR $INSTALL_DIR
@@ -288,8 +288,8 @@ RUN bash /src/link-ffmpeg.sh wasm32
 # ---- Stage 4: Build FFmpeg for Wasm64 ------------------------------
 FROM base AS build-wasm64
 ENV FFMPEG_VERSION=8.1
-ADD https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz /tmp/ffmpeg.tar.xz
-RUN mkdir -p /src && tar -xf /tmp/ffmpeg.tar.xz -C /src --strip-components=1 && rm /tmp/ffmpeg.tar.xz
+ADD https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n${FFMPEG_VERSION}.tar.gz /tmp/ffmpeg.tar.gz
+RUN mkdir -p /src && tar -xf /tmp/ffmpeg.tar.gz -C /src --strip-components=1 && rm /tmp/ffmpeg.tar.gz
 
 COPY --from=libogg-wasm64      $INSTALL_DIR $INSTALL_DIR
 COPY --from=libvorbis-wasm64   $INSTALL_DIR $INSTALL_DIR
@@ -301,9 +301,9 @@ COPY --from=zlib-wasm64        $INSTALL_DIR $INSTALL_DIR
 
 ENV PKG_CONFIG_PATH=$INSTALL_DIR/lib/pkgconfig
 
-ENV CFLAGS="-I$INSTALL_DIR/include -g3 -msimd128 -pthread -sMEMORY64=1"
+ENV CFLAGS="-I$INSTALL_DIR/include -g3 -msimd128 -pthread -m64"
 ENV CXXFLAGS="$CFLAGS"
-ENV LDFLAGS="-L$INSTALL_DIR/lib -g3 -pthread -sMEMORY64=1"
+ENV LDFLAGS="-L$INSTALL_DIR/lib -g3 -pthread -m64"
 COPY configure-ffmpeg.sh /src/
 
 WORKDIR /src
@@ -333,12 +333,14 @@ RUN node --experimental-strip-types /tmp/struct-codegen.ts /tmp/layout.txt /outp
 
 # ---- Stage 5: Export artifacts ------------------------------------
 FROM scratch AS export
+COPY --from=build-wasm32 /output/layout.txt /lib/ffmpeg-wasm32/layout.txt
+
 COPY --from=build-wasm32 /output/ffmpeg-wasm32.wasm /lib/ffmpeg-wasm32/ffmpeg-wasm32.wasm
 COPY --from=build-wasm32 /output/ffmpeg-wasm32.mjs /lib/ffmpeg-wasm32/ffmpeg.mjs
-COPY --from=build-wasm32 /output/ffmpeg-wasm32.d.ts /lib/ffmpeg-wasm32/ffmpeg.d.ts
+# COPY --from=build-wasm32 /output/ffmpeg-wasm32.d.ts /lib/ffmpeg-wasm32/ffmpeg.d.ts
 COPY --from=build-wasm64 /output/ffmpeg-wasm64.wasm /lib/ffmpeg-wasm64/ffmpeg-wasm64.wasm
 COPY --from=build-wasm64 /output/ffmpeg-wasm64.mjs /lib/ffmpeg-wasm64/ffmpeg.mjs
-COPY --from=build-wasm64 /output/ffmpeg-wasm64.d.ts /lib/ffmpeg-wasm64/ffmpeg.d.ts
+# COPY --from=build-wasm64 /output/ffmpeg-wasm64.d.ts /lib/ffmpeg-wasm64/ffmpeg.d.ts
 
 COPY --from=build-wasm32 /src/ffbuild/config.log /config-wasm32.log
 COPY --from=build-wasm64 /src/ffbuild/config.log /config-wasm64.log

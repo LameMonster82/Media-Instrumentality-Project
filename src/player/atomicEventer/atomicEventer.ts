@@ -172,6 +172,8 @@ export default class AtomicEventer<
 
             if (type === undefined || event === type)
                 break;
+            else if (this.isMainThread)
+                await new Promise(r => setTimeout(r, 0));
         }
 
 

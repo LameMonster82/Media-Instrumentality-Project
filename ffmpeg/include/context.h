@@ -26,9 +26,10 @@ typedef struct {
 typedef struct {
   enum AVMediaType type;
   double duration;
+  int disposition;
   VideoDecoderConfig *video_config;
   AudioDecoderConfig *audio_config;
-  ASSSubtitleConfig *subtitle_config;
+  SubtitleConfig *subtitle_config;
   AVDictionary *metadata;
 } StreamInfo;
 
@@ -96,10 +97,28 @@ typedef struct {
   int32_t bytes_per_sample;
   double ts_js;
   int32_t stream_index;
+  int32_t format;
 
   // Just for the C side
   AVFrame *frame;
 } AudioFrame;
+
+typedef struct {
+  int x;
+  int y;
+  int width;
+  int height;
+  int nb_colors;
+  int64_t pts;
+  double ts_js;
+  double dur_js;
+  uint32_t src_data[4];    /* uint8_t* plane pointers */
+  int src_linesize[4]; /* int32_t linesize per plane */
+  int32_t stream_index;
+
+  // Just for the C side
+  AVSubtitle *frame;
+} SubtitleFrame;
 
 typedef struct {
   int32_t status;
@@ -108,11 +127,17 @@ typedef struct {
   VideoFrame *video_frame;
   AudioFrame *audio_frame;
 
+  enum AVSubtitleType subtitle_type;
+  SubtitleFrame *subtitle_frame;
+  char          *subtitle_text;
+
   int flags;
   uint8_t *packet_data;
   int packet_size;
   int64_t timestamp;
   int64_t duration;
+
+  AVPacket *packet;
 } ReturnType;
 
 typedef struct {

@@ -1,10 +1,6 @@
 import type { WorkerPostMessage } from "@/core/types";
 import type { FFmpegStream } from "../types";
 
-interface AudioDataInitArrayBuffer extends AudioDataInit {
-    data: ArrayBuffer;
-}
-
 /** Timestamp and duration in Microseconds */
 export interface WorkerAudioData extends WorkerPostMessage {
     readonly kind: "audioData";
@@ -14,22 +10,22 @@ export interface WorkerAudioData extends WorkerPostMessage {
 }
 
 /** Timestamp and duration in Microseconds */
-export interface WorkerAudioDataInit extends WorkerPostMessage {
+export interface WorkerAudioDataInit extends WorkerPostMessage, AudioDataInit {
     readonly kind: "audioDataInit";
     readonly streamIndex: number;
-    readonly dataBuffer: AudioDataInitArrayBuffer;
-    readonly transferable: ArrayBufferLike[];
 }
 
-export interface AudioFFmpegStream extends FFmpegStream<WorkerAudioData | WorkerAudioDataInit> {
+export type AllAudioFrameTypes = WorkerAudioData | WorkerAudioDataInit;
+
+export interface AudioFFmpegStream extends FFmpegStream<AllAudioFrameTypes> {
     type: "audio",
     sampleRate: number;
     channels: number;
 }
 
-export function audioTime(audio: WorkerAudioDataInit | WorkerAudioData) {
+export function audioTime(audio: AudioData | WorkerAudioDataInit) {
     return {
-        timestamp: audio.kind === "audioData" ? audio.audioData.timestamp : audio.dataBuffer.timestamp,
-        duration: audio.kind === "audioData" ? audio.audioData.duration! : (audio.dataBuffer.numberOfFrames / audio.dataBuffer.sampleRate) * 1000000
+        timestamp: audio.timestamp,
+        duration: audio instanceof AudioData ? audio.duration! : (audio.numberOfFrames / audio.sampleRate) * 1000000
     };
 }

@@ -3,7 +3,7 @@
 import type { Dictionary } from "@/core/types";
 import AtomicEventer from "../atomicEventer/atomicEventer";
 import type { AtomicEventerBuffers, DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
-import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type SeekableWorkerInit } from "./types";
+import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type UrlSeekableWorkerInit } from "./types";
 import RingBuffer from "./ringBuffer";
 
 class UrlSeeker {
@@ -46,7 +46,10 @@ class UrlSeeker {
         switch (type) {
             case SeekerRequestType.SEEK: {
                 const dataThing = data as { offset: number, urlChange: string; };
-                this.lastSeek = this.seek(dataThing.offset, dataThing.urlChange);
+                let url: string | undefined = dataThing.urlChange;
+                if (url === "")
+                    url = undefined;
+                this.lastSeek = this.seek(dataThing.offset, url);
                 return;
             }
             case SeekerRequestType.REQUEST_DATA: {
@@ -236,7 +239,7 @@ class UrlSeeker {
 }
 
 let seekableStream: UrlSeeker;
-self.onmessage = async (e: MessageEvent<SeekableWorkerInit>) => {
+self.onmessage = async (e: MessageEvent<UrlSeekableWorkerInit>) => {
     switch (e.data.type) {
         case "init": {
             seekableStream = new UrlSeeker(e.data.url, e.data.targetBuffer, e.data.atomicBuffers, e.data.fetchBufferSize);

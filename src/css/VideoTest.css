@@ -36,3 +36,25 @@ video {
     border: 1px solid #444;
     padding: 5px;
 }
+
+.drop-zone {
+    margin-top: 20px;
+    padding: 40px 20px;
+    border: 2px dashed #555;
+    border-radius: 8px;
+    text-align: center;
+    color: #aaa;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.drop-zone:hover {
+    border-color: #888;
+    color: #ddd;
+}
+
+.drop-zone.dragover {
+    border-color: #4da3ff;
+    color: #eee;
+    background: rgba(77, 163, 255, 0.08);
+}

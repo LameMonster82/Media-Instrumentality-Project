@@ -1,14 +1,14 @@
 import { promiseRes } from "@/core/utils";
 import type { MediaStreamTrackWrapper } from "../types";
-import type { MediaStreamTrackWritable, WorkerVideoFrame, WorkerVideoFrameBufferInit, WorkerVideoFrameImageBitmap } from "./videoTypes";
+import type { AllVideoFrameTypes, MediaStreamTrackWritable, WorkerVideoFrame, WorkerVideoFrameBufferInit, WorkerVideoFrameImageBitmap } from "./videoTypes";
 import { WebGLCanvas } from "./WebGLCanvas";
 import { getFrameSize } from "./utils";
+import safariVideoTrackWorker from "./videoTrack.worker?worker";
 
-export class VideoStreamTrack implements MediaStreamTrackWrapper<WorkerVideoFrame | WorkerVideoFrameBufferInit | WorkerVideoFrameImageBitmap> {
+export class VideoStreamTrack implements MediaStreamTrackWrapper<VideoFrame | ImageBitmap> {
     private writableStream: WritableStream<ImageBitmap | VideoFrame> | undefined;
     private worker: Worker | undefined;
     private track: MediaStreamTrackWritable<VideoFrame | ImageBitmap> | undefined;
-    private isBitmapRenderer: boolean = false;
 
     public async initialize() {
         this.track = await this.createTrackGenerator();
@@ -24,14 +24,14 @@ export class VideoStreamTrack implements MediaStreamTrackWrapper<WorkerVideoFram
             // Safari 18.0+ using Web Worker
             return this.createSafariTrack();
         } else {
-            this.isBitmapRenderer = true;
             // Older Safari or Firefox fallback
-            return this.createBitmapTrack();
+            return this.createWebGLTrack();
         }
     }
 
-    public async writeData(frameData: WorkerVideoFrame | WorkerVideoFrameBufferInit | WorkerVideoFrameImageBitmap): Promise<void> {
-        let frame: VideoFrame | ImageBitmap;
+    public async writeData(frame: VideoFrame | ImageBitmap): Promise<void> {
+        
+        /*
         if (frameData.kind === "videoFrame") {
             frame = frameData.videoFrame;
         } else if (frameData.kind === "FrameBitmapConstructor") {
@@ -44,6 +44,7 @@ export class VideoStreamTrack implements MediaStreamTrackWrapper<WorkerVideoFram
             frameData.videoInfo.transfer = [frameData.videoBuffer.buffer];
             frame = new VideoFrame(frameData.videoBuffer, frameData.videoInfo);
         }
+        */
 
         if (this.worker) {
             this.worker.postMessage(frame, [frame]);
@@ -66,7 +67,7 @@ export class VideoStreamTrack implements MediaStreamTrackWrapper<WorkerVideoFram
     createSafariTrack() {
         const { promise, resolve } = promiseRes<MediaStreamTrackWritable<VideoFrame>>();
 
-        this.worker = new Worker(videoStreamWorkerUrl, { type: 'module' });
+        this.worker = safariVideoTrackWorker({ name: "Web worker that holds VideoTrackGenerator more or less" });
         this.worker.addEventListener('message', (e: MessageEvent<{ track: MediaStreamTrack; }>) => {
             resolve(e.data.track as MediaStreamTrackWritable<VideoFrame>);
         }, { once: true });
@@ -76,7 +77,7 @@ export class VideoStreamTrack implements MediaStreamTrackWrapper<WorkerVideoFram
         return promise;
     }
 
-    createWebGLTrack(): MediaStreamTrack {
+    createWebGLTrack(): MediaStreamTrackWritable<VideoFrame | ImageBitmap> {
         const canvas = document.createElement("canvas"); // No Recording on Offscreen Canvases
         const glCanvas = new WebGLCanvas(canvas);
         // NOTE: We cant move this to a web worker because we CANT CAPTURE A CANVAS

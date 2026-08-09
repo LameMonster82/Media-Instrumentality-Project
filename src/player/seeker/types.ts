@@ -34,10 +34,17 @@ export const seekerResponseTemplates = {
     }
 } as const satisfies SerializableEventMap<SeekerResponseType>;
 
-export interface SeekableWorkerInit {
+export interface UrlSeekableWorkerInit {
     type: "init",
     url: string,
     targetBuffer: WebAssembly.Memory,
     atomicBuffers: AtomicEventerBuffers,
     fetchBufferSize: number;
+}
+
+export interface FileSeekableWorkerInit {
+    type: "init",
+    file: File,
+    targetBuffer: WebAssembly.Memory,
+    atomicBuffers: AtomicEventerBuffers,
 }

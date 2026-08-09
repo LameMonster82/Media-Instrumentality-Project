@@ -1,15 +1,15 @@
 import type { Dictionary } from "@/core/types";
 import type { AudioFFmpegStream } from "./audio/audioTypes";
 import type { VideoFFmpegStream } from "./video/videoTypes";
-import type { SubtitleFFmpegStream } from "./subtitles/subtitleStream";
+import type { SubtitleFFmpegStream } from "./subtitles old/subtitleStream";
 
 export interface MediaStreamTrackWrapper<T> {
     initialize(): Promise<void>;
     enable(enable: boolean): void;
-    destroy(): void;
+    getTrack(): MediaStreamTrack | null;
     writeData(data: T, currentTime?: number): Promise<void>;
     seekTo(time: number, fastSeek: boolean): Promise<void>;
-    getTrack(): MediaStreamTrack | null;
+    destroy(): void;
 }
 
 export type AnyMediaStreamTrack = MediaStreamTrackWrapper<unknown>;

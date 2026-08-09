@@ -1,0 +1,1077 @@
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_event_fd_readwrite_t
+         0 |   __wasi_filesize_t nbytes
+         8 |   __wasi_eventrwflags_t flags
+           | [sizeof=16, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_subscription_clock_t
+         0 |   __wasi_clockid_t id
+         8 |   __wasi_timestamp_t timeout
+        16 |   __wasi_timestamp_t precision
+        24 |   __wasi_subclockflags_t flags
+           | [sizeof=32, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_prestat_dir_t
+         0 |   __wasi_size_t pr_name_len
+           | [sizeof=4, align=4]
+
+*** Dumping AST Record Layout
+         0 | struct AVRational
+         0 |   int num
+         4 |   int den
+           | [sizeof=8, align=4]
+
+*** Dumping AST Record Layout
+         0 | union av_intfloat32
+         0 |   uint32_t i
+         0 |   float f
+           | [sizeof=4, align=4]
+
+*** Dumping AST Record Layout
+         0 | union av_intfloat64
+         0 |   uint64_t i
+         0 |   double f
+           | [sizeof=8, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVPacket
+         0 |   AVBufferRef * buf
+         8 |   int64_t pts
+        16 |   int64_t dts
+        24 |   uint8_t * data
+        28 |   int size
+        32 |   int stream_index
+        36 |   int flags
+        40 |   AVPacketSideData * side_data
+        44 |   int side_data_elems
+        48 |   int64_t duration
+        56 |   int64_t pos
+        64 |   void * opaque
+        68 |   AVBufferRef * opaque_ref
+        72 |   struct AVRational time_base
+        72 |     int num
+        76 |     int den
+           | [sizeof=80, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVIOContext
+         0 |   const AVClass * av_class
+         4 |   unsigned char * buffer
+         8 |   int buffer_size
+        12 |   unsigned char * buf_ptr
+        16 |   unsigned char * buf_end
+        20 |   void * opaque
+        24 |   int (*)(void *, uint8_t *, int) read_packet
+        28 |   int (*)(void *, const uint8_t *, int) write_packet
+        32 |   int64_t (*)(void *, int64_t, int) seek
+        40 |   int64_t pos
+        48 |   int eof_reached
+        52 |   int error
+        56 |   int write_flag
+        60 |   int max_packet_size
+        64 |   int min_packet_size
+        68 |   unsigned long checksum
+        72 |   unsigned char * checksum_ptr
+        76 |   unsigned long (*)(unsigned long, const uint8_t *, unsigned int) update_checksum
+        80 |   int (*)(void *, int) read_pause
+        84 |   int64_t (*)(void *, int, int64_t, int) read_seek
+        88 |   int seekable
+        92 |   int direct
+        96 |   const char * protocol_whitelist
+       100 |   const char * protocol_blacklist
+       104 |   int (*)(void *, const uint8_t *, int, enum AVIODataMarkerType, int64_t) write_data_type
+       108 |   int ignore_boundary_point
+       112 |   unsigned char * buf_ptr_max
+       120 |   int64_t bytes_read
+       128 |   int64_t bytes_written
+           | [sizeof=136, align=8]
+
+*** Dumping AST Record Layout
+         0 | BridgeContext
+         0 |   const enum AVPixelFormat * supported_pix_fmts
+         4 |   int thread_count
+         8 |   AVFormatContext * fmt_ctx
+        12 |   AVCodecContext ** codecs
+        16 |   SwsContext ** sws_ctx
+        20 |   SwrContext ** swr_ctx
+        24 |   uint32_t nb_streams
+        28 |   int32_t * stream_support
+        32 |   ReturnType * data_return
+           | [sizeof=36, align=4]
+
+*** Dumping AST Record Layout
+         0 | ReturnType
+         0 |   int32_t status
+         4 |   uint32_t stream_index
+         8 |   enum MediaType type
+        12 |   VideoFrame * video_frame
+        16 |   AudioFrame * audio_frame
+        20 |   enum AVSubtitleType subtitle_type
+        24 |   SubtitleFrame * subtitle_frame
+        28 |   char * subtitle_text
+        32 |   int flags
+        36 |   uint8_t * packet_data
+        40 |   int packet_size
+        48 |   int64_t timestamp
+        56 |   int64_t duration
+        64 |   AVPacket * packet
+           | [sizeof=72, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVInputFormat
+         0 |   const char * name
+         4 |   const char * long_name
+         8 |   int flags
+        12 |   const char * extensions
+        16 |   const struct AVCodecTag *const * codec_tag
+        20 |   const AVClass * priv_class
+        24 |   const char * mime_type
+           | [sizeof=28, align=4]
+
+*** Dumping AST Record Layout
+         0 | struct AVIOInterruptCB
+         0 |   int (*)(void *) callback
+         4 |   void * opaque
+           | [sizeof=8, align=4]
+
+*** Dumping AST Record Layout
+         0 | struct AVFormatContext
+         0 |   const AVClass * av_class
+         4 |   const struct AVInputFormat * iformat
+         8 |   const struct AVOutputFormat * oformat
+        12 |   void * priv_data
+        16 |   AVIOContext * pb
+        20 |   int ctx_flags
+        24 |   unsigned int nb_streams
+        28 |   AVStream ** streams
+        32 |   unsigned int nb_stream_groups
+        36 |   AVStreamGroup ** stream_groups
+        40 |   unsigned int nb_chapters
+        44 |   AVChapter ** chapters
+        48 |   char * url
+        56 |   int64_t start_time
+        64 |   int64_t duration
+        72 |   int64_t bit_rate
+        80 |   unsigned int packet_size
+        84 |   int max_delay
+        88 |   int flags
+        96 |   int64_t probesize
+       104 |   int64_t max_analyze_duration
+       112 |   const uint8_t * key
+       116 |   int keylen
+       120 |   unsigned int nb_programs
+       124 |   AVProgram ** programs
+       128 |   enum AVCodecID video_codec_id
+       132 |   enum AVCodecID audio_codec_id
+       136 |   enum AVCodecID subtitle_codec_id
+       140 |   enum AVCodecID data_codec_id
+       144 |   AVDictionary * metadata
+       152 |   int64_t start_time_realtime
+       160 |   int fps_probe_size
+       164 |   int error_recognition
+       168 |   struct AVIOInterruptCB interrupt_callback
+       168 |     int (*)(void *) callback
+       172 |     void * opaque
+       176 |   int debug
+       180 |   int max_streams
+       184 |   unsigned int max_index_size
+       188 |   unsigned int max_picture_buffer
+       192 |   int64_t max_interleave_delta
+       200 |   int max_ts_probe
+       204 |   int max_chunk_duration
+       208 |   int max_chunk_size
+       212 |   int max_probe_packets
+       216 |   int strict_std_compliance
+       220 |   int event_flags
+       224 |   int avoid_negative_ts
+       228 |   int audio_preload
+       232 |   int use_wallclock_as_timestamps
+       236 |   int skip_estimate_duration_from_pts
+       240 |   int avio_flags
+       244 |   enum AVDurationEstimationMethod duration_estimation_method
+       248 |   int64_t skip_initial_bytes
+       256 |   unsigned int correct_ts_overflow
+       260 |   int seek2any
+       264 |   int flush_packets
+       268 |   int probe_score
+       272 |   int format_probesize
+       276 |   char * codec_whitelist
+       280 |   char * format_whitelist
+       284 |   char * protocol_whitelist
+       288 |   char * protocol_blacklist
+       292 |   int io_repositioned
+       296 |   const struct AVCodec * video_codec
+       300 |   const struct AVCodec * audio_codec
+       304 |   const struct AVCodec * subtitle_codec
+       308 |   const struct AVCodec * data_codec
+       312 |   int metadata_header_padding
+       316 |   void * opaque
+       320 |   av_format_control_message control_message_cb
+       328 |   int64_t output_ts_offset
+       336 |   uint8_t * dump_separator
+       340 |   int (*)(struct AVFormatContext *, AVIOContext **, const char *, int, AVDictionary **) io_open
+       344 |   int (*)(struct AVFormatContext *, AVIOContext *) io_close2
+       352 |   int64_t duration_probesize
+       360 |   char * name
+           | [sizeof=368, align=8]
+
+*** Dumping AST Record Layout
+         0 | FileInfo
+         0 |   int64_t duration
+         8 |   int64_t start_time
+        16 |   int64_t bitrate
+        24 |   uint32_t nb_stream_groups
+        28 |   uint32_t nb_chapters
+        32 |   uint32_t nb_streams
+        36 |   AVDictionary * metadata
+        40 |   ChapterInfo * chapters
+        44 |   StreamInfo * streams
+           | [sizeof=48, align=8]
+
+*** Dumping AST Record Layout
+         0 | ChapterInfo
+         0 |   int64_t id
+         8 |   double start
+        16 |   double end
+        24 |   AVDictionary * metadata
+           | [sizeof=32, align=8]
+
+*** Dumping AST Record Layout
+         0 | StreamInfo
+         0 |   enum AVMediaType type
+         8 |   double duration
+        16 |   int disposition
+        20 |   VideoDecoderConfig * video_config
+        24 |   AudioDecoderConfig * audio_config
+        28 |   SubtitleConfig * subtitle_config
+        32 |   AVDictionary * metadata
+           | [sizeof=40, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVCodec
+         0 |   const char * name
+         4 |   const char * long_name
+         8 |   enum AVMediaType type
+        12 |   enum AVCodecID id
+        16 |   int capabilities
+        20 |   uint8_t max_lowres
+        24 |   const AVRational * supported_framerates
+        28 |   const enum AVPixelFormat * pix_fmts
+        32 |   const int * supported_samplerates
+        36 |   const enum AVSampleFormat * sample_fmts
+        40 |   const AVClass * priv_class
+        44 |   const AVProfile * profiles
+        48 |   const char * wrapper_name
+        52 |   const AVChannelLayout * ch_layouts
+           | [sizeof=56, align=4]
+
+*** Dumping AST Record Layout
+         0 | union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5)
+         0 |   uint64_t mask
+         0 |   AVChannelCustom * map
+           | [sizeof=8, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVChannelLayout
+         0 |   enum AVChannelOrder order
+         4 |   int nb_channels
+         8 |   union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5) u
+         8 |     uint64_t mask
+         8 |     AVChannelCustom * map
+        16 |   void * opaque
+           | [sizeof=24, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVCodecContext
+         0 |   const AVClass * av_class
+         4 |   int log_level_offset
+         8 |   enum AVMediaType codec_type
+        12 |   const struct AVCodec * codec
+        16 |   enum AVCodecID codec_id
+        20 |   unsigned int codec_tag
+        24 |   void * priv_data
+        28 |   struct AVCodecInternal * internal
+        32 |   void * opaque
+        40 |   int64_t bit_rate
+        48 |   int flags
+        52 |   int flags2
+        56 |   uint8_t * extradata
+        60 |   int extradata_size
+        64 |   struct AVRational time_base
+        64 |     int num
+        68 |     int den
+        72 |   struct AVRational pkt_timebase
+        72 |     int num
+        76 |     int den
+        80 |   struct AVRational framerate
+        80 |     int num
+        84 |     int den
+        88 |   int delay
+        92 |   int width
+        96 |   int height
+       100 |   int coded_width
+       104 |   int coded_height
+       108 |   struct AVRational sample_aspect_ratio
+       108 |     int num
+       112 |     int den
+       116 |   enum AVPixelFormat pix_fmt
+       120 |   enum AVPixelFormat sw_pix_fmt
+       124 |   enum AVColorPrimaries color_primaries
+       128 |   enum AVColorTransferCharacteristic color_trc
+       132 |   enum AVColorSpace colorspace
+       136 |   enum AVColorRange color_range
+       140 |   enum AVChromaLocation chroma_sample_location
+       144 |   enum AVFieldOrder field_order
+       148 |   int refs
+       152 |   int has_b_frames
+       156 |   int slice_flags
+       160 |   void (*)(struct AVCodecContext *, const AVFrame *, int *, int, int, int) draw_horiz_band
+       164 |   enum AVPixelFormat (*)(struct AVCodecContext *, const enum AVPixelFormat *) get_format
+       168 |   int max_b_frames
+       172 |   float b_quant_factor
+       176 |   float b_quant_offset
+       180 |   float i_quant_factor
+       184 |   float i_quant_offset
+       188 |   float lumi_masking
+       192 |   float temporal_cplx_masking
+       196 |   float spatial_cplx_masking
+       200 |   float p_masking
+       204 |   float dark_masking
+       208 |   int nsse_weight
+       212 |   int me_cmp
+       216 |   int me_sub_cmp
+       220 |   int mb_cmp
+       224 |   int ildct_cmp
+       228 |   int dia_size
+       232 |   int last_predictor_count
+       236 |   int me_pre_cmp
+       240 |   int pre_dia_size
+       244 |   int me_subpel_quality
+       248 |   int me_range
+       252 |   int mb_decision
+       256 |   uint16_t * intra_matrix
+       260 |   uint16_t * inter_matrix
+       264 |   uint16_t * chroma_intra_matrix
+       268 |   int intra_dc_precision
+       272 |   int mb_lmin
+       276 |   int mb_lmax
+       280 |   int bidir_refine
+       284 |   int keyint_min
+       288 |   int gop_size
+       292 |   int mv0_threshold
+       296 |   int slices
+       300 |   int sample_rate
+       304 |   enum AVSampleFormat sample_fmt
+       312 |   struct AVChannelLayout ch_layout
+       312 |     enum AVChannelOrder order
+       316 |     int nb_channels
+       320 |     union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5) u
+       320 |       uint64_t mask
+       320 |       AVChannelCustom * map
+       328 |     void * opaque
+       336 |   int frame_size
+       340 |   int block_align
+       344 |   int cutoff
+       348 |   enum AVAudioServiceType audio_service_type
+       352 |   enum AVSampleFormat request_sample_fmt
+       356 |   int initial_padding
+       360 |   int trailing_padding
+       364 |   int seek_preroll
+       368 |   int (*)(struct AVCodecContext *, AVFrame *, int) get_buffer2
+       372 |   int bit_rate_tolerance
+       376 |   int global_quality
+       380 |   int compression_level
+       384 |   float qcompress
+       388 |   float qblur
+       392 |   int qmin
+       396 |   int qmax
+       400 |   int max_qdiff
+       404 |   int rc_buffer_size
+       408 |   int rc_override_count
+       412 |   RcOverride * rc_override
+       416 |   int64_t rc_max_rate
+       424 |   int64_t rc_min_rate
+       432 |   float rc_max_available_vbv_use
+       436 |   float rc_min_vbv_overflow_use
+       440 |   int rc_initial_buffer_occupancy
+       444 |   int trellis
+       448 |   char * stats_out
+       452 |   char * stats_in
+       456 |   int workaround_bugs
+       460 |   int strict_std_compliance
+       464 |   int error_concealment
+       468 |   int debug
+       472 |   int err_recognition
+       476 |   const struct AVHWAccel * hwaccel
+       480 |   void * hwaccel_context
+       484 |   AVBufferRef * hw_frames_ctx
+       488 |   AVBufferRef * hw_device_ctx
+       492 |   int hwaccel_flags
+       496 |   int extra_hw_frames
+       504 |   uint64_t[8] error
+       568 |   int dct_algo
+       572 |   int idct_algo
+       576 |   int bits_per_coded_sample
+       580 |   int bits_per_raw_sample
+       584 |   int thread_count
+       588 |   int thread_type
+       592 |   int active_thread_type
+       596 |   int (*)(struct AVCodecContext *, int (*)(struct AVCodecContext *, void *), void *, int *, int, int) execute
+       600 |   int (*)(struct AVCodecContext *, int (*)(struct AVCodecContext *, void *, int, int), void *, int *, int) execute2
+       604 |   int profile
+       608 |   int level
+       612 |   unsigned int properties
+       616 |   enum AVDiscard skip_loop_filter
+       620 |   enum AVDiscard skip_idct
+       624 |   enum AVDiscard skip_frame
+       628 |   int skip_alpha
+       632 |   int skip_top
+       636 |   int skip_bottom
+       640 |   int lowres
+       644 |   const struct AVCodecDescriptor * codec_descriptor
+       648 |   char * sub_charenc
+       652 |   int sub_charenc_mode
+       656 |   int subtitle_header_size
+       660 |   uint8_t * subtitle_header
+       664 |   uint8_t * dump_separator
+       668 |   char * codec_whitelist
+       672 |   AVPacketSideData * coded_side_data
+       676 |   int nb_coded_side_data
+       680 |   int export_side_data
+       688 |   int64_t max_pixels
+       696 |   int apply_cropping
+       700 |   int discard_damaged_percentage
+       704 |   int64_t max_samples
+       712 |   int (*)(struct AVCodecContext *, AVPacket *, int) get_encode_buffer
+       720 |   int64_t frame_num
+       728 |   int * side_data_prefer_packet
+       732 |   unsigned int nb_side_data_prefer_packet
+       736 |   AVFrameSideData ** decoded_side_data
+       740 |   int nb_decoded_side_data
+       744 |   enum AVAlphaMode alpha_mode
+           | [sizeof=752, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVCodecParameters
+         0 |   enum AVMediaType codec_type
+         4 |   enum AVCodecID codec_id
+         8 |   uint32_t codec_tag
+        12 |   uint8_t * extradata
+        16 |   int extradata_size
+        20 |   AVPacketSideData * coded_side_data
+        24 |   int nb_coded_side_data
+        28 |   int format
+        32 |   int64_t bit_rate
+        40 |   int bits_per_coded_sample
+        44 |   int bits_per_raw_sample
+        48 |   int profile
+        52 |   int level
+        56 |   int width
+        60 |   int height
+        64 |   struct AVRational sample_aspect_ratio
+        64 |     int num
+        68 |     int den
+        72 |   struct AVRational framerate
+        72 |     int num
+        76 |     int den
+        80 |   enum AVFieldOrder field_order
+        84 |   enum AVColorRange color_range
+        88 |   enum AVColorPrimaries color_primaries
+        92 |   enum AVColorTransferCharacteristic color_trc
+        96 |   enum AVColorSpace color_space
+       100 |   enum AVChromaLocation chroma_location
+       104 |   int video_delay
+       112 |   struct AVChannelLayout ch_layout
+       112 |     enum AVChannelOrder order
+       116 |     int nb_channels
+       120 |     union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5) u
+       120 |       uint64_t mask
+       120 |       AVChannelCustom * map
+       128 |     void * opaque
+       136 |   int sample_rate
+       140 |   int block_align
+       144 |   int frame_size
+       148 |   int initial_padding
+       152 |   int trailing_padding
+       156 |   int seek_preroll
+       160 |   enum AVAlphaMode alpha_mode
+           | [sizeof=168, align=8]
+
+*** Dumping AST Record Layout
+         0 | SubtitleConfig
+         0 |   int subtitle_header_size
+         4 |   uint8_t * subtitle_header
+         8 |   enum AVSubtitleType type
+           | [sizeof=12, align=4]
+
+*** Dumping AST Record Layout
+         0 | struct AVFrame
+         0 |   uint8_t *[8] data
+        32 |   int[8] linesize
+        64 |   uint8_t ** extended_data
+        68 |   int width
+        72 |   int height
+        76 |   int nb_samples
+        80 |   int format
+        84 |   enum AVPictureType pict_type
+        88 |   struct AVRational sample_aspect_ratio
+        88 |     int num
+        92 |     int den
+        96 |   int64_t pts
+       104 |   int64_t pkt_dts
+       112 |   struct AVRational time_base
+       112 |     int num
+       116 |     int den
+       120 |   int quality
+       124 |   void * opaque
+       128 |   int repeat_pict
+       132 |   int sample_rate
+       136 |   AVBufferRef *[8] buf
+       168 |   AVBufferRef ** extended_buf
+       172 |   int nb_extended_buf
+       176 |   AVFrameSideData ** side_data
+       180 |   int nb_side_data
+       184 |   int flags
+       188 |   enum AVColorRange color_range
+       192 |   enum AVColorPrimaries color_primaries
+       196 |   enum AVColorTransferCharacteristic color_trc
+       200 |   enum AVColorSpace colorspace
+       204 |   enum AVChromaLocation chroma_location
+       208 |   int64_t best_effort_timestamp
+       216 |   AVDictionary * metadata
+       220 |   int decode_error_flags
+       224 |   AVBufferRef * hw_frames_ctx
+       228 |   AVBufferRef * opaque_ref
+       232 |   size_t crop_top
+       236 |   size_t crop_bottom
+       240 |   size_t crop_left
+       244 |   size_t crop_right
+       248 |   void * private_ref
+       256 |   struct AVChannelLayout ch_layout
+       256 |     enum AVChannelOrder order
+       260 |     int nb_channels
+       264 |     union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5) u
+       264 |       uint64_t mask
+       264 |       AVChannelCustom * map
+       272 |     void * opaque
+       280 |   int64_t duration
+       288 |   enum AVAlphaMode alpha_mode
+           | [sizeof=296, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct SwsContext
+         0 |   const AVClass * av_class
+         4 |   void * opaque
+         8 |   unsigned int flags
+        16 |   double[2] scaler_params
+        32 |   int threads
+        36 |   SwsDither dither
+        40 |   SwsAlphaBlend alpha_blend
+        44 |   int gamma_flag
+        48 |   int src_w
+        52 |   int src_h
+        56 |   int dst_w
+        60 |   int dst_h
+        64 |   int src_format
+        68 |   int dst_format
+        72 |   int src_range
+        76 |   int dst_range
+        80 |   int src_v_chr_pos
+        84 |   int src_h_chr_pos
+        88 |   int dst_v_chr_pos
+        92 |   int dst_h_chr_pos
+        96 |   int intent
+           | [sizeof=104, align=8]
+
+*** Dumping AST Record Layout
+         0 | VideoFrame
+         0 |   int32_t width
+         4 |   int32_t height
+         8 |   int32_t crop_top
+        12 |   int32_t crop_bottom
+        16 |   int32_t crop_left
+        20 |   int32_t crop_right
+        24 |   int32_t format
+        28 |   int32_t key_frame
+        32 |   int32_t pict_type
+        40 |   int64_t pts
+        48 |   double ts_js
+        56 |   int32_t time_base_num
+        60 |   int32_t time_base_den
+        64 |   int64_t duration
+        72 |   double dur_js
+        80 |   uint32_t[8] src_data
+       112 |   int32_t[8] src_linesize
+       144 |   int32_t color_range
+       148 |   int32_t color_space
+       152 |   int32_t color_primaries
+       156 |   int32_t color_transfer
+       160 |   int32_t stream_index
+       164 |   AVFrame * frame
+           | [sizeof=168, align=8]
+
+*** Dumping AST Record Layout
+         0 | AudioFrame
+         0 |   int32_t channels
+         4 |   int32_t samples
+         8 |   int32_t sample_rate
+        12 |   uint32_t data
+        16 |   int32_t bytes_per_sample
+        24 |   double ts_js
+        32 |   int32_t stream_index
+        36 |   int32_t format
+        40 |   AVFrame * frame
+           | [sizeof=48, align=8]
+
+*** Dumping AST Record Layout
+         0 | SubtitleFrame
+         0 |   int x
+         4 |   int y
+         8 |   int width
+        12 |   int height
+        16 |   int nb_colors
+        24 |   int64_t pts
+        32 |   double ts_js
+        40 |   double dur_js
+        48 |   uint32_t[4] src_data
+        64 |   int[4] src_linesize
+        80 |   int32_t stream_index
+        84 |   AVSubtitle * frame
+           | [sizeof=88, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVSubtitle
+         0 |   uint16_t format
+         4 |   uint32_t start_display_time
+         8 |   uint32_t end_display_time
+        12 |   unsigned int num_rects
+        16 |   AVSubtitleRect ** rects
+        24 |   int64_t pts
+           | [sizeof=32, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVSubtitleRect
+         0 |   int x
+         4 |   int y
+         8 |   int w
+        12 |   int h
+        16 |   int nb_colors
+        20 |   uint8_t *[4] data
+        36 |   int[4] linesize
+        52 |   int flags
+        56 |   enum AVSubtitleType type
+        60 |   char * text
+        64 |   char * ass
+           | [sizeof=68, align=4]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_event_fd_readwrite_t
+         0 |   __wasi_filesize_t nbytes
+         8 |   __wasi_eventrwflags_t flags
+           | [sizeof=16, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_subscription_clock_t
+         0 |   __wasi_clockid_t id
+         8 |   __wasi_timestamp_t timeout
+        16 |   __wasi_timestamp_t precision
+        24 |   __wasi_subclockflags_t flags
+           | [sizeof=32, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_prestat_dir_t
+         0 |   __wasi_size_t pr_name_len
+           | [sizeof=4, align=4]
+
+*** Dumping AST Record Layout
+         0 | struct AVRational
+         0 |   int num
+         4 |   int den
+           | [sizeof=8, align=4]
+
+*** Dumping AST Record Layout
+         0 | union av_intfloat32
+         0 |   uint32_t i
+         0 |   float f
+           | [sizeof=4, align=4]
+
+*** Dumping AST Record Layout
+         0 | union av_intfloat64
+         0 |   uint64_t i
+         0 |   double f
+           | [sizeof=8, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVPacket
+         0 |   AVBufferRef * buf
+         8 |   int64_t pts
+        16 |   int64_t dts
+        24 |   uint8_t * data
+        28 |   int size
+        32 |   int stream_index
+        36 |   int flags
+        40 |   AVPacketSideData * side_data
+        44 |   int side_data_elems
+        48 |   int64_t duration
+        56 |   int64_t pos
+        64 |   void * opaque
+        68 |   AVBufferRef * opaque_ref
+        72 |   struct AVRational time_base
+        72 |     int num
+        76 |     int den
+           | [sizeof=80, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVIOContext
+         0 |   const AVClass * av_class
+         4 |   unsigned char * buffer
+         8 |   int buffer_size
+        12 |   unsigned char * buf_ptr
+        16 |   unsigned char * buf_end
+        20 |   void * opaque
+        24 |   int (*)(void *, uint8_t *, int) read_packet
+        28 |   int (*)(void *, const uint8_t *, int) write_packet
+        32 |   int64_t (*)(void *, int64_t, int) seek
+        40 |   int64_t pos
+        48 |   int eof_reached
+        52 |   int error
+        56 |   int write_flag
+        60 |   int max_packet_size
+        64 |   int min_packet_size
+        68 |   unsigned long checksum
+        72 |   unsigned char * checksum_ptr
+        76 |   unsigned long (*)(unsigned long, const uint8_t *, unsigned int) update_checksum
+        80 |   int (*)(void *, int) read_pause
+        84 |   int64_t (*)(void *, int, int64_t, int) read_seek
+        88 |   int seekable
+        92 |   int direct
+        96 |   const char * protocol_whitelist
+       100 |   const char * protocol_blacklist
+       104 |   int (*)(void *, const uint8_t *, int, enum AVIODataMarkerType, int64_t) write_data_type
+       108 |   int ignore_boundary_point
+       112 |   unsigned char * buf_ptr_max
+       120 |   int64_t bytes_read
+       128 |   int64_t bytes_written
+           | [sizeof=136, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_event_fd_readwrite_t
+         0 |   __wasi_filesize_t nbytes
+         8 |   __wasi_eventrwflags_t flags
+           | [sizeof=16, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_subscription_clock_t
+         0 |   __wasi_clockid_t id
+         8 |   __wasi_timestamp_t timeout
+        16 |   __wasi_timestamp_t precision
+        24 |   __wasi_subclockflags_t flags
+           | [sizeof=32, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_prestat_dir_t
+         0 |   __wasi_size_t pr_name_len
+           | [sizeof=4, align=4]
+
+*** Dumping AST Record Layout
+         0 | struct AVRational
+         0 |   int num
+         4 |   int den
+           | [sizeof=8, align=4]
+
+*** Dumping AST Record Layout
+         0 | union av_intfloat32
+         0 |   uint32_t i
+         0 |   float f
+           | [sizeof=4, align=4]
+
+*** Dumping AST Record Layout
+         0 | union av_intfloat64
+         0 |   uint64_t i
+         0 |   double f
+           | [sizeof=8, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct SwsContext
+         0 |   const AVClass * av_class
+         4 |   void * opaque
+         8 |   unsigned int flags
+        16 |   double[2] scaler_params
+        32 |   int threads
+        36 |   SwsDither dither
+        40 |   SwsAlphaBlend alpha_blend
+        44 |   int gamma_flag
+        48 |   int src_w
+        52 |   int src_h
+        56 |   int dst_w
+        60 |   int dst_h
+        64 |   int src_format
+        68 |   int dst_format
+        72 |   int src_range
+        76 |   int dst_range
+        80 |   int src_v_chr_pos
+        84 |   int src_h_chr_pos
+        88 |   int dst_v_chr_pos
+        92 |   int dst_h_chr_pos
+        96 |   int intent
+           | [sizeof=104, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct SwsFilter
+         0 |   SwsVector * lumH
+         4 |   SwsVector * lumV
+         8 |   SwsVector * chrH
+        12 |   SwsVector * chrV
+           | [sizeof=16, align=4]
+
+*** Dumping AST Record Layout
+         0 | union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5)
+         0 |   uint64_t mask
+         0 |   AVChannelCustom * map
+           | [sizeof=8, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVChannelLayout
+         0 |   enum AVChannelOrder order
+         4 |   int nb_channels
+         8 |   union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5) u
+         8 |     uint64_t mask
+         8 |     AVChannelCustom * map
+        16 |   void * opaque
+           | [sizeof=24, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVFrame
+         0 |   uint8_t *[8] data
+        32 |   int[8] linesize
+        64 |   uint8_t ** extended_data
+        68 |   int width
+        72 |   int height
+        76 |   int nb_samples
+        80 |   int format
+        84 |   enum AVPictureType pict_type
+        88 |   struct AVRational sample_aspect_ratio
+        88 |     int num
+        92 |     int den
+        96 |   int64_t pts
+       104 |   int64_t pkt_dts
+       112 |   struct AVRational time_base
+       112 |     int num
+       116 |     int den
+       120 |   int quality
+       124 |   void * opaque
+       128 |   int repeat_pict
+       132 |   int sample_rate
+       136 |   AVBufferRef *[8] buf
+       168 |   AVBufferRef ** extended_buf
+       172 |   int nb_extended_buf
+       176 |   AVFrameSideData ** side_data
+       180 |   int nb_side_data
+       184 |   int flags
+       188 |   enum AVColorRange color_range
+       192 |   enum AVColorPrimaries color_primaries
+       196 |   enum AVColorTransferCharacteristic color_trc
+       200 |   enum AVColorSpace colorspace
+       204 |   enum AVChromaLocation chroma_location
+       208 |   int64_t best_effort_timestamp
+       216 |   AVDictionary * metadata
+       220 |   int decode_error_flags
+       224 |   AVBufferRef * hw_frames_ctx
+       228 |   AVBufferRef * opaque_ref
+       232 |   size_t crop_top
+       236 |   size_t crop_bottom
+       240 |   size_t crop_left
+       244 |   size_t crop_right
+       248 |   void * private_ref
+       256 |   struct AVChannelLayout ch_layout
+       256 |     enum AVChannelOrder order
+       260 |     int nb_channels
+       264 |     union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5) u
+       264 |       uint64_t mask
+       264 |       AVChannelCustom * map
+       272 |     void * opaque
+       280 |   int64_t duration
+       288 |   enum AVAlphaMode alpha_mode
+           | [sizeof=296, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_event_fd_readwrite_t
+         0 |   __wasi_filesize_t nbytes
+         8 |   __wasi_eventrwflags_t flags
+           | [sizeof=16, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_subscription_clock_t
+         0 |   __wasi_clockid_t id
+         8 |   __wasi_timestamp_t timeout
+        16 |   __wasi_timestamp_t precision
+        24 |   __wasi_subclockflags_t flags
+           | [sizeof=32, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_prestat_dir_t
+         0 |   __wasi_size_t pr_name_len
+           | [sizeof=4, align=4]
+
+*** Dumping AST Record Layout
+         0 | struct AVRational
+         0 |   int num
+         4 |   int den
+           | [sizeof=8, align=4]
+
+*** Dumping AST Record Layout
+         0 | union av_intfloat32
+         0 |   uint32_t i
+         0 |   float f
+           | [sizeof=4, align=4]
+
+*** Dumping AST Record Layout
+         0 | union av_intfloat64
+         0 |   uint64_t i
+         0 |   double f
+           | [sizeof=8, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVPacket
+         0 |   AVBufferRef * buf
+         8 |   int64_t pts
+        16 |   int64_t dts
+        24 |   uint8_t * data
+        28 |   int size
+        32 |   int stream_index
+        36 |   int flags
+        40 |   AVPacketSideData * side_data
+        44 |   int side_data_elems
+        48 |   int64_t duration
+        56 |   int64_t pos
+        64 |   void * opaque
+        68 |   AVBufferRef * opaque_ref
+        72 |   struct AVRational time_base
+        72 |     int num
+        76 |     int den
+           | [sizeof=80, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVComponentDescriptor
+         0 |   int plane
+         4 |   int step
+         8 |   int offset
+        12 |   int shift
+        16 |   int depth
+           | [sizeof=20, align=4]
+
+*** Dumping AST Record Layout
+         0 | AudioDecoderConfig
+         0 |   char[256] codec
+       256 |   int32_t sample_rate
+       260 |   int32_t num_channels
+       264 |   uint8_t * description
+       268 |   int32_t description_size
+           | [sizeof=272, align=4]
+
+*** Dumping AST Record Layout
+         0 | VideoDecoderConfig
+         0 |   char[256] codec
+       256 |   int coded_width
+       260 |   int coded_height
+       264 |   uint8_t * description
+       268 |   int description_size
+       272 |   enum AVColorRange color_range
+       276 |   enum AVColorPrimaries color_primaries
+       280 |   enum AVColorTransferCharacteristic color_trc
+       284 |   enum AVColorSpace color_space
+       288 |   enum AVChromaLocation chroma_location
+           | [sizeof=292, align=4]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_event_fd_readwrite_t
+         0 |   __wasi_filesize_t nbytes
+         8 |   __wasi_eventrwflags_t flags
+           | [sizeof=16, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_subscription_clock_t
+         0 |   __wasi_clockid_t id
+         8 |   __wasi_timestamp_t timeout
+        16 |   __wasi_timestamp_t precision
+        24 |   __wasi_subclockflags_t flags
+           | [sizeof=32, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct __wasi_prestat_dir_t
+         0 |   __wasi_size_t pr_name_len
+           | [sizeof=4, align=4]
+
+*** Dumping AST Record Layout
+         0 | struct AVRational
+         0 |   int num
+         4 |   int den
+           | [sizeof=8, align=4]
+
+*** Dumping AST Record Layout
+         0 | union av_intfloat32
+         0 |   uint32_t i
+         0 |   float f
+           | [sizeof=4, align=4]
+
+*** Dumping AST Record Layout
+         0 | union av_intfloat64
+         0 |   uint64_t i
+         0 |   double f
+           | [sizeof=8, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVPacket
+         0 |   AVBufferRef * buf
+         8 |   int64_t pts
+        16 |   int64_t dts
+        24 |   uint8_t * data
+        28 |   int size
+        32 |   int stream_index
+        36 |   int flags
+        40 |   AVPacketSideData * side_data
+        44 |   int side_data_elems
+        48 |   int64_t duration
+        56 |   int64_t pos
+        64 |   void * opaque
+        68 |   AVBufferRef * opaque_ref
+        72 |   struct AVRational time_base
+        72 |     int num
+        76 |     int den
+           | [sizeof=80, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVIOContext
+         0 |   const AVClass * av_class
+         4 |   unsigned char * buffer
+         8 |   int buffer_size
+        12 |   unsigned char * buf_ptr
+        16 |   unsigned char * buf_end
+        20 |   void * opaque
+        24 |   int (*)(void *, uint8_t *, int) read_packet
+        28 |   int (*)(void *, const uint8_t *, int) write_packet
+        32 |   int64_t (*)(void *, int64_t, int) seek
+        40 |   int64_t pos
+        48 |   int eof_reached
+        52 |   int error
+        56 |   int write_flag
+        60 |   int max_packet_size
+        64 |   int min_packet_size
+        68 |   unsigned long checksum
+        72 |   unsigned char * checksum_ptr
+        76 |   unsigned long (*)(unsigned long, const uint8_t *, unsigned int) update_checksum
+        80 |   int (*)(void *, int) read_pause
+        84 |   int64_t (*)(void *, int, int64_t, int) read_seek
+        88 |   int seekable
+        92 |   int direct
+        96 |   const char * protocol_whitelist
+       100 |   const char * protocol_blacklist
+       104 |   int (*)(void *, const uint8_t *, int, enum AVIODataMarkerType, int64_t) write_data_type
+       108 |   int ignore_boundary_point
+       112 |   unsigned char * buf_ptr_max
+       120 |   int64_t bytes_read
+       128 |   int64_t bytes_written
+           | [sizeof=136, align=8]

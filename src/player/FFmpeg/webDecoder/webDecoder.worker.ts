@@ -19,6 +19,7 @@ class WebDecoder {
     private outputChannel: MessagePort;
     private isVideo: boolean;
     private decoder: VideoDecoder | AudioDecoder;
+    private isFirefox: boolean = false;
 
 
     constructor(config: WebDecoderWorkerInit) {
@@ -27,6 +28,7 @@ class WebDecoder {
         this.eventer.receiveEvent(this.handleEvents.bind(this));
         this.outputChannel = config.outputChannel;
         this.isVideo = config.isVideo;
+        this.isFirefox = navigator.userAgent.match(/firefox|fxios/i) !== null;
 
         try {
             if (this.isVideo) {
@@ -66,68 +68,73 @@ class WebDecoder {
 
     submitVideoPacket(info: { ptr: number, size: number, duration: number, timestamp: number, isKey: boolean; }) {
         const encodedChunk = new EncodedVideoChunk({
-            data: this.viewMemory(info.ptr, info.ptr + info.size),
+            data: this.viewMemory(info.ptr, info.size),
             duration: info.duration,
             timestamp: info.timestamp,
             type: info.isKey ? "key" : "delta"
         });
 
         this.decoder.decode(encodedChunk);
+
+        this.eventer.sendEvent(WebDecoderResponseType.PACKET_PUBLISHED, {});
     }
 
     submitAudioPacket(info: { ptr: number, size: number, duration: number, timestamp: number; }) {
         const encodedChunk = new EncodedAudioChunk({
-            data: this.viewMemory(info.ptr, info.ptr + info.size),
+            data: this.viewMemory(info.ptr, info.size),
             duration: info.duration,
             timestamp: info.timestamp,
             type: "key"
         });
 
         this.decoder.decode(encodedChunk);
+
+        this.eventer.sendEvent(WebDecoderResponseType.PACKET_PUBLISHED, {});
     }
 
-    initializeVideo(config: VideoDecoderConfigStruct): VideoDecoder {
+    initializeVideo(config: VideoDecoderConfig): VideoDecoder {
         const decoder = new VideoDecoder({ error: this.error.bind(this), output: this.output.bind(this) });
-
-        decoder.configure({
-            codec: config.codec,
-            codedWidth: config.coded_width,
-            codedHeight: config.coded_height,
-            colorSpace: {
-                fullRange: AVColorRangeToColorRange(config.color_range),
-                matrix: AVColorSpaceToColorMatrixCoeff(config.color_space) as VideoMatrixCoefficients,
-                primaries: AVColorPrimarieToColorPrimative(config.color_primaries) as VideoColorPrimaries,
-                transfer: AVColorTransferToTransferChar(config.color_trc) as VideoTransferCharacteristics
-            },
-            description: this.sliceMemory(config.description, config.description + config.description_size),
-        });
+        decoder.configure(config);
 
         return decoder;
     }
 
-    initializeAudio(config: AudioDecoderConfigStruct): AudioDecoder {
+    initializeAudio(config: AudioDecoderConfig): AudioDecoder {
         const decoder = new AudioDecoder({ error: this.error.bind(this), output: this.output.bind(this) });
-
-        decoder.configure({
-            codec: config.codec,
-            numberOfChannels: config.num_channels,
-            sampleRate: config.sample_rate,
-            description: this.sliceMemory(config.description, config.description + config.description_size),
-        });
+        decoder.configure(config);
 
         return decoder;
     }
 
-    private output(output: VideoFrame | AudioData) {
+    private async output(output: VideoFrame | AudioData) {
         // NOTE: Depending on how firefox feels like, it
         // might be beneficial to convert the VideoFrame
-        // to an ImageBitmap or similar. Firefox DOES support
-        // YUV and similar color formats but sometimes it ends
-        // up converting them to an RGBX one. That is not much
+        // to RGBA or RGBX. Firefox DOES support
+        // YUV and similar color formats but it will convert 
+        // them to RGBX upon presentation. That is not much
         // of an issue but it tends to be very slow.
-        // If this happens with WebGPU too then we better
-        // get the performance penatly here at a decoder stage
-        // instead at the presentation stage
+        // Better take the performance hit here
+
+        if (this.isFirefox
+            && output instanceof VideoFrame
+            && output.format !== 'RGBA'
+            && output.format !== 'RGBX') {
+            
+            let buffer = new Uint8Array(output.allocationSize({
+                format: 'RGBA',
+            }));
+            await output.copyTo(buffer, { format: 'RGBA' });
+            output = new VideoFrame(buffer, {
+                codedWidth: output.codedWidth,
+                codedHeight: output.codedHeight,
+                format: 'RGBA',
+                timestamp: output.timestamp,
+                displayWidth: output.displayWidth,
+                displayHeight: output.displayHeight,
+                duration: output.duration ?? undefined,                
+            })
+        }
+
         this.outputChannel.postMessage(output, [output]);
     }
 
@@ -140,8 +147,8 @@ class WebDecoder {
         return totalMemory.slice(start, end);
     }
 
-    private viewMemory(start: number, end: number): Uint8Array {
-        return new Uint8Array(this.moduleMemory.buffer, start, end);
+    private viewMemory(start: number, lenght: number): Uint8Array {
+        return new Uint8Array(this.moduleMemory.buffer, start, lenght);
     }
 }
 

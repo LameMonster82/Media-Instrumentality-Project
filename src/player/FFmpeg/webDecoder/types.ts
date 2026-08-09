@@ -9,7 +9,8 @@ export enum WebDecoderRequestType {
 
 export enum WebDecoderResponseType {
     INIT_DONE = 0,
-    FATAL_ERROR
+    FATAL_ERROR,
+    PACKET_PUBLISHED
 }
 
 export const decoderRequestTemplates = {
@@ -35,7 +36,8 @@ export const decoderResponseTemplates = {
     },
     [WebDecoderResponseType.FATAL_ERROR]: {
         result: floatConst
-    }
+    },
+    [WebDecoderResponseType.PACKET_PUBLISHED]: emptyRequest
 } as const satisfies SerializableEventMap<WebDecoderResponseType>;
 
 export interface WebDecoderWorkerInit {
@@ -43,7 +45,7 @@ export interface WebDecoderWorkerInit {
     isVideo: boolean,
     targetBuffer: WebAssembly.Memory,
     inputAtomicBuffers: AtomicEventerBuffers,
-    videoConfig: VideoDecoderConfigStruct | undefined,
-    audioConfig: AudioDecoderConfigStruct | undefined,
+    videoConfig: VideoDecoderConfig | undefined,
+    audioConfig: AudioDecoderConfig | undefined,
     outputChannel: MessagePort
 }

@@ -4,6 +4,11 @@
 #include <libavcodec/avcodec.h>
 #include <stdint.h>
 
+enum AttachmentType {
+    FONT = 0,
+    COVER = 1
+};
+
 typedef struct {
   char codec[256]; // The codec string
   int coded_width;
@@ -33,6 +38,12 @@ typedef struct {
     uint8_t *subtitle_header;
     enum AVSubtitleType type;
 } SubtitleConfig;
+
+typedef struct {
+  enum AttachmentType type;
+  uint8_t *data;
+  int size;
+} AttachmentConfig;
 
 VideoDecoderConfig *video_stream_to_config(AVCodecParameters *codecpar);
 AudioDecoderConfig *audio_stream_to_config(AVCodecParameters *codecpar);

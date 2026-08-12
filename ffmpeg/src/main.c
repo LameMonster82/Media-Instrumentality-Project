@@ -4,6 +4,7 @@
 #include <libavcodec/packet.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
+#include <libavutil/imgutils.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +13,8 @@
 #include "context.h"
 #include "io.h"
 #include "libavcodec/codec_id.h"
+#include "libavutil/channel_layout.h"
+#include "libavutil/dict.h"
 #include "libavutil/error.h"
 #include "libavutil/frame.h"
 #include "libswscale/swscale.h"
@@ -19,6 +22,9 @@
 
 EM_JS(void, send_sw_frame, (ReturnType * results),
       { return self.send_sw_frame(results); });
+
+EM_JS(void, set_timestamp, (int64_t time),
+      { return self.set_timestamp(time); });
 
 static BridgeContext g_ctx;
 
@@ -29,6 +35,7 @@ int init_ffmpeg(int buffer_size, int is_stream, int debug_level,
   memset(&g_ctx, 0, sizeof(g_ctx));
   g_ctx.supported_pix_fmts = fmts;
   g_ctx.thread_count = thread_count;
+  g_ctx.report_timestamp = 0;
 
   av_log_set_level(debug_level);
 
@@ -93,9 +100,17 @@ FileInfo *open_file() {
   double duration = (double)g_ctx.fmt_ctx->duration / AV_TIME_BASE;
 
   g_ctx.nb_streams = g_ctx.fmt_ctx->nb_streams;
+  g_ctx.stream_support = malloc(sizeof(int32_t) * g_ctx.nb_streams);
   g_ctx.codecs = malloc(sizeof(AVCodecContext *) * g_ctx.fmt_ctx->nb_streams);
   g_ctx.sws_ctx = malloc(sizeof(SwsContext *) * g_ctx.fmt_ctx->nb_streams);
+  g_ctx.sws_in_fmt = malloc(sizeof(int) * g_ctx.fmt_ctx->nb_streams);
   g_ctx.swr_ctx = malloc(sizeof(SwrContext *) * g_ctx.fmt_ctx->nb_streams);
+  g_ctx.swr_in_fmt = malloc(sizeof(int) * g_ctx.fmt_ctx->nb_streams);
+  g_ctx.swr_in_rate = malloc(sizeof(int) * g_ctx.fmt_ctx->nb_streams);
+  g_ctx.swr_in_layout = malloc(sizeof(AVChannelLayout) * g_ctx.fmt_ctx->nb_streams);
+  g_ctx.last_ts_js = malloc(sizeof(int64_t) * g_ctx.fmt_ctx->nb_streams);
+  g_ctx.last_dur_js = malloc(sizeof(int64_t) * g_ctx.fmt_ctx->nb_streams);
+
   for (int i = 0; i < g_ctx.fmt_ctx->nb_streams; i++) {
     // Get codec parameters and find the decoder
     AVStream *stream = g_ctx.fmt_ctx->streams[i];
@@ -117,12 +132,43 @@ FileInfo *open_file() {
     info->streams[i].disposition = stream->disposition;
 
     if (type == AVMEDIA_TYPE_ATTACHMENT) {
+      const AVDictionaryEntry *mimetype =
+          av_dict_get(stream->metadata, "mimetype", NULL, 0);
+      if (mimetype && strncmp(mimetype->value, "font/", 5) == 0) {
+        AttachmentConfig *att = malloc(sizeof(AttachmentConfig));
+        att->type = FONT;
+        att->data = stream->codecpar->extradata;
+        att->size = stream->codecpar->extradata_size;
+        info->streams[i].attachment_config = att;
+      } else {
+        info->streams[i].type = AVMEDIA_TYPE_UNKNOWN;
+      }
       continue;
     }
 
-    const AVCodec *codec = avcodec_find_decoder(stream->codecpar->codec_id);
+    if (type == AVMEDIA_TYPE_VIDEO &&
+        stream->disposition & AV_DISPOSITION_ATTACHED_PIC) {
+      info->streams[i].type = AVMEDIA_TYPE_ATTACHMENT;
+
+      AVPacket *pic = &stream->attached_pic;
+      AttachmentConfig *cover = malloc(sizeof(AttachmentConfig));
+      cover->type = COVER;
+      cover->data = pic->data;
+      cover->size = pic->size;
+      info->streams[i].attachment_config = cover;
+      continue;
+    }
+
+    const AVCodec *codec;
+    if (stream->codecpar->codec_id == AV_CODEC_ID_AV1) {
+      codec = avcodec_find_decoder_by_name("libdav1d");
+    } else {
+      codec = avcodec_find_decoder(stream->codecpar->codec_id);
+    }
+
     if (!codec) {
       av_log(NULL, AV_LOG_ERROR, "Failed to find decoder for stream #%u\n", i);
+      info->streams[i].type = AVMEDIA_TYPE_UNKNOWN;
       continue;
     }
 
@@ -130,6 +176,7 @@ FileInfo *open_file() {
     if (!ctx) {
       av_log(NULL, AV_LOG_ERROR,
              "Failed to allocate the decoder context for stream #%u\n", i);
+      info->streams[i].type = AVMEDIA_TYPE_UNKNOWN;
       continue;
     }
 
@@ -144,12 +191,14 @@ FileInfo *open_file() {
              "Failed to copy decoder parameters to input decoder context "
              "for stream #%u\n",
              i);
+      info->streams[i].type = AVMEDIA_TYPE_UNKNOWN;
       continue;
     }
 
     ret = avcodec_open2(ctx, codec, NULL);
     if (ret < 0) {
       av_log(NULL, AV_LOG_ERROR, "Failed to open decoder for stream #%u\n", i);
+      info->streams[i].type = AVMEDIA_TYPE_UNKNOWN;
       continue;
     }
 
@@ -165,20 +214,19 @@ FileInfo *open_file() {
       SubtitleConfig *config = malloc(sizeof(SubtitleConfig));
       config->subtitle_header_size = ctx->subtitle_header_size;
       config->subtitle_header = ctx->subtitle_header;
-      config->type = SUBTITLE_NONE;
+      config->type = SUBTITLE_ASS;
 
       const AVCodecDescriptor *desc = avcodec_descriptor_get(codec->id);
 
-      // Certain (most) subtitles can be just text instead of ASS
-      if (codec->id == AV_CODEC_ID_SUBRIP) {
-        config->type = SUBTITLE_TEXT;
-      } else if (desc->props & AV_CODEC_PROP_BITMAP_SUB) {
+      if (desc->props & AV_CODEC_PROP_BITMAP_SUB) {
         config->type = SUBTITLE_BITMAP;
       } else if (desc->props & AV_CODEC_PROP_TEXT_SUB) {
         config->type = SUBTITLE_ASS;
       }
 
       info->streams[i].subtitle_config = config;
+    } else {
+      info->streams[i].type = AVMEDIA_TYPE_UNKNOWN;
     }
 
     g_ctx.codecs[i] = ctx;
@@ -188,8 +236,8 @@ FileInfo *open_file() {
 }
 
 EMSCRIPTEN_KEEPALIVE
-void set_stream_support(int32_t *stream_support) {
-  g_ctx.stream_support = stream_support;
+void set_stream_support(int index, int32_t support) {
+  g_ctx.stream_support[index] = support;
 }
 
 VideoFrame *decode_frame(AVFrame *frame, int stream_index,
@@ -200,8 +248,12 @@ VideoFrame *decode_frame(AVFrame *frame, int stream_index,
 
   AVFrame *out_frame = frame;
   if (best_fmt != out_frame->format) {
+    if (g_ctx.sws_ctx[stream_index] && g_ctx.sws_in_fmt[stream_index] != frame->format) {
+      sws_free_context(&g_ctx.sws_ctx[stream_index]);
+    }
     if (!g_ctx.sws_ctx[stream_index]) {
       ret = init_sws(&g_ctx.sws_ctx[stream_index], frame, best_fmt);
+      g_ctx.sws_in_fmt[stream_index] = frame->format;
     }
 
     // Create a new frame
@@ -213,6 +265,9 @@ VideoFrame *decode_frame(AVFrame *frame, int stream_index,
       av_rescale_q(out_frame->pts, time_base, (AVRational){1, 1000000});
   int64_t dur_js =
       av_rescale_q(out_frame->duration, time_base, (AVRational){1, 1000000});
+
+  int buffer_size = av_image_get_buffer_size(
+      out_frame->format, out_frame->width, out_frame->height, 1);
 
   VideoFrame *simple_frame = malloc(sizeof(*simple_frame));
 
@@ -236,12 +291,13 @@ VideoFrame *decode_frame(AVFrame *frame, int stream_index,
   simple_frame->color_primaries = out_frame->color_primaries;
   simple_frame->color_transfer = out_frame->color_trc;
   simple_frame->stream_index = stream_index;
+  simple_frame->buffer_size = buffer_size;
 
   simple_frame->frame = out_frame;
 
   for (int i = 0; i < 8; i++) {
-    simple_frame->src_data[i] = (uint32_t)(uintptr_t)out_frame->data[i];
-    simple_frame->src_linesize[i] = out_frame->linesize[i];
+    simple_frame->src_data[i] = (uintptr_t)out_frame->data[i];
+    simple_frame->src_linesize[i] = (int32_t)out_frame->linesize[i];
   }
 
   return simple_frame;
@@ -273,12 +329,22 @@ AudioFrame *decode_audio(AVFrame *frame, int stream_index, double ts_js) {
 
   int ret;
 
+  enum AVSampleFormat out_format = AV_SAMPLE_FMT_FLT;
   AVFrame *out_frame = frame;
-  if (!is_browser_supported_sample_fmt(frame->format)) {
-    enum AVSampleFormat out_format = AV_SAMPLE_FMT_FLT;
-
+  if (frame->format != out_format) {
+    if (g_ctx.swr_ctx[stream_index] &&
+        (g_ctx.swr_in_fmt[stream_index] != frame->format ||
+         g_ctx.swr_in_rate[stream_index] != frame->sample_rate ||
+         av_channel_layout_compare(&g_ctx.swr_in_layout[stream_index],
+                                   &frame->ch_layout))) {
+      swr_free(&g_ctx.swr_ctx[stream_index]);
+    }
     if (!g_ctx.swr_ctx[stream_index]) {
-      ret = init_swr(&g_ctx.swr_ctx[stream_index], frame, out_format);
+      init_swr(&g_ctx.swr_ctx[stream_index], frame, out_format);
+      g_ctx.swr_in_fmt[stream_index] = frame->format;
+      g_ctx.swr_in_rate[stream_index] = frame->sample_rate;
+      av_channel_layout_copy(&g_ctx.swr_in_layout[stream_index],
+                             &frame->ch_layout);
     }
 
     out_frame = swr_frame(g_ctx.swr_ctx[stream_index], frame, out_format);
@@ -286,19 +352,26 @@ AudioFrame *decode_audio(AVFrame *frame, int stream_index, double ts_js) {
   }
 
   int channels = FFMIN(out_frame->ch_layout.nb_channels, 8);
+  int buffer_size = av_samples_get_buffer_size(
+      NULL, channels, out_frame->nb_samples, out_frame->format, 0);
 
   AudioFrame *simple_frame = malloc(sizeof(*simple_frame));
 
   simple_frame->channels = channels;
   simple_frame->samples = out_frame->nb_samples;
   simple_frame->sample_rate = out_frame->sample_rate;
-  simple_frame->data = (uint32_t)(uintptr_t)out_frame->data[0];
   simple_frame->bytes_per_sample = av_get_bytes_per_sample(out_frame->format);
   simple_frame->ts_js = ts_js;
   simple_frame->stream_index = stream_index;
   simple_frame->format = out_frame->format;
+  simple_frame->linesize = out_frame->linesize[0];
+  simple_frame->buffer_size = buffer_size;
 
-  simple_frame->frame = frame;
+  simple_frame->frame = out_frame;
+
+  for (int i = 0; i < 8; i++) {
+    simple_frame->src_data[i] = (uintptr_t)out_frame->data[i];
+  }
 
   return simple_frame;
 }
@@ -333,8 +406,8 @@ SubtitleFrame *decode_subtitle_frame(AVSubtitleRect *frame, AVSubtitle *sub,
   simple_frame->frame = sub;
 
   for (int i = 0; i < 4; i++) {
-    simple_frame->src_data[i] = (uint32_t)(uintptr_t)frame->data[i];
-    simple_frame->src_linesize[i] = frame->linesize[i];
+    simple_frame->src_data[i] = (uintptr_t)frame->data[i];
+    simple_frame->src_linesize[i] = (int32_t)frame->linesize[i];
   }
 
   return simple_frame;
@@ -363,6 +436,9 @@ int seek_to(double time) {
   int ret =
       avformat_seek_file(g_ctx.fmt_ctx, -1, INT64_MIN, target_timestamp_us,
                          INT64_MAX, AVSEEK_FLAG_BACKWARD); // INT64_MAX
+
+  g_ctx.report_timestamp = 1;
+
   if (ret < 0) {
     fprintf(stderr, "Seek failed: %s\n", av_err2str(ret));
     return ret;
@@ -408,10 +484,27 @@ ReturnType *poke_for_data() {
   AVStream *stream = g_ctx.fmt_ctx->streams[stream_index];
   enum AVMediaType type = stream->codecpar->codec_type;
 
-  int64_t ts_js =
-      av_rescale_q(packet->pts, stream->time_base, (AVRational){1, 1000000});
+  int64_t ts_js;
+  if (packet->pts != AV_NOPTS_VALUE) {
+    ts_js =
+        av_rescale_q(packet->pts, stream->time_base, (AVRational){1, 1000000});
+  } else if (packet->dts != AV_NOPTS_VALUE) {
+    ts_js =
+        av_rescale_q(packet->dts, stream->time_base, (AVRational){1, 1000000});
+  } else {
+    ts_js = g_ctx.last_ts_js[stream_index] +
+            g_ctx.last_dur_js[stream_index]; // extrapolate
+  }
   int64_t dur_js = av_rescale_q(packet->duration, stream->time_base,
                                 (AVRational){1, 1000000});
+
+  g_ctx.last_ts_js[stream_index] = ts_js;
+  g_ctx.last_dur_js[stream_index] = dur_js;
+
+  if (g_ctx.report_timestamp == 1) {
+    set_timestamp(ts_js);
+    g_ctx.report_timestamp = 0;
+  }
 
   g_ctx.data_return->flags = packet->flags;
   g_ctx.data_return->timestamp = ts_js;
@@ -421,7 +514,6 @@ ReturnType *poke_for_data() {
     g_ctx.data_return->status = RESULT_RAW_PACKET;
     g_ctx.data_return->type = RESULT_PACKET;
     g_ctx.data_return->packet = packet;
-    ReturnType *going_insane = g_ctx.data_return;
     return g_ctx.data_return;
   } else if (g_ctx.stream_support[stream_index] == STREAM_NO_SUPPORT ||
              g_ctx.stream_support[stream_index] ==
@@ -466,8 +558,10 @@ ReturnType *poke_for_data() {
         av_rescale_q(sub.pts, packet->time_base, (AVRational){1, 1000000}) +
         (sub.end_display_time * 1000);
 
-    g_ctx.data_return->timestamp = pts_js;
-    g_ctx.data_return->duration = dur_js;
+    if (pts_js != 0 && dur_js != 0) {
+      g_ctx.data_return->duration = dur_js;
+      g_ctx.data_return->timestamp = pts_js;
+    }
 
     g_ctx.data_return->status = RESULT_OK;
     g_ctx.data_return->type = RESULT_SUBTITLE;
@@ -509,8 +603,8 @@ ReturnType *poke_for_data() {
   }
 
   int sent_sw_frame = 0;
-  AVFrame *frame = av_frame_alloc();
   while (ret >= 0) {
+    AVFrame *frame = av_frame_alloc();
     ret = avcodec_receive_frame(ctx, frame);
 
     if (ret == AVERROR_EOF) {
@@ -545,6 +639,7 @@ ReturnType *poke_for_data() {
       g_ctx.data_return->audio_frame = final_frame;
     } else {
       fprintf(stderr, "Unknown media type, skipping\n");
+      av_frame_free(&frame);
       continue;
     }
 
@@ -578,6 +673,9 @@ void cleanup_info(FileInfo *info) {
       break;
     case AVMEDIA_TYPE_SUBTITLE:
       free(info->streams[i].subtitle_config);
+      break;
+    case AVMEDIA_TYPE_ATTACHMENT:
+      free(info->streams[i].attachment_config);
       break;
     default:
       break;

@@ -30,6 +30,7 @@ typedef struct {
   VideoDecoderConfig *video_config;
   AudioDecoderConfig *audio_config;
   SubtitleConfig *subtitle_config;
+  AttachmentConfig *attachment_config;
   AVDictionary *metadata;
 } StreamInfo;
 
@@ -77,13 +78,14 @@ typedef struct {
   int32_t time_base_den;
   int64_t duration;
   double dur_js;
-  uint32_t src_data[8];    /* uint8_t* plane pointers */
+  uintptr_t src_data[8];    /* uint8_t* plane pointers */
   int32_t src_linesize[8]; /* int32_t linesize per plane */
   int32_t color_range;
   int32_t color_space;
   int32_t color_primaries;
   int32_t color_transfer;
   int32_t stream_index;
+  int buffer_size;
 
   // Just for the C side
   AVFrame *frame;
@@ -93,11 +95,13 @@ typedef struct {
   int32_t channels;
   int32_t samples;
   int32_t sample_rate;
-  uint32_t data; /* uint8_t* — audio samples */
+  uintptr_t src_data[8];
+  int32_t linesize;
   int32_t bytes_per_sample;
   double ts_js;
   int32_t stream_index;
   int32_t format;
+  int buffer_size;
 
   // Just for the C side
   AVFrame *frame;
@@ -112,8 +116,8 @@ typedef struct {
   int64_t pts;
   double ts_js;
   double dur_js;
-  uint32_t src_data[4];    /* uint8_t* plane pointers */
-  int src_linesize[4]; /* int32_t linesize per plane */
+  uintptr_t src_data[4];    /* uint8_t* plane pointers */
+  int32_t src_linesize[4]; /* int32_t linesize per plane */
   int32_t stream_index;
 
   // Just for the C side
@@ -146,10 +150,18 @@ typedef struct {
   AVFormatContext *fmt_ctx;
   AVCodecContext **codecs;
   SwsContext **sws_ctx;
+  int *sws_in_fmt;
   SwrContext **swr_ctx;
+  int *swr_in_fmt;
+  int *swr_in_rate;
+  AVChannelLayout *swr_in_layout;
   uint32_t nb_streams;
   /* An array of nb_streams signaling if a stream is supported or not */
   int32_t *stream_support;
+  uint32_t report_timestamp;
+
+  int64_t *last_ts_js;
+  int64_t *last_dur_js;
 
   ReturnType *data_return;
 } BridgeContext;

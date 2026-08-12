@@ -47,7 +47,7 @@ interface WasmModule {
   _init_ffmpeg(_0: number, _1: number, _2: number, _3: number, _4: number): number;
   _malloc(_0: number): number;
   _open_file(): number;
-  _set_stream_support(_0: number): void;
+  _set_stream_support(_0: number, _1: number): void;
   _cleanup_video_frame(_0: number): void;
   _free(_0: number): void;
   _cleanup_audio_frame(_0: number): void;

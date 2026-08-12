@@ -25,8 +25,7 @@ export class AudioStreamTrackNative implements MediaStreamTrackWrapper<AudioData
         return Promise.resolve();
     }
     enable(enable: boolean): void {
-        if (this.track)
-            this.track.enabled = enable;
+        this.track.enabled = enable;
     }
 
     async writeData(audioData: AudioData | WorkerAudioDataInit): Promise<void> {

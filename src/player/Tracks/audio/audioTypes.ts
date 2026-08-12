@@ -10,9 +10,15 @@ export interface WorkerAudioData extends WorkerPostMessage {
 }
 
 /** Timestamp and duration in Microseconds */
-export interface WorkerAudioDataInit extends WorkerPostMessage, AudioDataInit {
+export interface WorkerAudioDataInit extends WorkerPostMessage {
     readonly kind: "audioDataInit";
-    readonly streamIndex: number;
+    readonly data: Uint8Array;
+    readonly format: AudioSampleFormat;
+    readonly numberOfChannels: number;
+    readonly numberOfFrames: number;
+    readonly sampleRate: number;
+    readonly timestamp: number;
+    readonly transfer?: ArrayBufferLike[];
 }
 
 export type AllAudioFrameTypes = WorkerAudioData | WorkerAudioDataInit;

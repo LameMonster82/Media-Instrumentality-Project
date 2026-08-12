@@ -3,7 +3,7 @@ set -e
 
 TARGET_CPU="${1:-wasm32}"
 
-emconfigure ./configure \
+EM_PKG_CONFIG_PATH="$INSTALL_DIR/lib/pkgconfig" emconfigure ./configure \
     --cc="emcc" \
     --cxx="em++" \
     --ar="emar" \
@@ -26,6 +26,7 @@ emconfigure ./configure \
     --disable-hwaccels \
     --disable-devices \
     --enable-zlib \
+    --enable-libdav1d \
     --enable-gpl \
     --enable-version3 \
     --disable-sdl2 \
@@ -34,4 +35,5 @@ emconfigure ./configure \
     --disable-shared \
     --extra-cflags="$CFLAGS" \
     --extra-cxxflags="$CXXFLAGS" \
-    --extra-ldflags="$LDFLAGS"
+    --extra-ldflags="$LDFLAGS" \
+|| { echo "===== ffbuild/config.log: dav1d section ====="; grep -n -B2 -A60 "check.*dav1d\|test_pkg_config libdav1d\|dav1d_version" ffbuild/config.log | tail -n 150; exit 1; }

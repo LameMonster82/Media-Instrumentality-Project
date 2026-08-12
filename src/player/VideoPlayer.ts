@@ -1,31 +1,42 @@
 import MediaControls from "@/components/controls/Controls";
+import styles from "./videoPlayer.module.css";
 import ffmpegWorker from "@/player/FFmpeg/bridge.worker?worker";
 import AtomicEventer from "./atomicEventer/atomicEventer";
 import { RequestDataStatus, type AllRespondWorkerEventsKind, type DictionaryWorkerEvent, type RespondEventByKind, type WorkerFFmpegInitComplete, type WorkerInitFFmpeg } from "./FFmpeg/types";
 import { FFmpegRequestEvent, ffmpegRequestTemplate, FFmpegResponseEvent, ffmpegResponseTemplate } from "./FFmpeg/advancedTypes/atomicTypes";
-import { AVSubtitleType, MediaType } from "./FFmpeg/structReader";
+import { AttachmentType, AVMediaType, AVSubtitleType, MediaType } from "./FFmpeg/structReader";
 import type { MediaStreamTrackWrapper } from "./Tracks/types";
 import { GetVideoTrackCtor } from "./Tracks/video/utils";
 import { GetAudioTrackCtor } from "./Tracks/audio/utils";
-import type { WorkerAudioDataInit } from "./Tracks/audio/audioTypes";
+import { audioTime, type WorkerAudioDataInit } from "./Tracks/audio/audioTypes";
 import { Dispositions } from "./FFmpeg/advancedTypes/AVTypes";
-import type { TextTrackStream, VTTCueArgs } from "./Tracks/subtitles/types";
+import type { ASSTrackStream, TextTrackStream, VTTCueArgs } from "./Tracks/subtitles/types";
+
+import JASSUB, { webYCbCrMap } from "jassub";
+import workerUrl from 'jassub/dist/wasm/jassub-worker.js?worker&url';
+import wasmUrl from 'jassub/dist/wasm/jassub-worker.wasm?url'; // non-SIMD fallback
+import modernWasmUrl from 'jassub/dist/wasm/jassub-worker-modern.wasm?url'; // SIMD
+import type { ControlStream } from "@/components/controls/types";
 
 export class VideoPlayer2 {
     // DOM
+    private container = document.createElement('div');
+    private videoContainer = document.createElement('div');
     private video = document.createElement('video');
     private mediaStream = new MediaStream();
     private controls: MediaControls;
+    private posterUrl: string | undefined;
 
     // Renderer
     private videoRenderer: Map<number, MediaStreamTrackWrapper<VideoFrame>> = new Map();
     private audioRenderer: Map<number, MediaStreamTrackWrapper<AudioData | WorkerAudioDataInit>> = new Map();
     private subtitleTextRenderer: Map<number, TextTrackStream> = new Map();
+    private subtitleASSRenderer: Map<number, ASSTrackStream> = new Map();
 
     private activeVideoStream: number = -1;
     private activeAudioStream: number = -1;
     private activeSubtitleStream: number = -1;
-        
+
     // Buffer
     private videoFrameBuffer: (VideoFrame | null)[] = [];
     private audioFrameBuffer: ((AudioData | WorkerAudioDataInit) | null)[] = [];
@@ -34,6 +45,7 @@ export class VideoPlayer2 {
     private mediaTime: DOMHighResTimeStamp = 0;
     private paused: boolean = true;
     private seeking: boolean = false;
+    private stepFrame: boolean = false;
     private duration: number = 0;
 
     // Status
@@ -52,16 +64,13 @@ export class VideoPlayer2 {
 
     constructor(videoSrc: string | File) {
         // DOM
-        this.video = document.createElement('video');
+        this.videoContainer.appendChild(this.video);
+        this.container.appendChild(this.videoContainer);
         this.video.srcObject = this.mediaStream;
         this.video.autoplay = true;
+        this.video.tabIndex = 0;
 
-        let track = this.video.addTextTrack("captions", "Captions", "en");
-        track.mode = "showing";
-        for (let i = 0; i < 1000; i++) {
-            track.addCue(new VTTCue(i, i + 1, i.toString()));
-
-        }
+        this.container.classList.add(styles.videoContainer);
 
         // Worker
         const worker = ffmpegWorker({ name: "I tell ffmpeg to do the work" });
@@ -86,6 +95,10 @@ export class VideoPlayer2 {
         const controls = new MediaControls(this.video, {
             onPlayPause: async (intent?: boolean) => {
                 intent ??= this.paused;
+                if (this.endOfFile && intent) {
+                    await this.seek(0);
+                    return intent;
+                }
                 if (intent) {
                     this.Play();
                     try {
@@ -98,12 +111,16 @@ export class VideoPlayer2 {
                 return intent;
             },
             onSeekTo: (time: number) => {
-                this.video.currentTime = time;
+                this.Pause();
+                this.seek(time * 1000);
             },
             onStepFrame: () => {
                 //this.videoManager?.triggerNextFrame();
                 //this.clock.Play();
-                this.controls.setPlayback(true);
+                if (this.videoFrameBuffer[0]) {
+                    this.mediaTime = this.videoFrameBuffer[0].timestamp / 1000;
+                    this.stepFrame = true;
+                }
             },
             onVolumeChange: (volume: number) => {
                 this.video.volume = volume;
@@ -118,8 +135,8 @@ export class VideoPlayer2 {
 
         this.video.addEventListener('volumechange', () => this.controls.setVolume(this.video.volume));
 
-        document.getElementById("containerAgain")!.append(controls.controlsContainer);
-        controls.controlsContainer.style.position = 'unset';
+        this.container.append(controls.controlsContainer);
+        controls.controlsContainer.classList.add(styles.unsetPosition);
 
         return controls;
     }
@@ -131,10 +148,22 @@ export class VideoPlayer2 {
         this.duration = Number(data.info.duration) / 1000;
         this.updateTime();
 
+        // Attachments
+        let fonts: Uint8Array[] = [];
+        let cover: Blob | undefined = undefined;
+        const attachments = data.info.streams.filter(s => s.type === AVMediaType.AVMEDIA_TYPE_ATTACHMENT);
+        for (const attachment of attachments) {
+            if (attachment.attachment_config?.type === AttachmentType.FONT) {
+                fonts.push(attachment.attachment_config.data);
+            } else if (attachment.attachment_config?.type === AttachmentType.COVER) {
+                // @ts-ignore
+                cover = new Blob([attachment.attachment_config.data], { type: attachment.metadata["mimetype"] });
+            }
+        }
 
         // Renderers
-        const initStream = async <T extends MediaStreamTrackWrapper<unknown>>(enabled: boolean, Renderer: new () => T): Promise<T> => {
-            let renderer = new Renderer();
+        const initStream = async <T extends MediaStreamTrackWrapper<unknown>>(enabled: boolean, Renderer: new (...args: any[]) => T, ...args: any[]): Promise<T> => {
+            let renderer = new Renderer(...args ?? []);
             await renderer.initialize();
 
             const track = renderer.getTrack();
@@ -146,34 +175,52 @@ export class VideoPlayer2 {
             return renderer;
         };
 
-        this.activeVideoStream = data.info.streams.findIndex(s => s.type === MediaType.RESULT_VIDEO && !!(s.disposition & Dispositions.AV_DISPOSITION_DEFAULT));
-        this.activeAudioStream = data.info.streams.findIndex(s => s.type === MediaType.RESULT_AUDIO && !!(s.disposition & Dispositions.AV_DISPOSITION_DEFAULT));
-        this.activeSubtitleStream = data.info.streams.findIndex(s => s.type === MediaType.RESULT_SUBTITLE && !!(s.disposition & Dispositions.AV_DISPOSITION_DEFAULT));
+        this.activeVideoStream = data.info.streams.findIndex(s => s.type === AVMediaType.AVMEDIA_TYPE_VIDEO && !!(s.disposition & Dispositions.AV_DISPOSITION_DEFAULT));
+        this.activeAudioStream = data.info.streams.findIndex(s => s.type === AVMediaType.AVMEDIA_TYPE_AUDIO && !!(s.disposition & Dispositions.AV_DISPOSITION_DEFAULT));
+        this.activeSubtitleStream = data.info.streams.findIndex(s => s.type === AVMediaType.AVMEDIA_TYPE_SUBTITLE && !!(s.disposition & Dispositions.AV_DISPOSITION_DEFAULT));
 
+        let videoStreams: ControlStream[] = [];
+        let audioStreams: ControlStream[] = [];
+        let subtitleStreams: ControlStream[] = [];
         for (let i = 0; i < data.info.streams.length; i++) {
             const stream = data.info.streams[i];
 
             let enabled = false;
             switch (stream.type) {
-                case MediaType.RESULT_VIDEO: {
+                case AVMediaType.AVMEDIA_TYPE_VIDEO: {
                     if (this.activeVideoStream === -1)
                         this.activeVideoStream = i;
                     if (this.activeVideoStream === i)
                         enabled = true;
                     let renderer = await initStream(enabled, GetVideoTrackCtor());
                     this.videoRenderer.set(i, renderer);
+                    videoStreams.push({
+                        index: i,
+                        isUsed: enabled,
+                        metadata: stream.metadata
+                    });
                     break;
                 }
-                case MediaType.RESULT_AUDIO: {
+                case AVMediaType.AVMEDIA_TYPE_AUDIO: {
                     if (this.activeAudioStream === -1)
                         this.activeAudioStream = i;
                     if (this.activeAudioStream === i)
                         enabled = true;
-                    let renderer = await initStream(enabled, GetAudioTrackCtor());
+                    let renderer = await initStream(enabled, GetAudioTrackCtor(), stream.audio_config!.sample_rate, stream.audio_config!.num_channels);
                     this.audioRenderer.set(i, renderer);
+                    audioStreams.push({
+                        index: i,
+                        isUsed: enabled,
+                        metadata: stream.metadata
+                    });
                     break;
                 }
-                case MediaType.RESULT_SUBTITLE: {
+                case AVMediaType.AVMEDIA_TYPE_SUBTITLE: {
+                    if (this.activeSubtitleStream === -1)
+                        this.activeSubtitleStream = i;
+                    if (this.activeSubtitleStream === i)
+                        enabled = true;
+
                     switch (stream.subtitle_config!.type) {
                         case AVSubtitleType.SUBTITLE_TEXT: {
                             let track = this.video.addTextTrack("subtitles", stream.metadata["title"], stream.metadata["language"]);
@@ -184,17 +231,43 @@ export class VideoPlayer2 {
                             });
                             break;
                         }
+                        case AVSubtitleType.SUBTITLE_ASS: {
+                            const canvas = document.createElement('canvas');
+                            canvas.classList.add(styles.canvasOverlay);
+                            canvas.style.display = enabled ? "" : "none";
+                            this.videoContainer.appendChild(canvas);
+
+                            let renderer = new JASSUB({
+                                canvas,
+                                debug: false,
+                                subContent: stream.subtitle_config!.subtitle_header,
+                                fonts: fonts
+                            });
+
+                            await renderer.ready;
+
+                            this.subtitleASSRenderer.set(i, {
+                                track: renderer,
+                                cues: new Set(),
+                                hasColorspace: false,
+                            });
+                            break;
+                        }
                         default: {
                             // TODO
                             console.error("Implement subtitle type!!!!");
                             continue;
                         }
                     }
-                    if (this.activeSubtitleStream === -1)
-                        this.activeSubtitleStream = i;
-                    if (this.activeSubtitleStream === i)
-                        enabled = true;
+                    subtitleStreams.push({
+                        index: i,
+                        isUsed: enabled,
+                        metadata: stream.metadata
+                    });
+                    break;
                 }
+                default:
+                    continue;
             }
 
             this.workerEventer.sendEvent(FFmpegRequestEvent.SET_STREAM_ACTIVE, {
@@ -206,7 +279,28 @@ export class VideoPlayer2 {
         }
         //this.subtitleRenderer = await initStream(subtitleStreamIndex, GetSubtitleTrackCtor());
 
+        this.controls.updateVideoTracks(videoStreams);
+        this.controls.updateAudioTracks(audioStreams);
+        this.controls.updateSubtitleTracks(subtitleStreams);
 
+        this.controls.updateChapters(data.info.chapters.map(c => {
+            return {
+                id: Number(c.id),
+                start: c.start,
+                end: c.end,
+                title: c.metadata["title"],
+            };
+        }));
+
+        const updateBufferedState = <T extends { timestamp: number; }>(buffer: (T | null)[]) => {
+            for (let index = buffer.length - 1; index > 0; index--) {
+                const frame = buffer[index];
+                if (frame === null) continue;
+
+                this.controls.setBufferProgress(((frame.timestamp / 1000) / this.duration) * 100);
+                break;
+            }
+        };
 
         // Message Handling
         const handleMessage = <T extends { timestamp: number; }>(i: number, buffer: (T | null)[]) => {
@@ -226,6 +320,12 @@ export class VideoPlayer2 {
                     if (b == null) return -1;
                     return a.timestamp - b.timestamp;
                 });
+
+                // if (this.activeVideoStream !== -1) {
+                //     updateBufferedState(this.videoFrameBuffer);
+                // } else if (this.activeAudioStream !== -1) {
+                //     updateBufferedState(this.audioFrameBuffer);
+                // }
             };
             messageChannel2.onmessage = messageChannel.onmessage;
         };
@@ -234,9 +334,9 @@ export class VideoPlayer2 {
             const stream = data.info.streams[i];
 
             switch (stream.type) {
-                case MediaType.RESULT_VIDEO: handleMessage(i, this.videoFrameBuffer); break;
-                case MediaType.RESULT_AUDIO: handleMessage(i, this.audioFrameBuffer); break;
-                case MediaType.RESULT_SUBTITLE: {
+                case AVMediaType.AVMEDIA_TYPE_VIDEO: handleMessage(i, this.videoFrameBuffer); break;
+                case AVMediaType.AVMEDIA_TYPE_AUDIO: handleMessage(i, this.audioFrameBuffer); break;
+                case AVMediaType.AVMEDIA_TYPE_SUBTITLE: {
                     switch (stream.subtitle_config!.type) {
                         case AVSubtitleType.SUBTITLE_TEXT:
                             const messageChannel = data.streamPorts.get(i);
@@ -244,64 +344,91 @@ export class VideoPlayer2 {
                             if (!messageChannel || !messageChannel2) break;
 
                             const stream = this.subtitleTextRenderer.get(i);
-                            if(stream)
+                            if (stream)
                                 messageChannel.onmessage = (e: MessageEvent<VTTCueArgs>) => {
                                     const key = `${e.data.text}|${e.data.startTime}|${e.data.endTime}`;
                                     if (stream!.cues.has(key))
                                         return;
 
                                     stream!.track.addCue(new VTTCue(e.data.startTime, e.data.endTime, e.data.text));
-                                }
+                                };
+                            messageChannel2.onmessage = messageChannel.onmessage;
                             break;
+                        case AVSubtitleType.SUBTITLE_ASS: {
+                            const messageChannel = data.streamPorts.get(i);
+                            const messageChannel2 = data.streamPorts2.get(i);
+                            if (!messageChannel || !messageChannel2) break;
+
+                            const stream = this.subtitleASSRenderer.get(i);
+                            if (stream)
+                                messageChannel.onmessage = (e: MessageEvent<VTTCueArgs>) => {
+                                    const key = `${e.data.text}|${e.data.startTime}|${e.data.endTime}`;
+                                    if (stream!.cues.has(key))
+                                        return;
+
+                                    stream!.track.renderer.processChunk(e.data.text, e.data.startTime, e.data.endTime);
+                                };
+                            messageChannel2.onmessage = messageChannel.onmessage;
+                            break;
+                        }
                         default:
                             // TODO
                             break;
                     }
+                    break;
                 }
+                default:
+                    continue;
             }
         }
 
-        this.firstFrameAsPoster();
+        //this.controls.updateAudioTracks(audios)
+
+        this.firstFrameAsPoster(cover);
         this.initDone = true;
     }
 
     private async timeLoop() {
-        let lastTime  = performance.now();
+        let lastTime = performance.now();
         while (true) {
-            if(performance.now() - lastTime < 1)
+            let diff = performance.now() - lastTime;
+            lastTime = performance.now();
+            diff = Math.min(diff, 16);
+            if (diff < 8)
                 await new Promise(r => setTimeout(r, 0));
 
-            if (this.initDone && !this.endOfFile)
+            if (this.initDone && !this.endOfFile && !this.seeking)
                 this.feedVideoBuffer();
 
-            if (this.paused || this.seeking) continue;
 
-            const diff = performance.now() - lastTime;
-            lastTime = performance.now();
+            if ((this.paused && !this.stepFrame) || this.seeking) continue;
+            //console.log(diff);
+
             this.mediaTime = Math.max(0, Math.min(this.mediaTime + diff, this.duration));
 
-            while (await this.renderData()) { };
+            while (await this.renderData() && !this.stepFrame) { };
             this.updateTime();
 
             if (this.endOfFile && this.mediaTime === this.duration) {
                 this.Pause();
             }
+            this.stepFrame = false;
         }
     }
 
     private feedVideoBuffer() {
         if (this.videoFrameBuffer.length < 16) {
-            if (!this.dataRequested)
-                this.requestData();
+            this.requestData();
         } else {
             const hasFrame = this.videoFrameBuffer.some(v => v !== null);
-            if (!hasFrame && !this.dataRequested) {
+            if (!hasFrame) {
                 this.requestData();
             }
         }
     }
 
     private async requestData() {
+        if (this.dataRequested) return;
         this.dataRequested = true;
         this.workerEventer.sendEvent(FFmpegRequestEvent.REQUEST_DATA, {});
         const data = await this.workerEventer.waitUntilEvent(FFmpegResponseEvent.REQUEST_STATUS);
@@ -327,9 +454,10 @@ export class VideoPlayer2 {
 
     private async renderData() {
         let promises = [];
+        let hasFrame = false;
         const videoStream = this.videoRenderer.get(this.activeVideoStream);
         const audioStream = this.audioRenderer.get(this.activeAudioStream);
-        //const subtitleStream = this.subtitleRenderer.get(this.activeSubtitleStream);
+        const subtitleStream = this.subtitleASSRenderer.get(this.activeSubtitleStream);
 
         if (this.videoFrameBuffer[0] instanceof VideoFrame && videoStream) {
             let frame = this.videoFrameBuffer[0];
@@ -338,14 +466,16 @@ export class VideoPlayer2 {
                 const promise = videoStream.writeData(frame);
                 promise.then(() => frame.close());
                 promises.push(promise);
+                hasFrame = true;
             }
-        } else if(videoStream) {
-            console.warn("Low on Video Frames");
+        } else if (videoStream) {
+            //console.warn("Low on Video Frames");
         }
 
         if (this.audioFrameBuffer[0] !== undefined && this.audioFrameBuffer[0] !== null && audioStream) {
             let frame = this.audioFrameBuffer[0];
-            if (frame.timestamp / 1000 <= this.mediaTime) {
+            let { timestamp, duration } = audioTime(frame);
+            if (timestamp / 1000 <= this.mediaTime) {
                 frame = this.audioFrameBuffer.shift()!;
                 const promise = audioStream.writeData(frame, this.mediaTime);
                 promise.then(() => {
@@ -354,16 +484,43 @@ export class VideoPlayer2 {
                 });
                 promises.push(promise);
             }
-        } else if(audioStream) {
-            console.warn("Low on Audio Frames");
+        } else if (audioStream) {
+            //console.warn("Low on Audio Frames");
+        }
+
+        if (subtitleStream && hasFrame && !subtitleStream.track.busy) {
+            let frame = this.videoFrameBuffer[0];
+            if (!subtitleStream.hasColorspace && frame instanceof VideoFrame) {
+                await subtitleStream.track.renderer._setColorSpace(webYCbCrMap[frame.colorSpace.matrix!]);
+                subtitleStream.hasColorspace = true;
+            }
+            subtitleStream.track.manualRender({
+                expectedDisplayTime: performance.now(),
+                mediaTime: this.mediaTime,
+                width: this.video.videoWidth,
+                height: this.video.videoHeight,
+            }, false);
+
+            //promises.push(promise);
         }
 
         //await Promise.all(promises);
         return promises.length > 0;
-        // TODO if subtitles
     }
 
-    private async firstFrameAsPoster() {
+    private async firstFrameAsPoster(cover: Blob | undefined) {
+        const coverMaker = (data: Blob | undefined) => {
+            if (data) {
+                const url = URL.createObjectURL(data);
+                this.video.poster = url;
+                this.posterUrl = url;
+            }
+        };
+        if (cover) {
+            coverMaker(cover);
+            return;
+        }
+
         while (!(this.videoFrameBuffer[0] instanceof VideoFrame)) {
             await new Promise<void>(r => setTimeout(r, 0));
         }
@@ -376,8 +533,9 @@ export class VideoPlayer2 {
 
         const ctx = canvas.getContext('2d')!;
         ctx.drawImage(frame, 0, 0);
-        const data = canvas.toDataURL('image/jpeg');
-        this.video.poster = data;
+        canvas.toBlob(data => {
+            coverMaker(data ?? undefined);
+        }, 'image/jpeg', 0.8);
         canvas.remove();
     }
 
@@ -391,8 +549,130 @@ export class VideoPlayer2 {
         this.video.currentTime = duration;
     }
 
-    private updateTrack(type: "video" | "audio" | "subtitle", index: number): void {
+    private async seek(time: number, force: boolean = false) {
+        if (this.seeking) return;
+        this.mediaTime = time;
+        this.seeking = true;
+        const videoStream = this.videoRenderer.get(this.activeVideoStream);
+        const audioStream = this.audioRenderer.get(this.activeAudioStream);
+        if (this.activeVideoStream !== -1 && !force) {
+            if (this.videoFrameBuffer.some(f => f
+                && f.timestamp / 1000 <= time
+                && (f.timestamp + f.duration!) / 1000 > time)) {
+
+                console.log("Its your lucky day. You can fast seek!");
+
+                await videoStream?.seekTo(time, true);
+                await audioStream?.seekTo(time, true);
+                this.seeking = false;
+                return;
+            }
+        }
+
+        if (this.activeVideoStream === -1 && this.activeAudioStream !== -1 && !force) {
+            if (this.audioFrameBuffer.some(f => {
+                if (f === null) return false;
+                const { timestamp, duration } = audioTime(f);
+                return timestamp / 1000 <= time
+                    && (timestamp + duration!) / 1000 > time;
+            })) {
+
+                console.log("Its your lucky day. You can fast seek!");
+
+                await videoStream?.seekTo(time, true);
+                await audioStream?.seekTo(time, true);
+                this.seeking = false;
+                return;
+            }
+        }
+        console.debug("Seeking started at", performance.now());
+        this.endOfFile = false;
+        this.workerEventer.sendEvent(FFmpegRequestEvent.SEEK, { time: time });
+        for (const frame of this.videoFrameBuffer)
+            if (frame)
+                frame.close();
+        for (const frame of this.audioFrameBuffer)
+            if (frame instanceof AudioData)
+                frame.close();
+        this.videoFrameBuffer.length = 0;
+        this.audioFrameBuffer.length = 0;
+
+        //const subtitleStream = this.videoRenderer.get(this.activeVideoStream);
+        await videoStream?.seekTo(time, true);
+        await audioStream?.seekTo(time, true);
+
+        const timePromise = this.workerEventer.waitUntilEvent(FFmpegResponseEvent.SET_TIME);
+        const status = await this.workerEventer.waitUntilEvent(FFmpegResponseEvent.SEEK_STATUS);
+        console.debug("Seeking finishing at", performance.now());
+        if (status?.data.status !== 0) {
+            console.error("Status bad????", status?.data.status);
+            return;
+        }
+
+        this.requestData();
+
+        if (this.activeVideoStream !== -1)
+            while (this.videoFrameBuffer.length === 0)
+                await new Promise<void>(r => setTimeout(r, 0));
+        else if (this.activeAudioStream !== -1)
+            while (this.audioFrameBuffer.length === 0)
+                await new Promise<void>(r => setTimeout(r, 0));
+
+        const newTime = await timePromise;
+        this.mediaTime = Number(newTime!.data.time) / 1000;
+        this.seeking = false;
+
+        console.debug("Playing media at", performance.now());
+        this.Play();
+    }
+
+    private async updateTrack(type: "video" | "audio" | "subtitle", index: number): Promise<void> {
         console.log(`Changing ${type} track to index: ${index}`);
+
+        const updateFFmpeg = async (i: number, enabled: boolean) => {
+            this.workerEventer.sendEvent(FFmpegRequestEvent.SET_STREAM_ACTIVE, {
+                streamIndex: i,
+                active: enabled
+            });
+
+            await this.workerEventer.waitUntilEvent(FFmpegResponseEvent.SET_STREAM_DONE);
+        };
+
+        switch (type) {
+            case "video": {
+                this.activeVideoStream = index;
+                for (const [i, stream] of this.videoRenderer) {
+                    const enabled = index === i;
+                    stream.enable(enabled);
+                    await updateFFmpeg(i, enabled);
+                }
+                this.seek(this.mediaTime, true);
+                break;
+            }
+            case "audio": {
+                this.activeAudioStream = index;
+                for (const [i, stream] of this.audioRenderer) {
+                    const enabled = index === i;
+                    stream.enable(enabled);
+                    await updateFFmpeg(i, enabled);
+                }
+                break;
+            }
+            case "subtitle": {
+                this.activeSubtitleStream = index;
+                for (const [i, stream] of this.subtitleTextRenderer) {
+                    const enabled = index === i;
+                    stream.track.mode = enabled ? 'showing' : 'disabled';
+                    await updateFFmpeg(i, enabled);
+                }
+                for (const [i, stream] of this.subtitleASSRenderer) {
+                    const enabled = index === i;
+                    stream.track._canvas.style.display = enabled ? '' : 'none';
+                    await updateFFmpeg(i, enabled);
+                }
+                break;
+            }
+        }
     }
 
     public Play() {
@@ -406,7 +686,7 @@ export class VideoPlayer2 {
     }
 
     public getVideo() {
-        return this.video;
+        return this.container;
     }
 
     private handleSlowEvent(e: MessageEvent<WorkerFFmpegInitComplete>) {

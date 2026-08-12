@@ -9,6 +9,7 @@
     border-radius: 10px;
     z-index: 1001;
     flex-direction: row;
+    width: 100%;
     height: 3vh;
     transition: border-radius 0.5s ease-in-out, opacity 0.5s ease-in-out;
     min-width: 400px;
@@ -19,11 +20,19 @@
     }
 
     &:active {
-       /* cursor: grabbing; */
+        /* cursor: grabbing; */
     }
 
     &.tracklistOpen {
         border-radius: 10px 0px 10px 10px;
+    }
+
+    &.fullscreen {
+        position: absolute;
+        width: 80%;
+        /* filter: blur(1px); */
+        backdrop-filter: blur(4px);
+        bottom: 2%;
     }
 
     .videoControlBtn {
@@ -62,6 +71,14 @@
 
 
     }
+}
+
+.fullscreenVideo {
+    max-width: unset;
+    max-height: unset;
+    width: 100%;
+    height: 100%;
+    top: 0;
 }
 
 .backgroundSlider {

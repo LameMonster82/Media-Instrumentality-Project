@@ -15,11 +15,11 @@ type MainModule = MainModule32 | MainModule64;
 // Helpers
 // ----------------------------------------------------------------------
 
-function readCString(view: Uint8Array, ptr: number): string {
+function readCString(view: Uint8Array, ptr: number, maxSize: number = Number.MAX_SAFE_INTEGER): string {
     // Read bytes until null
     let offset = ptr;
     const bytes: number[] = [];
-    while (true) {
+    while (offset <= maxSize) {
         const byte = view[offset];
         if (byte === 0) break;
         bytes.push(byte);
@@ -40,6 +40,16 @@ function readPointer(view: DataView, offset: number, is64Bit: boolean): number {
 // ----------------------------------------------------------------------
 // Interfaces
 // ----------------------------------------------------------------------
+
+export enum AVMediaType {
+    AVMEDIA_TYPE_UNKNOWN = -1,  ///< Usually treated as AVMEDIA_TYPE_DATA
+    AVMEDIA_TYPE_VIDEO,
+    AVMEDIA_TYPE_AUDIO,
+    AVMEDIA_TYPE_DATA,          ///< Opaque data information usually continuous
+    AVMEDIA_TYPE_SUBTITLE,
+    AVMEDIA_TYPE_ATTACHMENT,    ///< Opaque data information usually sparse
+    AVMEDIA_TYPE_NB
+};
 
 export enum MediaType {
     RESULT_VIDEO = 0,
@@ -65,6 +75,11 @@ export enum AVSubtitleType {
     SUBTITLE_ASS,
 };
 
+export enum AttachmentType {
+    FONT = 0,
+    COVER = 1
+}
+
 export interface ChapterInfo {
     id: bigint;        // int64_t
     start: number;     // double
@@ -73,12 +88,13 @@ export interface ChapterInfo {
 }
 
 export interface StreamInfo {
-    type: MediaType;
+    type: AVMediaType;
     duration: number;
     disposition: number;
     video_config: VideoDecoderConfigStruct | null | undefined;
     audio_config: AudioDecoderConfigStruct | null | undefined;
     subtitle_config: SubtitleConfigStruct | null | undefined;
+    attachment_config: AttachmentConfigStruct | null | undefined;
     metadata: Record<string, string>;     // AVDictionary*
 }
 
@@ -117,17 +133,20 @@ export interface VideoFrame {
     color_primaries: AVColorPrimaries;
     color_transfer: AVColorTransferCharacteristic;
     stream_index: number;
+    buffer_size: number;
 }
 
 export interface AudioFrame {
     channels: number;
     samples: number;
     sample_rate: number;
-    data: number;            // uint8_t* pointer
+    src_data: (number | bigint)[];      // array of 8 pointers (uint8_t*)
+    linesize: number;
     bytes_per_sample: number;
     ts_js: number;
     stream_index: number;
     format: AVSampleFormat;
+    buffer_size: number;
 }
 
 export interface SubtitleFrame {
@@ -189,9 +208,13 @@ export interface AudioDecoderConfigStruct {
 }
 
 export interface SubtitleConfigStruct {
-    subtitle_header_size: number;
-    subtitle_header: number;        // uint8_t* pointer
-    type: AVSubtitleType
+    subtitle_header: string;
+    type: AVSubtitleType;
+}
+
+export interface AttachmentConfigStruct {
+    type: AttachmentType,
+    data: Uint8Array;
 }
 
 export interface SmallerDemux {
@@ -260,13 +283,16 @@ export function readStreamInfo(module: MainModule, offset: number, is64Bit: bool
     let video_config: VideoDecoderConfigStruct | undefined | null;
     let audio_config: AudioDecoderConfigStruct | undefined | null;
     let subtitle_config: SubtitleConfigStruct | undefined | null;
+    let attachment_config: AttachmentConfigStruct | undefined | null;
 
-    if (info.type === MediaType.RESULT_VIDEO) {
+    if (info.type === AVMediaType.AVMEDIA_TYPE_VIDEO) {
         video_config = info.video_config !== 0 ? readVideoDecoderConfig(module.wasmMemory.buffer, Number(info.video_config), is64Bit) : null;
-    } else if (info.type === MediaType.RESULT_AUDIO) {
+    } else if (info.type === AVMediaType.AVMEDIA_TYPE_AUDIO) {
         audio_config = info.audio_config !== 0 ? readAudioDecoderConfig(module.wasmMemory.buffer, Number(info.audio_config), is64Bit) : null;
-    } else if (info.type === MediaType.RESULT_SUBTITLE) {
+    } else if (info.type === AVMediaType.AVMEDIA_TYPE_SUBTITLE) {
         subtitle_config = info.subtitle_config !== 0 ? readASSSubtitleConfig(module.wasmMemory.buffer, Number(info.subtitle_config), is64Bit) : null;
+    } else if (info.type === AVMediaType.AVMEDIA_TYPE_ATTACHMENT) {
+        attachment_config = info.attachment_config !== 0 ? readAttachmentConfig(module.wasmMemory.buffer, Number(info.attachment_config), is64Bit) : null;
     }
 
     return {
@@ -276,6 +302,7 @@ export function readStreamInfo(module: MainModule, offset: number, is64Bit: bool
         video_config,
         audio_config,
         subtitle_config,
+        attachment_config,
         metadata
     };
 }
@@ -322,11 +349,20 @@ export function readVideoFrame(buffer: ArrayBuffer, offset: number, is64Bit: boo
     const src_data: number[] = [];
     const src_linesize: number[] = [];
 
-    const actual_data = new Int32Array(buffer, info.src_data.byteOffset, 8);
-    const actual_linesize = new Int32Array(buffer, info.src_linesize.byteOffset, 8);
-    for (let i = 0; i < 8; i++) {
-        src_data.push(actual_data[i]);
-        src_linesize.push(actual_linesize[i]);
+    if (is64Bit) {
+        const actual_data = new BigUint64Array(buffer, info.src_data.byteOffset, 8);
+        const actual_linesize = new Int32Array(buffer, info.src_linesize.byteOffset, 8);
+        for (let i = 0; i < 8; i++) {
+            src_data.push(Number(actual_data[i]));
+            src_linesize.push(actual_linesize[i]);
+        }
+    } else {
+        const actual_data = new Uint32Array(buffer, info.src_data.byteOffset, 8);
+        const actual_linesize = new Int32Array(buffer, info.src_linesize.byteOffset, 8);
+        for (let i = 0; i < 8; i++) {
+            src_data.push(actual_data[i]);
+            src_linesize.push(actual_linesize[i]);
+        }
     }
 
     return {
@@ -351,13 +387,40 @@ export function readVideoFrame(buffer: ArrayBuffer, offset: number, is64Bit: boo
         color_space: info.color_space,
         color_primaries: info.color_primaries,
         color_transfer: info.color_transfer,
-        stream_index: info.stream_index
+        stream_index: info.stream_index,
+        buffer_size: info.buffer_size,
     };
 }
 
 export function readAudioFrame(buffer: ArrayBuffer, offset: number, is64Bit: boolean): AudioFrame {
     const glue = is64Bit ? Glue64 : Glue32;
-    return glue.readAudioFrame(buffer, offset);
+    const info = glue.readAudioFrame(buffer, offset);
+    const src_data: number[] = [];
+
+    if (is64Bit) {
+        const actual_data = new BigUint64Array(buffer, info.src_data.byteOffset, 8);
+        for (let i = 0; i < 8; i++) {
+            src_data.push(Number(actual_data[i]));
+        }
+    } else {
+        const actual_data = new Uint32Array(buffer, info.src_data.byteOffset, 8);
+        for (let i = 0; i < 8; i++) {
+            src_data.push(actual_data[i]);
+        }
+    }
+
+    return {
+        channels: info.channels,
+        samples: info.channels,
+        sample_rate: info.sample_rate,
+        src_data: src_data,
+        linesize: info.linesize,
+        bytes_per_sample: info.bytes_per_sample,
+        ts_js: info.ts_js,
+        stream_index: info.stream_index,
+        format: info.format,
+        buffer_size: info.buffer_size
+    };
 }
 
 export function readSubtitleFrame(buffer: ArrayBuffer, offset: number, is64Bit: boolean): SubtitleFrame {
@@ -367,11 +430,20 @@ export function readSubtitleFrame(buffer: ArrayBuffer, offset: number, is64Bit: 
     const src_data: number[] = [];
     const src_linesize: number[] = [];
 
-    const actual_data = new Int32Array(buffer, info.src_data.byteOffset, 8);
-    const actual_linesize = new Int32Array(buffer, info.src_linesize.byteOffset, 8);
-    for (let i = 0; i < 8; i++) {
-        src_data.push(actual_data[i]);
-        src_linesize.push(actual_linesize[i]);
+    if (is64Bit) {
+        const actual_data = new BigUint64Array(buffer, info.src_data.byteOffset, 8);
+        const actual_linesize = new Int32Array(buffer, info.src_linesize.byteOffset, 8);
+        for (let i = 0; i < 8; i++) {
+            src_data.push(Number(actual_data[i]));
+            src_linesize.push(actual_linesize[i]);
+        }
+    } else {
+        const actual_data = new Uint32Array(buffer, info.src_data.byteOffset, 8);
+        const actual_linesize = new Int32Array(buffer, info.src_linesize.byteOffset, 8);
+        for (let i = 0; i < 8; i++) {
+            src_data.push(actual_data[i]);
+            src_linesize.push(actual_linesize[i]);
+        }
     }
 
     return {
@@ -389,12 +461,12 @@ export function readSubtitleFrame(buffer: ArrayBuffer, offset: number, is64Bit: 
     };
 }
 
-export function readReturnType(buffer: ArrayBuffer, offset: number, is64Bit: boolean): ReturnType {
+export function readReturnType(buffer: ArrayBuffer, offset: number, is64Bit: boolean, readVideoAudio: boolean): ReturnType {
     const glue = is64Bit ? Glue64 : Glue32;
     const info = glue.readReturnType(buffer, offset);
 
-    const video_frame = Number(info.video_frame) !== 0 ? readVideoFrame(buffer, Number(info.video_frame), is64Bit) : null;
-    const audio_frame = Number(info.audio_frame) !== 0 ? readAudioFrame(buffer, Number(info.audio_frame), is64Bit) : null;
+    const video_frame = Number(info.video_frame) !== 0 && readVideoAudio ? readVideoFrame(buffer, Number(info.video_frame), is64Bit) : null;
+    const audio_frame = Number(info.audio_frame) !== 0 && readVideoAudio ? readAudioFrame(buffer, Number(info.audio_frame), is64Bit) : null;
     const subtitle_frame = Number(info.subtitle_frame) !== 0 ? readSubtitleFrame(buffer, Number(info.subtitle_frame), is64Bit) : null;
     const subtitle_text = Number(info.subtitle_text) !== 0 ? readCString(new Uint8Array(buffer), Number(info.subtitle_text)) : null;
 
@@ -452,9 +524,17 @@ export function readASSSubtitleConfig(buffer: ArrayBufferLike, offset: number, i
     const glue = is64Bit ? Glue64 : Glue32;
     const info = glue.readSubtitleConfig(buffer, offset);
     return {
-        subtitle_header_size: info.subtitle_header_size,
-        subtitle_header: Number(info.subtitle_header),
+        subtitle_header: new TextDecoder().decode(new Uint8Array(buffer).slice(Number(info.subtitle_header), Number(info.subtitle_header) + info.subtitle_header_size)),
         type: info.type
+    };
+}
+
+export function readAttachmentConfig(buffer: ArrayBufferLike, offset: number, is64Bit: boolean): AttachmentConfigStruct {
+    const glue = is64Bit ? Glue64 : Glue32;
+    const info = glue.readAttachmentConfig(buffer, offset);
+    return {
+        type: info.type,
+        data: new Uint8Array(buffer).slice(Number(info.data), Number(info.data) + info.size)
     };
 }
 

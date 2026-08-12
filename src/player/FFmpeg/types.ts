@@ -1,6 +1,6 @@
 import type { Dictionary, WorkerPostMessage, WorkerShutdown } from "@/core/types";
 import type { ChapterInfo } from "../Tracks/subtitles old/subtitleStream";
-import type { AudioDecoderConfigStruct, FileInfo, MediaType, VideoDecoderConfigStruct } from "./structReader";
+import type { AudioDecoderConfigStruct, AVMediaType, FileInfo, MediaType, VideoDecoderConfigStruct } from "./structReader";
 import type { AtomicEventerBuffers } from "../atomicEventer/types";
 
 //#region Main -> FFmpeg Worker
@@ -148,10 +148,10 @@ export enum RequestDataStatus {
   
 export type ValidDecoderTypes = keyof DecoderConfig & keyof DecoderSupport;
 export type DecoderConfig = {
-    [MediaType.RESULT_VIDEO]: VideoDecoderConfig,
-    [MediaType.RESULT_AUDIO]: AudioDecoderConfig
+    [AVMediaType.AVMEDIA_TYPE_VIDEO]: VideoDecoderConfig,
+    [AVMediaType.AVMEDIA_TYPE_AUDIO]: AudioDecoderConfig
 }
 export type DecoderSupport = {
-    [MediaType.RESULT_VIDEO]: VideoDecoderSupport,
-    [MediaType.RESULT_AUDIO]: AudioDecoderSupport
+    [AVMediaType.AVMEDIA_TYPE_VIDEO]: VideoDecoderSupport,
+    [AVMediaType.AVMEDIA_TYPE_AUDIO]: AudioDecoderSupport
 }

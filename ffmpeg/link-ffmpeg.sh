@@ -3,7 +3,7 @@ set -e
 TARGET="${1}"   # "wasm32" or "wasm64"
 
 if [ "$TARGET" = "wasm64" ]; then
-    MEM64="-m64"
+    MEM64="-m64 -sMEMORY64 -sMAXIMUM_MEMORY=16gb"
     SUFFIX="wasm64"
 else
     MEM64=""
@@ -11,7 +11,7 @@ else
 fi
 
 ARGS=(
-    -g3 -msimd128 -pthread
+    $RELEASE_CFLAGS -msimd128 -pthread
     -I"$INSTALL_DIR/include"
     -Iinclude
     -L"$INSTALL_DIR/lib"
@@ -27,9 +27,11 @@ ARGS=(
     -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","wasmMemory", "getValue", "setValue", "UTF8ToString", "HEAPU8", "HEAPU32", "HEAPU64"]'
     -sALLOW_MEMORY_GROWTH=1
     -sINITIAL_MEMORY=32MB
+    -sSTACK_SIZE=8MB
+    -sDEFAULT_PTHREAD_STACK_SIZE=8MB
     -sINCOMING_MODULE_JS_API=locateFile,mainScriptUrlOrBlob,onRuntimeInitialized,printWithColors
     src/main.c src/demuxers.c src/sw_stuff.c src/codec_config.c src/io.c
-    -lavcodec -lavformat -lavutil -lswscale -lswresample -lavfilter -lz
+    -lavcodec -lavformat -lavutil -lswscale -lswresample -lavfilter -lz -ldav1d
 )
 
 # Real build

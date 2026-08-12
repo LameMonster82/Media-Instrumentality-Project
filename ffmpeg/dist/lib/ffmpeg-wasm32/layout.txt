@@ -37,26 +37,6 @@
            | [sizeof=8, align=8]
 
 *** Dumping AST Record Layout
-         0 | struct AVPacket
-         0 |   AVBufferRef * buf
-         8 |   int64_t pts
-        16 |   int64_t dts
-        24 |   uint8_t * data
-        28 |   int size
-        32 |   int stream_index
-        36 |   int flags
-        40 |   AVPacketSideData * side_data
-        44 |   int side_data_elems
-        48 |   int64_t duration
-        56 |   int64_t pos
-        64 |   void * opaque
-        68 |   AVBufferRef * opaque_ref
-        72 |   struct AVRational time_base
-        72 |     int num
-        76 |     int den
-           | [sizeof=80, align=8]
-
-*** Dumping AST Record Layout
          0 | struct AVIOContext
          0 |   const AVClass * av_class
          4 |   unsigned char * buffer
@@ -90,17 +70,33 @@
            | [sizeof=136, align=8]
 
 *** Dumping AST Record Layout
+         0 | struct AVComponentDescriptor
+         0 |   int plane
+         4 |   int step
+         8 |   int offset
+        12 |   int shift
+        16 |   int depth
+           | [sizeof=20, align=4]
+
+*** Dumping AST Record Layout
          0 | BridgeContext
          0 |   const enum AVPixelFormat * supported_pix_fmts
          4 |   int thread_count
          8 |   AVFormatContext * fmt_ctx
         12 |   AVCodecContext ** codecs
         16 |   SwsContext ** sws_ctx
-        20 |   SwrContext ** swr_ctx
-        24 |   uint32_t nb_streams
-        28 |   int32_t * stream_support
-        32 |   ReturnType * data_return
-           | [sizeof=36, align=4]
+        20 |   int * sws_in_fmt
+        24 |   SwrContext ** swr_ctx
+        28 |   int * swr_in_fmt
+        32 |   int * swr_in_rate
+        36 |   AVChannelLayout * swr_in_layout
+        40 |   uint32_t nb_streams
+        44 |   int32_t * stream_support
+        48 |   uint32_t report_timestamp
+        52 |   int64_t * last_ts_js
+        56 |   int64_t * last_dur_js
+        60 |   ReturnType * data_return
+           | [sizeof=64, align=4]
 
 *** Dumping AST Record Layout
          0 | ReturnType
@@ -247,26 +243,9 @@
         20 |   VideoDecoderConfig * video_config
         24 |   AudioDecoderConfig * audio_config
         28 |   SubtitleConfig * subtitle_config
-        32 |   AVDictionary * metadata
+        32 |   AttachmentConfig * attachment_config
+        36 |   AVDictionary * metadata
            | [sizeof=40, align=8]
-
-*** Dumping AST Record Layout
-         0 | struct AVCodec
-         0 |   const char * name
-         4 |   const char * long_name
-         8 |   enum AVMediaType type
-        12 |   enum AVCodecID id
-        16 |   int capabilities
-        20 |   uint8_t max_lowres
-        24 |   const AVRational * supported_framerates
-        28 |   const enum AVPixelFormat * pix_fmts
-        32 |   const int * supported_samplerates
-        36 |   const enum AVSampleFormat * sample_fmts
-        40 |   const AVClass * priv_class
-        44 |   const AVProfile * profiles
-        48 |   const char * wrapper_name
-        52 |   const AVChannelLayout * ch_layouts
-           | [sizeof=56, align=4]
 
 *** Dumping AST Record Layout
          0 | union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5)
@@ -283,6 +262,32 @@
          8 |     AVChannelCustom * map
         16 |   void * opaque
            | [sizeof=24, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVDictionaryEntry
+         0 |   char * key
+         4 |   char * value
+           | [sizeof=8, align=4]
+
+*** Dumping AST Record Layout
+         0 | AttachmentConfig
+         0 |   enum AttachmentType type
+         4 |   uint8_t * data
+         8 |   int size
+           | [sizeof=12, align=4]
+
+*** Dumping AST Record Layout
+         0 | struct AVCodec
+         0 |   const char * name
+         4 |   const char * long_name
+         8 |   enum AVMediaType type
+        12 |   enum AVCodecID id
+        16 |   int capabilities
+        20 |   uint8_t max_lowres
+        24 |   const AVClass * priv_class
+        28 |   const AVProfile * profiles
+        32 |   const char * wrapper_name
+           | [sizeof=36, align=4]
 
 *** Dumping AST Record Layout
          0 | struct AVCodecContext
@@ -423,36 +428,35 @@
        600 |   int (*)(struct AVCodecContext *, int (*)(struct AVCodecContext *, void *, int, int), void *, int *, int) execute2
        604 |   int profile
        608 |   int level
-       612 |   unsigned int properties
-       616 |   enum AVDiscard skip_loop_filter
-       620 |   enum AVDiscard skip_idct
-       624 |   enum AVDiscard skip_frame
-       628 |   int skip_alpha
-       632 |   int skip_top
-       636 |   int skip_bottom
-       640 |   int lowres
-       644 |   const struct AVCodecDescriptor * codec_descriptor
-       648 |   char * sub_charenc
-       652 |   int sub_charenc_mode
-       656 |   int subtitle_header_size
-       660 |   uint8_t * subtitle_header
-       664 |   uint8_t * dump_separator
-       668 |   char * codec_whitelist
-       672 |   AVPacketSideData * coded_side_data
-       676 |   int nb_coded_side_data
-       680 |   int export_side_data
-       688 |   int64_t max_pixels
-       696 |   int apply_cropping
-       700 |   int discard_damaged_percentage
-       704 |   int64_t max_samples
-       712 |   int (*)(struct AVCodecContext *, AVPacket *, int) get_encode_buffer
-       720 |   int64_t frame_num
-       728 |   int * side_data_prefer_packet
-       732 |   unsigned int nb_side_data_prefer_packet
-       736 |   AVFrameSideData ** decoded_side_data
-       740 |   int nb_decoded_side_data
-       744 |   enum AVAlphaMode alpha_mode
-           | [sizeof=752, align=8]
+       612 |   enum AVDiscard skip_loop_filter
+       616 |   enum AVDiscard skip_idct
+       620 |   enum AVDiscard skip_frame
+       624 |   int skip_alpha
+       628 |   int skip_top
+       632 |   int skip_bottom
+       636 |   int lowres
+       640 |   const struct AVCodecDescriptor * codec_descriptor
+       644 |   char * sub_charenc
+       648 |   int sub_charenc_mode
+       652 |   int subtitle_header_size
+       656 |   uint8_t * subtitle_header
+       660 |   uint8_t * dump_separator
+       664 |   char * codec_whitelist
+       668 |   AVPacketSideData * coded_side_data
+       672 |   int nb_coded_side_data
+       676 |   int export_side_data
+       680 |   int64_t max_pixels
+       688 |   int apply_cropping
+       692 |   int discard_damaged_percentage
+       696 |   int64_t max_samples
+       704 |   int (*)(struct AVCodecContext *, AVPacket *, int) get_encode_buffer
+       712 |   int64_t frame_num
+       720 |   int * side_data_prefer_packet
+       724 |   unsigned int nb_side_data_prefer_packet
+       728 |   AVFrameSideData ** decoded_side_data
+       732 |   int nb_decoded_side_data
+       736 |   enum AVAlphaMode alpha_mode
+           | [sizeof=744, align=8]
 
 *** Dumping AST Record Layout
          0 | struct AVCodecParameters
@@ -584,7 +588,10 @@
         88 |   int dst_v_chr_pos
         92 |   int dst_h_chr_pos
         96 |   int intent
-           | [sizeof=104, align=8]
+       100 |   SwsScaler scaler
+       104 |   SwsScaler scaler_sub
+       108 |   SwsBackend backends
+           | [sizeof=112, align=8]
 
 *** Dumping AST Record Layout
          0 | VideoFrame
@@ -603,28 +610,31 @@
         60 |   int32_t time_base_den
         64 |   int64_t duration
         72 |   double dur_js
-        80 |   uint32_t[8] src_data
+        80 |   uintptr_t[8] src_data
        112 |   int32_t[8] src_linesize
        144 |   int32_t color_range
        148 |   int32_t color_space
        152 |   int32_t color_primaries
        156 |   int32_t color_transfer
        160 |   int32_t stream_index
-       164 |   AVFrame * frame
-           | [sizeof=168, align=8]
+       164 |   int buffer_size
+       168 |   AVFrame * frame
+           | [sizeof=176, align=8]
 
 *** Dumping AST Record Layout
          0 | AudioFrame
          0 |   int32_t channels
          4 |   int32_t samples
          8 |   int32_t sample_rate
-        12 |   uint32_t data
-        16 |   int32_t bytes_per_sample
-        24 |   double ts_js
-        32 |   int32_t stream_index
-        36 |   int32_t format
-        40 |   AVFrame * frame
-           | [sizeof=48, align=8]
+        12 |   uintptr_t[8] src_data
+        44 |   int32_t linesize
+        48 |   int32_t bytes_per_sample
+        56 |   double ts_js
+        64 |   int32_t stream_index
+        68 |   int32_t format
+        72 |   int buffer_size
+        76 |   AVFrame * frame
+           | [sizeof=80, align=8]
 
 *** Dumping AST Record Layout
          0 | SubtitleFrame
@@ -636,11 +646,31 @@
         24 |   int64_t pts
         32 |   double ts_js
         40 |   double dur_js
-        48 |   uint32_t[4] src_data
-        64 |   int[4] src_linesize
+        48 |   uintptr_t[4] src_data
+        64 |   int32_t[4] src_linesize
         80 |   int32_t stream_index
         84 |   AVSubtitle * frame
            | [sizeof=88, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVPacket
+         0 |   AVBufferRef * buf
+         8 |   int64_t pts
+        16 |   int64_t dts
+        24 |   uint8_t * data
+        28 |   int size
+        32 |   int stream_index
+        36 |   int flags
+        40 |   AVPacketSideData * side_data
+        44 |   int side_data_elems
+        48 |   int64_t duration
+        56 |   int64_t pos
+        64 |   void * opaque
+        68 |   AVBufferRef * opaque_ref
+        72 |   struct AVRational time_base
+        72 |     int num
+        76 |     int den
+           | [sizeof=80, align=8]
 
 *** Dumping AST Record Layout
          0 | struct AVSubtitle
@@ -703,26 +733,6 @@
          0 |   uint64_t i
          0 |   double f
            | [sizeof=8, align=8]
-
-*** Dumping AST Record Layout
-         0 | struct AVPacket
-         0 |   AVBufferRef * buf
-         8 |   int64_t pts
-        16 |   int64_t dts
-        24 |   uint8_t * data
-        28 |   int size
-        32 |   int stream_index
-        36 |   int flags
-        40 |   AVPacketSideData * side_data
-        44 |   int side_data_elems
-        48 |   int64_t duration
-        56 |   int64_t pos
-        64 |   void * opaque
-        68 |   AVBufferRef * opaque_ref
-        72 |   struct AVRational time_base
-        72 |     int num
-        76 |     int den
-           | [sizeof=80, align=8]
 
 *** Dumping AST Record Layout
          0 | struct AVIOContext
@@ -817,7 +827,10 @@
         88 |   int dst_v_chr_pos
         92 |   int dst_h_chr_pos
         96 |   int intent
-           | [sizeof=104, align=8]
+       100 |   SwsScaler scaler
+       104 |   SwsScaler scaler_sub
+       108 |   SwsBackend backends
+           | [sizeof=112, align=8]
 
 *** Dumping AST Record Layout
          0 | struct SwsFilter
@@ -935,26 +948,6 @@
            | [sizeof=8, align=8]
 
 *** Dumping AST Record Layout
-         0 | struct AVPacket
-         0 |   AVBufferRef * buf
-         8 |   int64_t pts
-        16 |   int64_t dts
-        24 |   uint8_t * data
-        28 |   int size
-        32 |   int stream_index
-        36 |   int flags
-        40 |   AVPacketSideData * side_data
-        44 |   int side_data_elems
-        48 |   int64_t duration
-        56 |   int64_t pos
-        64 |   void * opaque
-        68 |   AVBufferRef * opaque_ref
-        72 |   struct AVRational time_base
-        72 |     int num
-        76 |     int den
-           | [sizeof=80, align=8]
-
-*** Dumping AST Record Layout
          0 | struct AVComponentDescriptor
          0 |   int plane
          4 |   int step
@@ -1022,26 +1015,6 @@
          0 |   uint64_t i
          0 |   double f
            | [sizeof=8, align=8]
-
-*** Dumping AST Record Layout
-         0 | struct AVPacket
-         0 |   AVBufferRef * buf
-         8 |   int64_t pts
-        16 |   int64_t dts
-        24 |   uint8_t * data
-        28 |   int size
-        32 |   int stream_index
-        36 |   int flags
-        40 |   AVPacketSideData * side_data
-        44 |   int side_data_elems
-        48 |   int64_t duration
-        56 |   int64_t pos
-        64 |   void * opaque
-        68 |   AVBufferRef * opaque_ref
-        72 |   struct AVRational time_base
-        72 |     int num
-        76 |     int den
-           | [sizeof=80, align=8]
 
 *** Dumping AST Record Layout
          0 | struct AVIOContext

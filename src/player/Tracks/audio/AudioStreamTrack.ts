@@ -104,8 +104,8 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
         // }
 
         const audioBuffer = frame instanceof AudioData
-            ? this.copyFromAudioData(frame, 9999999999999)
-            : this.viewFromDataBuffer(frame, 9999999999999);
+            ? this.copyFromAudioData(frame)
+            : new Float32Array(frame.data.buffer);
 
         this.postToWorklet({ kind: "write", buffer: audioBuffer }, [audioBuffer.buffer]);
     }
@@ -134,26 +134,24 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
     }
 
     /** Allocates a new buffer and copies decoded audio into it. */
-    private copyFromAudioData(frame: AudioData, timeRemaining: number): Float32Array {
-        const maxFrames = Math.min(
-            Math.floor(timeRemaining * frame.sampleRate),
-            frame.numberOfFrames,
-        );
-        const buffer = new Float32Array(maxFrames * frame.numberOfChannels);
-        frame.copyTo(buffer, { planeIndex: 0, format: "f32", frameCount: maxFrames });
+    private copyFromAudioData(frame: AudioData): Float32Array {
+        const channels = frame.numberOfChannels;
+        const frames = frame.numberOfFrames;
+        const buffer = new Float32Array(frames * channels);
+
+        if (frame.format?.endsWith("-planar")) {
+            const plane = new Float32Array(frames);
+            for (let ch = 0; ch < channels; ch++) {
+                frame.copyTo(plane, { planeIndex: ch, format: "f32-planar", frameCount: frames });
+                for (let i = 0; i < frames; i++) {
+                    buffer[i * channels + ch] = plane[i];
+                }
+            }
+        } else {
+            frame.copyTo(buffer, { planeIndex: 0, format: "f32", frameCount: frames });
+        }
+
         return buffer;
-    }
-
-    /**
-     * Returns a typed-array *view* into the existing ArrayBuffer — no copy.
-     * Ownership is transferred to the worklet via postMessage.
-     */
-    private viewFromDataBuffer(frame: WorkerAudioDataInit, timeRemaining: number): Float32Array {
-        const maxFrames = Math.min(
-            Math.floor(timeRemaining * frame.sampleRate),
-            frame.numberOfFrames);
-
-        return new Float32Array(frame.data as ArrayBuffer, 0, maxFrames * frame.numberOfChannels);
     }
 
     private postToWorklet(message: WorkletMessage, transfer: Transferable[] = []): void {

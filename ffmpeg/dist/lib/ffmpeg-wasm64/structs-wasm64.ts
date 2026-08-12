@@ -9,7 +9,7 @@
  */
 
 // Skipped (foreign 'struct '-prefixed records, held only as pointers):
-//   struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVPacket, struct AVIOContext, struct AVInputFormat, struct AVIOInterruptCB, struct AVFormatContext, struct AVCodec, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVCodecContext, struct AVCodecParameters, struct AVFrame, struct SwsContext, struct AVSubtitle, struct AVSubtitleRect, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVPacket, struct AVIOContext, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct SwsContext, struct SwsFilter, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVFrame, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVPacket, struct AVComponentDescriptor, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVPacket, struct AVIOContext
+//   struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext, struct AVComponentDescriptor, struct AVInputFormat, struct AVIOInterruptCB, struct AVFormatContext, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVDictionaryEntry, struct AVCodec, struct AVCodecContext, struct AVCodecParameters, struct AVFrame, struct SwsContext, struct AVPacket, struct AVSubtitle, struct AVSubtitleRect, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct SwsContext, struct SwsFilter, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVFrame, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVComponentDescriptor, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext
 
 export interface BridgeContext {
   supported_pix_fmts: bigint; // @0 const enum AVPixelFormat * pointer / handle;
@@ -17,13 +17,20 @@ export interface BridgeContext {
   fmt_ctx:            bigint; // @16 AVFormatContext * pointer / handle;
   codecs:             bigint; // @24 AVCodecContext ** pointer / handle;
   sws_ctx:            bigint; // @32 SwsContext ** pointer / handle;
-  swr_ctx:            bigint; // @40 SwrContext ** pointer / handle;
-  nb_streams:         number; // @48 uint32_t
-  stream_support:     bigint; // @56 int32_t * pointer / handle;
-  data_return:        bigint; // @64 ReturnType * pointer / handle;
+  sws_in_fmt:         bigint; // @40 int * pointer / handle;
+  swr_ctx:            bigint; // @48 SwrContext ** pointer / handle;
+  swr_in_fmt:         bigint; // @56 int * pointer / handle;
+  swr_in_rate:        bigint; // @64 int * pointer / handle;
+  swr_in_layout:      bigint; // @72 AVChannelLayout * pointer / handle;
+  nb_streams:         number; // @80 uint32_t
+  stream_support:     bigint; // @88 int32_t * pointer / handle;
+  report_timestamp:   number; // @96 uint32_t
+  last_ts_js:         bigint; // @104 int64_t * pointer / handle;
+  last_dur_js:        bigint; // @112 int64_t * pointer / handle;
+  data_return:        bigint; // @120 ReturnType * pointer / handle;
 }
 
-export const SIZEOF_BridgeContext = 72;
+export const SIZEOF_BridgeContext = 128;
 export const ALIGNOF_BridgeContext = 8;
 export const OFFSETS_BridgeContext = {
   supported_pix_fmts: 0,
@@ -31,10 +38,17 @@ export const OFFSETS_BridgeContext = {
   fmt_ctx: 16,
   codecs: 24,
   sws_ctx: 32,
-  swr_ctx: 40,
-  nb_streams: 48,
-  stream_support: 56,
-  data_return: 64,
+  sws_in_fmt: 40,
+  swr_ctx: 48,
+  swr_in_fmt: 56,
+  swr_in_rate: 64,
+  swr_in_layout: 72,
+  nb_streams: 80,
+  stream_support: 88,
+  report_timestamp: 96,
+  last_ts_js: 104,
+  last_dur_js: 112,
+  data_return: 120,
 } as const;
 
 export function readBridgeContext(buffer: ArrayBufferLike, offset = 0): BridgeContext {
@@ -45,10 +59,17 @@ export function readBridgeContext(buffer: ArrayBufferLike, offset = 0): BridgeCo
     fmt_ctx: view.getBigUint64(16, true),
     codecs: view.getBigUint64(24, true),
     sws_ctx: view.getBigUint64(32, true),
-    swr_ctx: view.getBigUint64(40, true),
-    nb_streams: view.getUint32(48, true),
-    stream_support: view.getBigUint64(56, true),
-    data_return: view.getBigUint64(64, true),
+    sws_in_fmt: view.getBigUint64(40, true),
+    swr_ctx: view.getBigUint64(48, true),
+    swr_in_fmt: view.getBigUint64(56, true),
+    swr_in_rate: view.getBigUint64(64, true),
+    swr_in_layout: view.getBigUint64(72, true),
+    nb_streams: view.getUint32(80, true),
+    stream_support: view.getBigUint64(88, true),
+    report_timestamp: view.getUint32(96, true),
+    last_ts_js: view.getBigUint64(104, true),
+    last_dur_js: view.getBigUint64(112, true),
+    data_return: view.getBigUint64(120, true),
   };
 }
 
@@ -176,16 +197,17 @@ export function readChapterInfo(buffer: ArrayBufferLike, offset = 0): ChapterInf
 }
 
 export interface StreamInfo {
-  type:            number; // @0 enum AVMediaType assumed enum/int-sized (enum AVMediaType);
-  duration:        number; // @8 double
-  disposition:     number; // @16 int
-  video_config:    bigint; // @24 VideoDecoderConfig * pointer / handle;
-  audio_config:    bigint; // @32 AudioDecoderConfig * pointer / handle;
-  subtitle_config: bigint; // @40 SubtitleConfig * pointer / handle;
-  metadata:        bigint; // @48 AVDictionary * pointer / handle;
+  type:              number; // @0 enum AVMediaType assumed enum/int-sized (enum AVMediaType);
+  duration:          number; // @8 double
+  disposition:       number; // @16 int
+  video_config:      bigint; // @24 VideoDecoderConfig * pointer / handle;
+  audio_config:      bigint; // @32 AudioDecoderConfig * pointer / handle;
+  subtitle_config:   bigint; // @40 SubtitleConfig * pointer / handle;
+  attachment_config: bigint; // @48 AttachmentConfig * pointer / handle;
+  metadata:          bigint; // @56 AVDictionary * pointer / handle;
 }
 
-export const SIZEOF_StreamInfo = 56;
+export const SIZEOF_StreamInfo = 64;
 export const ALIGNOF_StreamInfo = 8;
 export const OFFSETS_StreamInfo = {
   type: 0,
@@ -194,7 +216,8 @@ export const OFFSETS_StreamInfo = {
   video_config: 24,
   audio_config: 32,
   subtitle_config: 40,
-  metadata: 48,
+  attachment_config: 48,
+  metadata: 56,
 } as const;
 
 export function readStreamInfo(buffer: ArrayBufferLike, offset = 0): StreamInfo {
@@ -206,7 +229,31 @@ export function readStreamInfo(buffer: ArrayBufferLike, offset = 0): StreamInfo 
     video_config: view.getBigUint64(24, true),
     audio_config: view.getBigUint64(32, true),
     subtitle_config: view.getBigUint64(40, true),
-    metadata: view.getBigUint64(48, true),
+    attachment_config: view.getBigUint64(48, true),
+    metadata: view.getBigUint64(56, true),
+  };
+}
+
+export interface AttachmentConfig {
+  type: number; // @0 enum AttachmentType assumed enum/int-sized (enum AttachmentType);
+  data: bigint; // @8 uint8_t * pointer / handle;
+  size: number; // @16 int
+}
+
+export const SIZEOF_AttachmentConfig = 24;
+export const ALIGNOF_AttachmentConfig = 8;
+export const OFFSETS_AttachmentConfig = {
+  type: 0,
+  data: 8,
+  size: 16,
+} as const;
+
+export function readAttachmentConfig(buffer: ArrayBufferLike, offset = 0): AttachmentConfig {
+  const view = new DataView(buffer, offset, SIZEOF_AttachmentConfig);
+  return {
+    type: view.getInt32(0, true),
+    data: view.getBigUint64(8, true),
+    size: view.getInt32(16, true),
   };
 }
 
@@ -249,17 +296,18 @@ export interface VideoFrame {
   time_base_den:   number; // @60 int32_t
   duration:        bigint; // @64 int64_t
   dur_js:          number; // @72 double
-  src_data:        Uint8Array; // @80 uint32_t[8] uint32_t[8] — raw bytes (decode as needed);
-  src_linesize:    Uint8Array; // @112 int32_t[8] int32_t[8] — raw bytes (decode as needed);
-  color_range:     number; // @144 int32_t
-  color_space:     number; // @148 int32_t
-  color_primaries: number; // @152 int32_t
-  color_transfer:  number; // @156 int32_t
-  stream_index:    number; // @160 int32_t
-  frame:           bigint; // @168 AVFrame * pointer / handle;
+  src_data:        Uint8Array; // @80 uintptr_t[8] uintptr_t[8] — raw bytes (decode as needed);
+  src_linesize:    Uint8Array; // @144 int32_t[8] int32_t[8] — raw bytes (decode as needed);
+  color_range:     number; // @176 int32_t
+  color_space:     number; // @180 int32_t
+  color_primaries: number; // @184 int32_t
+  color_transfer:  number; // @188 int32_t
+  stream_index:    number; // @192 int32_t
+  buffer_size:     number; // @196 int
+  frame:           bigint; // @200 AVFrame * pointer / handle;
 }
 
-export const SIZEOF_VideoFrame = 176;
+export const SIZEOF_VideoFrame = 208;
 export const ALIGNOF_VideoFrame = 8;
 export const OFFSETS_VideoFrame = {
   width: 0,
@@ -278,13 +326,14 @@ export const OFFSETS_VideoFrame = {
   duration: 64,
   dur_js: 72,
   src_data: 80,
-  src_linesize: 112,
-  color_range: 144,
-  color_space: 148,
-  color_primaries: 152,
-  color_transfer: 156,
-  stream_index: 160,
-  frame: 168,
+  src_linesize: 144,
+  color_range: 176,
+  color_space: 180,
+  color_primaries: 184,
+  color_transfer: 188,
+  stream_index: 192,
+  buffer_size: 196,
+  frame: 200,
 } as const;
 
 export function readVideoFrame(buffer: ArrayBufferLike, offset = 0): VideoFrame {
@@ -306,13 +355,14 @@ export function readVideoFrame(buffer: ArrayBufferLike, offset = 0): VideoFrame 
     duration: view.getBigInt64(64, true),
     dur_js: view.getFloat64(72, true),
     src_data: new Uint8Array(buffer, offset + 80, 32),
-    src_linesize: new Uint8Array(buffer, offset + 112, 32),
-    color_range: view.getInt32(144, true),
-    color_space: view.getInt32(148, true),
-    color_primaries: view.getInt32(152, true),
-    color_transfer: view.getInt32(156, true),
-    stream_index: view.getInt32(160, true),
-    frame: view.getBigUint64(168, true),
+    src_linesize: new Uint8Array(buffer, offset + 144, 32),
+    color_range: view.getInt32(176, true),
+    color_space: view.getInt32(180, true),
+    color_primaries: view.getInt32(184, true),
+    color_transfer: view.getInt32(188, true),
+    stream_index: view.getInt32(192, true),
+    buffer_size: view.getInt32(196, true),
+    frame: view.getBigUint64(200, true),
   };
 }
 
@@ -320,26 +370,30 @@ export interface AudioFrame {
   channels:         number; // @0 int32_t
   samples:          number; // @4 int32_t
   sample_rate:      number; // @8 int32_t
-  data:             number; // @12 uint32_t
-  bytes_per_sample: number; // @16 int32_t
-  ts_js:            number; // @24 double
-  stream_index:     number; // @32 int32_t
-  format:           number; // @36 int32_t
-  frame:            bigint; // @40 AVFrame * pointer / handle;
+  src_data:         Uint8Array; // @16 uintptr_t[8] uintptr_t[8] — raw bytes (decode as needed);
+  linesize:         number; // @80 int32_t
+  bytes_per_sample: number; // @84 int32_t
+  ts_js:            number; // @88 double
+  stream_index:     number; // @96 int32_t
+  format:           number; // @100 int32_t
+  buffer_size:      number; // @104 int
+  frame:            bigint; // @112 AVFrame * pointer / handle;
 }
 
-export const SIZEOF_AudioFrame = 48;
+export const SIZEOF_AudioFrame = 120;
 export const ALIGNOF_AudioFrame = 8;
 export const OFFSETS_AudioFrame = {
   channels: 0,
   samples: 4,
   sample_rate: 8,
-  data: 12,
-  bytes_per_sample: 16,
-  ts_js: 24,
-  stream_index: 32,
-  format: 36,
-  frame: 40,
+  src_data: 16,
+  linesize: 80,
+  bytes_per_sample: 84,
+  ts_js: 88,
+  stream_index: 96,
+  format: 100,
+  buffer_size: 104,
+  frame: 112,
 } as const;
 
 export function readAudioFrame(buffer: ArrayBufferLike, offset = 0): AudioFrame {
@@ -348,12 +402,14 @@ export function readAudioFrame(buffer: ArrayBufferLike, offset = 0): AudioFrame 
     channels: view.getInt32(0, true),
     samples: view.getInt32(4, true),
     sample_rate: view.getInt32(8, true),
-    data: view.getUint32(12, true),
-    bytes_per_sample: view.getInt32(16, true),
-    ts_js: view.getFloat64(24, true),
-    stream_index: view.getInt32(32, true),
-    format: view.getInt32(36, true),
-    frame: view.getBigUint64(40, true),
+    src_data: new Uint8Array(buffer, offset + 16, 32),
+    linesize: view.getInt32(80, true),
+    bytes_per_sample: view.getInt32(84, true),
+    ts_js: view.getFloat64(88, true),
+    stream_index: view.getInt32(96, true),
+    format: view.getInt32(100, true),
+    buffer_size: view.getInt32(104, true),
+    frame: view.getBigUint64(112, true),
   };
 }
 
@@ -366,13 +422,13 @@ export interface SubtitleFrame {
   pts:          bigint; // @24 int64_t
   ts_js:        number; // @32 double
   dur_js:       number; // @40 double
-  src_data:     Uint8Array; // @48 uint32_t[4] uint32_t[4] — raw bytes (decode as needed);
-  src_linesize: Uint8Array; // @64 int[4] int[4] — raw bytes (decode as needed);
-  stream_index: number; // @80 int32_t
-  frame:        bigint; // @88 AVSubtitle * pointer / handle;
+  src_data:     Uint8Array; // @48 uintptr_t[4] uintptr_t[4] — raw bytes (decode as needed);
+  src_linesize: Uint8Array; // @80 int32_t[4] int32_t[4] — raw bytes (decode as needed);
+  stream_index: number; // @96 int32_t
+  frame:        bigint; // @104 AVSubtitle * pointer / handle;
 }
 
-export const SIZEOF_SubtitleFrame = 96;
+export const SIZEOF_SubtitleFrame = 112;
 export const ALIGNOF_SubtitleFrame = 8;
 export const OFFSETS_SubtitleFrame = {
   x: 0,
@@ -384,9 +440,9 @@ export const OFFSETS_SubtitleFrame = {
   ts_js: 32,
   dur_js: 40,
   src_data: 48,
-  src_linesize: 64,
-  stream_index: 80,
-  frame: 88,
+  src_linesize: 80,
+  stream_index: 96,
+  frame: 104,
 } as const;
 
 export function readSubtitleFrame(buffer: ArrayBufferLike, offset = 0): SubtitleFrame {
@@ -401,9 +457,9 @@ export function readSubtitleFrame(buffer: ArrayBufferLike, offset = 0): Subtitle
     ts_js: view.getFloat64(32, true),
     dur_js: view.getFloat64(40, true),
     src_data: new Uint8Array(buffer, offset + 48, 16),
-    src_linesize: new Uint8Array(buffer, offset + 64, 16),
-    stream_index: view.getInt32(80, true),
-    frame: view.getBigUint64(88, true),
+    src_linesize: new Uint8Array(buffer, offset + 80, 16),
+    stream_index: view.getInt32(96, true),
+    frame: view.getBigUint64(104, true),
   };
 }
 

@@ -44,3 +44,13 @@ declare module '*.wasm?url' {
     const path: `${string}.mjs`;
 	export = path;
 }
+
+declare module '*.js?url' {
+    const path: `${string}.js`;
+	export = path;
+}
+
+declare module '*.js?worker&url' {
+    const path: `${string}.js`;
+	export = path;
+}

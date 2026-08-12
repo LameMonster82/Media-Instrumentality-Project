@@ -1,9 +1,6 @@
-import type { VideoFFmpegStream } from '@/player/Tracks/video/videoTypes';
 import styles from './videoControls.module.css';
-import type { AudioFFmpegStream } from '@/player/Tracks/audio/audioTypes';
-import type { ChapterInfo, SubtitleFFmpegStream } from '@/player/Tracks/subtitles/subtitleStream';
-import type { FFmpegStream } from '@/player/Tracks/types';
 import { createBox } from '@/core/jsx/Box';
+import type { ControlChapter, ControlStream } from './types';
 
 export interface MediaControlCallbacks {
     onPlayPause: (intent?: boolean) => Promise<boolean>;
@@ -54,11 +51,11 @@ export default class MediaControls {
     private videoElement: HTMLVideoElement;
     private callbacks: MediaControlCallbacks;
 
-    private videoStreams: VideoFFmpegStream[] = [];
-    private audioStreams: AudioFFmpegStream[] = [];
-    private subtitleStreams: SubtitleFFmpegStream[] = [];
+    private videoStreams: ControlStream[] = [];
+    private audioStreams: ControlStream[] = [];
+    private subtitleStreams: ControlStream[] = [];
 
-    private chapters: ChapterInfo[] = [];
+    private chapters: ControlChapter[] = [];
 
     constructor(
         videoElement: HTMLVideoElement, // Passed so controls handle fullscreen/cursor
@@ -79,7 +76,7 @@ export default class MediaControls {
 
             {/* Progress bar */ }
             <div class={ styles.progressBar } ref={ r => this.progressBarHold = r }>
-                <span class={ styles.backgroundSlider } />
+                <span class={ styles.backgroundSlider } ref={ r=> this.transmutatedBar = r } />
                 <span class={ `${styles.backgroundSlider} ${styles.activeRange}` } ref={ r => this.bufferBar = r } />
                 <datalist id="chaptersForVideo" style={ { display: "block" } } ref={ r => chapterList.element = this.chapterDataList = r } />
                 <input
@@ -198,7 +195,7 @@ export default class MediaControls {
             const duration = this.callbacks.getMediaDuration();
             const potentialValue = clickPosition * duration;
 
-            let chapterName = this.chapters.find(c => c.start <= potentialValue && c.end >= potentialValue)?.data["title"] ?? "";
+            let chapterName = this.chapters.find(c => c.start <= potentialValue && c.end >= potentialValue)?.title ?? "";
             if (chapterName.length > 0) chapterName = chapterName + "\n";
 
             this.progressHoverRange.textContent = chapterName + formatSeconds(potentialValue, this.hasHours).time;
@@ -243,7 +240,10 @@ export default class MediaControls {
         });
 
         // --- Hotkeys & Interactivity (Attached to video wrapper) ---
-        this.videoElement.addEventListener("keydown", (e) => this.handleKeydown(e));
+        document.addEventListener("keydown", (e) => {
+            if (e.target !== this.videoElement) return;
+            this.handleKeydown(e);
+        });
 
         this.controls.addEventListener('mouseenter', () => this.showCursor());
         this.controls.addEventListener('mouseleave', () => this.hideCursorDelay());
@@ -267,7 +267,7 @@ export default class MediaControls {
     }
 
     public setBufferProgress(percent: number) {
-        //this.transmutatedBar.style.setProperty(`--buffer-progress`, `${percent}%`);
+        this.transmutatedBar.style.setProperty(`--buffer-progress`, `${percent}%`);
     }
 
     public setPlayback(isPlaying: boolean) {
@@ -279,7 +279,7 @@ export default class MediaControls {
         this.updateVolumeVisuals(volume);
     }
 
-    public updateVideoTracks(videos: VideoFFmpegStream[]) {
+    public updateVideoTracks(videos: ControlStream[]) {
         this.videoSelect.innerHTML = '';
         this.videoStreams = videos;
         for (const video of videos) {
@@ -298,7 +298,7 @@ export default class MediaControls {
         this.setTrackSelectorVisibility();
     }
 
-    public updateAudioTracks(audios: AudioFFmpegStream[]) {
+    public updateAudioTracks(audios: ControlStream[]) {
         this.audioSelect.innerHTML = '';
         this.audioStreams = audios;
         for (const audio of audios) {
@@ -316,7 +316,7 @@ export default class MediaControls {
         this.setTrackSelectorVisibility();
     }
 
-    public updateSubtitleTracks(subtitles: SubtitleFFmpegStream[]) {
+    public updateSubtitleTracks(subtitles: ControlStream[]) {
         this.subtitleSelect.innerHTML = '';
         this.subtitleStreams = subtitles;
         for (const subtitle of subtitles) {
@@ -334,14 +334,14 @@ export default class MediaControls {
         this.setTrackSelectorVisibility();
     }
 
-    public updateChapters(chapters: ChapterInfo[]) {
+    public updateChapters(chapters: ControlChapter[]) {
         this.chapterDataList.innerHTML = '';
         this.chapters = chapters;
         for (const chapter of chapters) {
             const time = chapter.start;
             this.chapterDataList?.appendChild(
                 <option value={ time.toString() }
-                    title={ chapter.data["title"] ?? chapter.index }
+                    title={ chapter.title ?? chapter.id.toString() }
                     onclick={ () => this.callbacks.onSeekTo(time) }
                     style={ { left: `calc(${time} / var(--video-duration) * 100% - 1px)` } }
                 />);
@@ -410,18 +410,12 @@ export default class MediaControls {
             document.exitFullscreen();
         } else {
             const setupVideo = () => {
-                this.videoElement.style.maxWidth = 'unset';
-                this.videoElement.style.maxHeight = 'unset';
-                this.videoElement.style.width = '100%';
-                this.videoElement.style.height = '100%';
-                this.videoElement.style.top = '0';
+                this.controlsContainer.classList.add(styles.fullscreen);
+                this.videoElement.classList.add(styles.fullscreenVideo);
             };
             const exitFullscreenSetup = () => {
-                this.videoElement.style.maxWidth = '';
-                this.videoElement.style.maxHeight = '';
-                this.videoElement.style.width = '';
-                this.videoElement.style.height = '';
-                this.videoElement.style.top = '';
+                this.controlsContainer.classList.remove(styles.fullscreen);
+                this.videoElement.classList.remove(styles.fullscreenVideo);
             };
 
             const parent = this.videoElement.parentElement!;
@@ -612,6 +606,6 @@ function makeDraggable(element: HTMLElement, container?: HTMLElement) { // Added
     };
 }
 
-function optionText(stream: FFmpegStream<unknown>) {
-    return stream.metadata["title"] ?? stream.metadata["TITLE"] ?? stream.metadata["language"] ?? stream.metadata["LANGUAGE"] ?? `Stream: ${stream.index}`
+function optionText(stream: ControlStream) {
+    return stream.metadata["title"] ?? stream.metadata["TITLE"] ?? stream.metadata["language"] ?? stream.metadata["LANGUAGE"] ?? `Stream: ${stream.index}`;
 }

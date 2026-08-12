@@ -46,6 +46,9 @@ export default class AtomicEventer<
 
     private isMainThread = typeof window !== 'undefined' && typeof document !== 'undefined';
 
+    private persistentCallbacks: ((event: ReceiveEnum, data: DecodeTemplate<ReceiveMap[ReceiveEnum]>) => void)[] = [];
+    private oneShotWaiters: { type: ReceiveEnum | undefined, resolve: (v: { event: ReceiveEnum, data: DecodeTemplate<ReceiveMap[ReceiveEnum]>; } | null) => void; }[] = [];
+
     constructor(buffers: AtomicEventerBuffers | undefined, sendTemplate: SendMap, receiveTemplate: ReceiveMap) {
         this.bufferToReceiveFrom = buffers?.senderBuffer ?? new SharedArrayBuffer(512, { maxByteLength: 16384 });
         this.bufferToSendTo = buffers?.receiverBuffer ?? new SharedArrayBuffer(512, { maxByteLength: 16384 });
@@ -56,6 +59,8 @@ export default class AtomicEventer<
         const { promise, resolve } = Promise.withResolvers<void>();
         this.destroyedPromise = promise;
         this.destroyedResolver = resolve;
+
+        this.pumpLoop();
     }
 
 
@@ -139,63 +144,68 @@ export default class AtomicEventer<
 
     /**
      * receive an event from the other AtomicEventer. It will call callback when that happens
+     * Multiple calls (and concurrent waitUntilEvent calls) can coexist safely - only one
+     * internal pump ever reads the shared buffer, and every event gets fanned out to all
+     * interested listeners.
      * @param eventMap A map that maps Enums to templates of the event data
      * @param callback A callback that to receive the event
      */
     receiveEvent<E extends ReceiveEnum>(callback: (type: E, data: DecodeTemplate<(typeof this.receiveTemplate)[E]>) => void) {
-        const infiniteLoop = async () => {
-            while (true) {
-                if (this.destroyed) return;
-                const result = await this.waitUntilEvent<E>(undefined);
-                if (result === null) return;
-
-                callback(result.event, result.data);
-            }
-        };
-
-        infiniteLoop();
+        this.persistentCallbacks.push(callback as (event: ReceiveEnum, data: DecodeTemplate<ReceiveMap[ReceiveEnum]>) => void);
     }
 
-    async waitUntilEvent<E extends ReceiveEnum>(type: E | undefined): Promise<{event: E, data: DecodeTemplate<ReceiveMap[E]>} | null> {
+    /**
+     * Resolves the next time a matching event (or, if type is undefined, any event) arrives.
+     * Safe to call concurrently with receiveEvent and with other waitUntilEvent calls - they
+     * all share the single internal pump instead of racing each other on the raw buffer.
+     */
+    waitUntilEvent<E extends ReceiveEnum>(type: E | undefined): Promise<{ event: E, data: DecodeTemplate<ReceiveMap[E]>; } | null> {
+        const { promise, resolve } = Promise.withResolvers<{ event: E, data: DecodeTemplate<ReceiveMap[E]>; } | null>();
+        this.oneShotWaiters.push({
+            type,
+            resolve: resolve as (v: { event: ReceiveEnum, data: DecodeTemplate<ReceiveMap[ReceiveEnum]>; } | null) => void
+        });
+        return promise;
+    }
+
+    private async pumpLoop() {
         const intArray = new Int32Array(this.bufferToReceiveFrom);
         const uintArray = new Uint8Array(this.bufferToReceiveFrom);
 
-        const waiter = Atomics.waitAsync(intArray, 0, 0);
-        let event: E;
         while (true) {
-            if (waiter.async) {
-                await Promise.race([waiter.value, this.destroyedPromise]);
-                if (this.destroyed) return null;
+            if (this.destroyed) {
+                for (const waiter of this.oneShotWaiters) waiter.resolve(null);
+                this.oneShotWaiters = [];
+                return;
             }
 
-            event = Atomics.load(uintArray, 4) as E;
+            const waiter = Atomics.waitAsync(intArray, 0, 0);
+            if (waiter.async) {
+                await Promise.race([waiter.value, this.destroyedPromise]);
+                if (this.destroyed) continue;
+            }
 
-            if (type === undefined || event === type)
-                break;
-            else if (this.isMainThread)
-                await new Promise(r => setTimeout(r, 0));
+            this.consumeRecievingEvent();
         }
-
-
-        const data = this.readEvent<E>(this.receiveTemplate[event]);
-        Atomics.store(intArray, 0, 0);
-        Atomics.notify(intArray, 0);
-
-        return {event, data};
     }
 
     lockUntilEvent<E extends ReceiveEnum>(event: E): DecodeTemplate<(typeof this.receiveTemplate)[E]> {
         const intArray = new Int32Array(this.bufferToReceiveFrom);
         const uintArray = new Uint8Array(this.bufferToReceiveFrom);
+
+        this.consumeRecievingEvent();
+
         while (true) {
             Atomics.wait(intArray, 0, 0);
-            const event = Atomics.load(uintArray, 4) as E;
-            if (event === event) break;
+            const event2 = Atomics.load(uintArray, 4) as E;
+            if (event2 === event) break;
         }
 
         const data = this.readEvent<E>(this.receiveTemplate[event as E]);
-        Atomics.store(intArray, 0, 0);
-        Atomics.notify(intArray, 0);
+        //const someoneElseNeedsThatEvent = this.persistentCallbacks.length > 0 || this.oneShotWaiters.some(s => s.type === event || s.type === undefined);
+        //if(!someoneElseNeedsThatEvent)
+        //Atomics.store(intArray, 0, 0);
+        //Atomics.notify(intArray, 0);
 
         return data;
     }
@@ -207,6 +217,30 @@ export default class AtomicEventer<
     destroy() {
         this.destroyed = true;
         this.destroyedResolver();
+    }
+
+    private consumeRecievingEvent() {
+        const intArray = new Int32Array(this.bufferToReceiveFrom);
+        const uintArray = new Uint8Array(this.bufferToReceiveFrom);
+
+        if (Atomics.load(intArray, 0) === 0)
+            return;
+
+        const event = Atomics.load(uintArray, 4) as ReceiveEnum;
+        const data = this.readEvent<ReceiveEnum>(this.receiveTemplate[event]);
+        Atomics.store(intArray, 0, 0);
+        Atomics.notify(intArray, 0);
+
+        for (const callback of this.persistentCallbacks) callback(event, data);
+
+        const stillWaiting: typeof this.oneShotWaiters = [];
+        for (const oneShotWaiter of this.oneShotWaiters) {
+            if (oneShotWaiter.type === undefined || oneShotWaiter.type === event)
+                oneShotWaiter.resolve({ event, data });
+            else
+                stillWaiting.push(oneShotWaiter);
+        }
+        this.oneShotWaiters = stillWaiting;
     }
 
     private readEvent<E extends ReceiveEnum>(template: Dictionary<SerializableStuff>): DecodeTemplate<(typeof this.receiveTemplate)[E]> {

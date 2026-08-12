@@ -56,7 +56,8 @@ AudioDecoderConfig *audio_stream_to_config(AVCodecParameters *codecpar) {
         ret->description      = extradata;
         ret->description_size = codecpar->extradata_size;
     } else {
-        fprintf(stderr, "Unsupported audio codec: %s\n", codecString);
+      fprintf(stderr, "Unsupported audio codec: %s\n", codecString);
+      strcpy(ret->codec, codecString);
     }
 
     return ret;
@@ -229,9 +230,11 @@ VideoDecoderConfig *video_stream_to_config(AVCodecParameters *codecpar) {
         strcat(ret->codec, ".1.1.1.0");
 
     } else {
-        fprintf(stderr,
-                "Unsupported WebCodecs codec: %s (FFmpeg will try software decode)\n",
-                codecString);
+      fprintf(
+          stderr,
+          "Unsupported WebCodecs codec: %s (FFmpeg will try software decode)\n",
+          codecString);
+      strcpy(ret->codec, codecString);
     }
 
     return ret;

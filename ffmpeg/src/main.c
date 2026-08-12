@@ -107,7 +107,8 @@ FileInfo *open_file() {
   g_ctx.swr_ctx = malloc(sizeof(SwrContext *) * g_ctx.fmt_ctx->nb_streams);
   g_ctx.swr_in_fmt = malloc(sizeof(int) * g_ctx.fmt_ctx->nb_streams);
   g_ctx.swr_in_rate = malloc(sizeof(int) * g_ctx.fmt_ctx->nb_streams);
-  g_ctx.swr_in_layout = malloc(sizeof(AVChannelLayout) * g_ctx.fmt_ctx->nb_streams);
+  g_ctx.swr_in_layout =
+      malloc(sizeof(AVChannelLayout) * g_ctx.fmt_ctx->nb_streams);
   g_ctx.last_ts_js = malloc(sizeof(int64_t) * g_ctx.fmt_ctx->nb_streams);
   g_ctx.last_dur_js = malloc(sizeof(int64_t) * g_ctx.fmt_ctx->nb_streams);
 
@@ -248,7 +249,8 @@ VideoFrame *decode_frame(AVFrame *frame, int stream_index,
 
   AVFrame *out_frame = frame;
   if (best_fmt != out_frame->format) {
-    if (g_ctx.sws_ctx[stream_index] && g_ctx.sws_in_fmt[stream_index] != frame->format) {
+    if (g_ctx.sws_ctx[stream_index] &&
+        g_ctx.sws_in_fmt[stream_index] != frame->format) {
       sws_free_context(&g_ctx.sws_ctx[stream_index]);
     }
     if (!g_ctx.sws_ctx[stream_index]) {
@@ -326,9 +328,7 @@ void cleanup_video_frame(VideoFrame *simple_frame) {
 }
 
 AudioFrame *decode_audio(AVFrame *frame, int stream_index, double ts_js) {
-
   int ret;
-
   enum AVSampleFormat out_format = AV_SAMPLE_FMT_FLT;
   AVFrame *out_frame = frame;
   if (frame->format != out_format) {
@@ -391,6 +391,30 @@ SubtitleFrame *decode_subtitle_frame(AVSubtitleRect *frame, AVSubtitle *sub,
   int64_t dur_js = av_rescale_q(sub->pts, time_base, (AVRational){1, 1000000}) +
                    (sub->end_display_time * 1000);
 
+  int width = frame->w;
+  int height = frame->h;
+  int stride = frame->linesize[0];
+  uint8_t *src = frame->data[0];                  // Indexed pixels
+  uint32_t *palette = (uint32_t *)frame->data[1]; // ARGB palette
+
+  // Allocate RGBA buffer
+  uint8_t *rgba = malloc(width * height * 4);
+  for (int y = 0; y < height; y++) {
+    uint8_t *src_row = src + y * stride;
+    uint8_t *dst_row = rgba + y * width * 4;
+
+    for (int x = 0; x < width; x++) {
+      uint8_t idx = src_row[x];
+      uint32_t argb = palette[idx];
+
+      // Convert ARGB to RGBA
+      dst_row[x * 4 + 0] = (argb >> 16) & 0xFF; // R
+      dst_row[x * 4 + 1] = (argb >> 8) & 0xFF;  // G
+      dst_row[x * 4 + 2] = argb & 0xFF;         // B
+      dst_row[x * 4 + 3] = (argb >> 24) & 0xFF; // A
+    }
+  }
+
   SubtitleFrame *simple_frame = malloc(sizeof(*simple_frame));
 
   simple_frame->width = frame->w;
@@ -402,6 +426,7 @@ SubtitleFrame *decode_subtitle_frame(AVSubtitleRect *frame, AVSubtitle *sub,
   simple_frame->ts_js = (double)pts_js;
   simple_frame->dur_js = (double)dur_js;
   simple_frame->stream_index = stream_index;
+  simple_frame->rgba_buff = rgba;
 
   simple_frame->frame = sub;
 
@@ -414,7 +439,10 @@ SubtitleFrame *decode_subtitle_frame(AVSubtitleRect *frame, AVSubtitle *sub,
 }
 
 EMSCRIPTEN_KEEPALIVE
-void cleanup_subtitle_frame(SubtitleFrame *simple_frame) { free(simple_frame); }
+void cleanup_subtitle_frame(SubtitleFrame *simple_frame) {
+  free(simple_frame->rgba_buff);
+  free(simple_frame);
+}
 
 EMSCRIPTEN_KEEPALIVE
 int seek_to(double time) {

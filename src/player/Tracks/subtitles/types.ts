@@ -15,4 +15,18 @@ export type ASSTrackStream = {
     track: JASSUB;
     cues: Set<string>;
     hasColorspace: boolean;
-}
+};
+
+export type BitmapTrackStream = {
+    canvas: CanvasCaptureMediaStreamTrack;
+    cues: Set<string>;
+};
+
+export type BitmapSubArgs = {
+    x: number;
+    y: number;
+    startTime: number,
+    endTime: number,
+    frame: ImageBitmap,
+    uuid: string;
+};

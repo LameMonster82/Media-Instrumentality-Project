@@ -177,74 +177,26 @@ function getPlaneDescriptors(
     }
 }
 
-/**
- * Copies a video frame from `src` to `dst`, handling per‑plane strides and offsets.
- * The destination is assumed to be **tightly packed** (no padding between rows).
- *
- * @param format - Pixel format (e.g., "I420", "NV12", "RGBA", "I420P10")
- * @param src - Source buffer (Uint8Array)
- * @param dst - Pre‑allocated destination buffer (Uint8Array)
- * @param width - Image width in pixels
- * @param height - Image height in pixels
- * @param srcLinesizes - Strides (in bytes) for each plane in `src`
- * @param srcPlaneOffsets - Byte offsets into `src` where each plane starts
- *
- * @throws {Error} If the number of line sizes/offsets doesn't match the number of planes.
- */
-export function CopyVideoFrameToBuffer(
-    format: ExtendedVideoFormats,
-    src: Uint8Array,
-    dst: Uint8Array,
-    width: number,
-    height: number,
-    srcLinesizes: number[],
-    srcPlaneOffsets: number[]
-): void {
+export function CopyVideoPlanesToBuffer(format: ExtendedVideoFormats, width: number, height: number, src: ArrayBuffer, src_data: number[], src_linesize: number[], dst: Uint8Array<ArrayBuffer>) {
     const planes = getPlaneDescriptors(format, width, height);
-    const numPlanes = planes.length;
 
-    if (srcLinesizes.length < numPlanes || srcPlaneOffsets.length < numPlanes) {
-        throw new Error(
-            `Expected ${numPlanes} planes, got srcLinesizes=${srcLinesizes.length}, srcPlaneOffsets=${srcPlaneOffsets.length}`
-        );
+    let offset = 0;
+    let layout: PlaneLayout[] = [];
+    const srcU8 = new Uint8Array(src); // Created once outside the loop
+
+    for (let i = 0; i < planes.length; i++) {
+        const plane = planes[i];
+        const src_ptr = src_data[i];
+        const stride = Math.abs(src_linesize[i]);
+        
+        const planeSize = stride * plane.height;
+        dst.set(srcU8.subarray(src_ptr, src_ptr + planeSize), offset);
+        layout.push({
+            offset,
+            stride
+        });
+        offset += planeSize;
     }
 
-    // Compute destination plane offsets – tightly packed, one after another
-    const dstPlaneOffsets: number[] = [];
-    let dstCur = 0;
-    for (const plane of planes) {
-        dstPlaneOffsets.push(dstCur);
-        const rowBytes = plane.width * plane.bytesPerElement;
-        dstCur += rowBytes * plane.height;
-    }
-
-    // Ensure destination is large enough (optional, but good practice)
-    const expectedDstSize = dstCur;
-    if (dst.length < expectedDstSize) {
-        throw new Error(
-            `Destination buffer too small: need ${expectedDstSize} bytes, got ${dst.length}`
-        );
-    }
-
-    // Copy plane by plane, row by row
-    for (let p = 0; p < numPlanes; p++) {
-        const plane = planes[p];
-        const copyBytesPerRow = plane.width * plane.bytesPerElement;
-        const srcStride = srcLinesizes[p];
-        const dstStride = copyBytesPerRow; // tightly packed
-
-        let srcRowOffset = srcPlaneOffsets[p];
-        let dstRowOffset = dstPlaneOffsets[p];
-
-        for (let y = 0; y < plane.height; y++) {
-            const srcStart = srcRowOffset;
-            const srcEnd = srcStart + copyBytesPerRow;
-            const dstStart = dstRowOffset;
-
-            dst.set(src.subarray(srcStart, srcEnd), dstStart);
-
-            srcRowOffset += srcStride;
-            dstRowOffset += dstStride;
-        }
-    }
+    return layout;
 }

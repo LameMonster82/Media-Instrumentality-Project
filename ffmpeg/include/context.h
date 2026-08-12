@@ -119,6 +119,7 @@ typedef struct {
   uintptr_t src_data[4];    /* uint8_t* plane pointers */
   int32_t src_linesize[4]; /* int32_t linesize per plane */
   int32_t stream_index;
+  uint8_t * rgba_buff;
 
   // Just for the C side
   AVSubtitle *frame;

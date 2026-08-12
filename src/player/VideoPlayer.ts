@@ -10,12 +10,9 @@ import { GetVideoTrackCtor } from "./Tracks/video/utils";
 import { GetAudioTrackCtor } from "./Tracks/audio/utils";
 import { audioTime, type WorkerAudioDataInit } from "./Tracks/audio/audioTypes";
 import { Dispositions } from "./FFmpeg/advancedTypes/AVTypes";
-import type { ASSTrackStream, TextTrackStream, VTTCueArgs } from "./Tracks/subtitles/types";
+import type { ASSTrackStream, BitmapSubArgs, TextTrackStream, VTTCueArgs } from "./Tracks/subtitles/types";
 
 import JASSUB, { webYCbCrMap } from "jassub";
-import workerUrl from 'jassub/dist/wasm/jassub-worker.js?worker&url';
-import wasmUrl from 'jassub/dist/wasm/jassub-worker.wasm?url'; // non-SIMD fallback
-import modernWasmUrl from 'jassub/dist/wasm/jassub-worker-modern.wasm?url'; // SIMD
 import type { ControlStream } from "@/components/controls/types";
 
 export class VideoPlayer2 {
@@ -32,6 +29,9 @@ export class VideoPlayer2 {
     private audioRenderer: Map<number, MediaStreamTrackWrapper<AudioData | WorkerAudioDataInit>> = new Map();
     private subtitleTextRenderer: Map<number, TextTrackStream> = new Map();
     private subtitleASSRenderer: Map<number, ASSTrackStream> = new Map();
+    private subtitleBitmapRenderer: Set<number> = new Set();
+    private subtitleBitmapCanvas: CanvasRenderingContext2D | undefined;
+    private activeBitmapSubtitles: string[] = [];
 
     private activeVideoStream: number = -1;
     private activeAudioStream: number = -1;
@@ -40,6 +40,7 @@ export class VideoPlayer2 {
     // Buffer
     private videoFrameBuffer: (VideoFrame | null)[] = [];
     private audioFrameBuffer: ((AudioData | WorkerAudioDataInit) | null)[] = [];
+    private subtitleBitmapBuffer: BitmapSubArgs[] = [];
 
     // Time
     private mediaTime: DOMHighResTimeStamp = 0;
@@ -85,6 +86,14 @@ export class VideoPlayer2 {
         window.onbeforeunload = () => {
             worker.terminate();
         };
+
+        this.workerEventer.receiveEvent((data) => {
+            switch (data) {
+                case FFmpegResponseEvent.END_OF_FILE:
+                    this.endOfFile = true;
+                    break;
+            }
+        });
 
         // Init
         this.controls = this.initControls();
@@ -253,6 +262,18 @@ export class VideoPlayer2 {
                             });
                             break;
                         }
+                        case AVSubtitleType.SUBTITLE_BITMAP: {
+                            if (!this.subtitleBitmapCanvas) {
+                                const canvas = document.createElement('canvas');
+                                canvas.classList.add(styles.canvasOverlay);
+                                canvas.style.display = enabled ? "" : "none";
+                                this.videoContainer.appendChild(canvas);
+
+                                this.subtitleBitmapCanvas = canvas.getContext('2d', { alpha: true, desynchronized: true })!;
+                            }
+                            this.subtitleBitmapRenderer.add(i);
+                            break;
+                        }
                         default: {
                             // TODO
                             console.error("Implement subtitle type!!!!");
@@ -338,6 +359,23 @@ export class VideoPlayer2 {
                 case AVMediaType.AVMEDIA_TYPE_AUDIO: handleMessage(i, this.audioFrameBuffer); break;
                 case AVMediaType.AVMEDIA_TYPE_SUBTITLE: {
                     switch (stream.subtitle_config!.type) {
+                        case AVSubtitleType.SUBTITLE_BITMAP: {
+                            const messageChannel = data.streamPorts.get(i);
+                            const messageChannel2 = data.streamPorts2.get(i);
+                            if (!messageChannel || !messageChannel2) break;
+
+                            const stream = this.subtitleBitmapRenderer.has(i);
+                            if (stream)
+                                messageChannel.onmessage = (e: MessageEvent<BitmapSubArgs>) => {
+                                    this.subtitleBitmapBuffer.push(e.data);
+
+                                    this.subtitleBitmapBuffer.sort((a, b) => {
+                                        return a.startTime - b.startTime;
+                                    });
+                                };
+                            messageChannel2.onmessage = messageChannel.onmessage;
+                            break;
+                        }
                         case AVSubtitleType.SUBTITLE_TEXT:
                             const messageChannel = data.streamPorts.get(i);
                             const messageChannel2 = data.streamPorts2.get(i);
@@ -457,7 +495,8 @@ export class VideoPlayer2 {
         let hasFrame = false;
         const videoStream = this.videoRenderer.get(this.activeVideoStream);
         const audioStream = this.audioRenderer.get(this.activeAudioStream);
-        const subtitleStream = this.subtitleASSRenderer.get(this.activeSubtitleStream);
+        const subtitleASSStream = this.subtitleASSRenderer.get(this.activeSubtitleStream);
+        const subtitleBitmapStream = this.subtitleBitmapRenderer.has(this.activeSubtitleStream);
 
         if (this.videoFrameBuffer[0] instanceof VideoFrame && videoStream) {
             let frame = this.videoFrameBuffer[0];
@@ -488,13 +527,13 @@ export class VideoPlayer2 {
             //console.warn("Low on Audio Frames");
         }
 
-        if (subtitleStream && hasFrame && !subtitleStream.track.busy) {
+        if (subtitleASSStream && hasFrame && !subtitleASSStream.track.busy) {
             let frame = this.videoFrameBuffer[0];
-            if (!subtitleStream.hasColorspace && frame instanceof VideoFrame) {
-                await subtitleStream.track.renderer._setColorSpace(webYCbCrMap[frame.colorSpace.matrix!]);
-                subtitleStream.hasColorspace = true;
+            if (!subtitleASSStream.hasColorspace && frame instanceof VideoFrame) {
+                await subtitleASSStream.track.renderer._setColorSpace(webYCbCrMap[frame.colorSpace.matrix!]);
+                subtitleASSStream.hasColorspace = true;
             }
-            subtitleStream.track.manualRender({
+            subtitleASSStream.track.manualRender({
                 expectedDisplayTime: performance.now(),
                 mediaTime: this.mediaTime,
                 width: this.video.videoWidth,
@@ -502,6 +541,47 @@ export class VideoPlayer2 {
             }, false);
 
             //promises.push(promise);
+        } else if (subtitleBitmapStream && this.subtitleBitmapCanvas) {
+            let frame = this.videoFrameBuffer[0];
+            if (frame && (this.subtitleBitmapCanvas.canvas.width !== frame.codedWidth ||
+                this.subtitleBitmapCanvas.canvas.height !== frame.codedHeight)
+            ) {
+                this.subtitleBitmapCanvas.canvas.width = frame.codedWidth;
+                this.subtitleBitmapCanvas.canvas.height = frame.codedHeight
+            }
+            let subtitlesToRemove: string[] = [];
+            for (const sub of this.subtitleBitmapBuffer) {
+                const hasBegun = sub.startTime / 1000 > this.mediaTime;
+                const hasEnded = sub.endTime / 1000 > this.mediaTime;
+                const hasBeenRendered = this.activeBitmapSubtitles.includes(sub.uuid);
+
+                if (!hasBegun) {
+                    // Nothing  
+                } else if (hasBegun && !hasEnded && !hasBeenRendered) {
+                    this.subtitleBitmapCanvas.drawImage(sub.frame, sub.x, sub.y);
+                } else if (hasBegun && hasEnded && hasBeenRendered) {
+                    const canvas = this.subtitleBitmapCanvas.canvas;
+                    this.subtitleBitmapCanvas.clearRect(0, 0, canvas.width, canvas.height);
+                    subtitlesToRemove.push(sub.uuid);
+
+                    for (const id of this.activeBitmapSubtitles) {
+                        const sub2 = this.subtitleBitmapBuffer.find(s => s.uuid === id);
+                        if (sub2 && sub2.uuid !== sub.uuid) {
+                            this.subtitleBitmapCanvas.drawImage(sub2.frame, sub2.x, sub2.y);
+                        }
+                    }
+                } else {
+                    subtitlesToRemove.push(sub.uuid);
+                }
+            }
+
+            for (const id of subtitlesToRemove) {
+                const sub2 = this.subtitleBitmapBuffer.find(s => s.uuid === id);
+                if (sub2) sub2.frame.close();
+            }
+
+            this.subtitleBitmapBuffer = this.subtitleBitmapBuffer.filter(s => subtitlesToRemove.includes(s.uuid));
+            this.activeBitmapSubtitles = this.activeBitmapSubtitles.filter(s => subtitlesToRemove.includes(s));
         }
 
         //await Promise.all(promises);
@@ -594,8 +674,11 @@ export class VideoPlayer2 {
         for (const frame of this.audioFrameBuffer)
             if (frame instanceof AudioData)
                 frame.close();
+        for (const frame of this.subtitleBitmapBuffer)
+            frame.frame.close();
         this.videoFrameBuffer.length = 0;
         this.audioFrameBuffer.length = 0;
+        this.subtitleBitmapBuffer.length = 0;
 
         //const subtitleStream = this.videoRenderer.get(this.activeVideoStream);
         await videoStream?.seekTo(time, true);
@@ -669,6 +752,15 @@ export class VideoPlayer2 {
                     const enabled = index === i;
                     stream.track._canvas.style.display = enabled ? '' : 'none';
                     await updateFFmpeg(i, enabled);
+                }
+
+                if (this.subtitleBitmapCanvas) {
+                    for (const sub of this.subtitleBitmapBuffer) {
+                        sub.frame.close();
+                    }
+                    this.subtitleBitmapBuffer.length = 0;
+                    const enabled = this.subtitleBitmapRenderer.has(index);
+                    this.subtitleBitmapCanvas.canvas.style.display = enabled ? '' : 'none';
                 }
                 break;
             }

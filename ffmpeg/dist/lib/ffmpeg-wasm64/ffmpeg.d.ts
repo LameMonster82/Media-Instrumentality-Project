@@ -55,6 +55,7 @@ interface WasmModule {
   _poke_for_data(): BigInt;
   _cleanup_packet(_0: BigInt): void;
   _cleanup_info(_0: BigInt): void;
+  _cleanup_subtitle_frame(_0: BigInt): void;
   _get_supported_demuxers(_0: BigInt, _1: number): number;
   _av_dict_iterate(_0: BigInt, _1: BigInt): BigInt;
   _emscripten_builtin_free(_0: BigInt): void;

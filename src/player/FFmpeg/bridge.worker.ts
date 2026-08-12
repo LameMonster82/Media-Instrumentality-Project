@@ -18,7 +18,7 @@ import { decoderRequestTemplates, decoderResponseTemplates, WebDecoderRequestTyp
 import { FFmpegRequestEvent, ffmpegRequestTemplate, FFmpegResponseEvent, ffmpegResponseTemplate } from "./advancedTypes/atomicTypes";
 import { MediaType, readFileInfo, readReturnType, ResultStatus, type VideoDecoderConfigStruct, type AudioDecoderConfigStruct, AVSubtitleType, AVMediaType } from "./structReader";
 import type { WorkerAudioDataInit } from "../Tracks/audio/audioTypes";
-import type { VTTCueArgs } from "../Tracks/subtitles/types";
+import type { BitmapSubArgs, VTTCueArgs } from "../Tracks/subtitles/types";
 
 // Default type of `self` is `WorkerGlobalScope & typeof globalThis`
 // https://github.com/microsoft/TypeScript/issues/14877
@@ -150,8 +150,8 @@ class FFmpegBridge {
         console.log(fileInfo);
 
         // Stream Setup
-        const streamPromises = fileInfo.streams.filter(s => 
-            s.type === AVMediaType.AVMEDIA_TYPE_VIDEO 
+        const streamPromises = fileInfo.streams.filter(s =>
+            s.type === AVMediaType.AVMEDIA_TYPE_VIDEO
             || s.type === AVMediaType.AVMEDIA_TYPE_AUDIO
             || s.type === AVMediaType.AVMEDIA_TYPE_SUBTITLE
         ).map((stream, i) => {
@@ -339,7 +339,8 @@ class FFmpegBridge {
 
         if (written === -1n) {
             console.error("EOF :/");
-            return -2;
+            this.videoEventer?.sendEvent(FFmpegResponseEvent.END_OF_FILE, {});
+            return 0;
         }
 
         this.fileOffset += written;
@@ -403,34 +404,28 @@ class FFmpegBridge {
                             return;
                         }
 
-                        // const indices = this.module!.HEAPU8.subarray(Number(rsult.subtitle_frame.src_data[0]), rsult.subtitle_frame.src_linesize[0]  * rect.h);
-                        // const pallete = this.module!.HEAPU8.subarray(Number(rsult.subtitle_frame.src_data[1]), rsult.subtitle_frame.nb_colors * 4);
+                        const frame = rsult.subtitle_frame;
+                        const size = frame.width * frame.height * 4;
 
-                        // const lut = new Uint32Array(rsult.subtitle_frame.nb_colors);
-                        // for (let i = 0; i < rsult.subtitle_frame.nb_colors; i++) {
-                        //     const o = i * 4;
-                        //     const b = palette[o];
-                        //     const g = palette[o + 1];
-                        //     const r = palette[o + 2];
-                        //     const a = palette[o + 3];
-                        //     // native-endian (LE) uint32 write with byte pattern [R,G,B,A] in memory
-                        //     lut[i] = (a << 24) | (b << 16) | (g << 8) | r;
-                        // }
+                        const rgba = new Uint8ClampedArray(this.module!.HEAPU8.subarray(Number(frame.rgba_buff), Number(frame.rgba_buff) + size));
 
-                        // const imageData = new ImageData(width, height);
-                        // const dst32 = new Uint32Array(imageData.data.buffer);
+                        createImageBitmap(new ImageData(rgba, frame.width, frame.height)).then(bitmap => {
+                            this.streams[rsult.stream_index].secondMessageChannel.port2.postMessage({
+                                x: frame.x,
+                                y: frame.y,
+                                startTime: Number(rsult.timestamp),
+                                endTime: Number(rsult.duration),
+                                frame: bitmap,
+                                uuid: crypto.randomUUID()
+                            } as BitmapSubArgs, [bitmap]);
+                            
+                            this.module!._cleanup_subtitle_frame(rsult.subtitle_frame_ptr as any);
+                        });
 
-                        // for (let y = 0; y < height; y++) {
-                        //     const srcRow = y * indexLinesize;
-                        //     const dstRow = y * width;
-                        //     for (let x = 0; x < width; x++) {
-                        //         dst32[dstRow + x] = lut[indices[srcRow + x]];
-                        //     }
-                        // }
                         break;
                     }
                     case AVSubtitleType.SUBTITLE_TEXT:
-                    case AVSubtitleType.SUBTITLE_ASS:{
+                    case AVSubtitleType.SUBTITLE_ASS: {
                         if (rsult.subtitle_text == null) {
                             console.error("Got a SW Subtitle text without the text??");
                             return;
@@ -480,7 +475,7 @@ class FFmpegBridge {
             // @ts-expect-error
             decoderResult = await this.IsStreamSupported(type, config);
         } catch {
-            
+
         }
         if (!(decoderResult?.supported ?? false)) {
             console.warn("Looks like your HW doesnt support", config.codec);
@@ -516,7 +511,7 @@ class FFmpegBridge {
         return {
             streamIndex,
             type: type,
-            isSupported:  decoderResult?.supported ?? false,
+            isSupported: decoderResult?.supported ?? false,
             isUsed: false,
             messageChannel,
             secondMessageChannel,
@@ -572,7 +567,7 @@ class FFmpegBridge {
                 break;
             }
             case WebDecoderResponseType.PACKET_PUBLISHED: {
-                const { packetPtr } = data as { packetPtr: number };
+                const { packetPtr } = data as { packetPtr: number; };
                 this.module!._cleanup_packet((this.is64Bit ? BigInt(packetPtr) : packetPtr) as any);
             }
         }
@@ -598,7 +593,7 @@ class FFmpegBridge {
     }
 
     private VideoStructToConfig(config: VideoDecoderConfigStruct): VideoDecoderConfig {
-        const description = this.module!.HEAPU8.slice(config.description, config.description + config.description_size)
+        const description = this.module!.HEAPU8.slice(config.description, config.description + config.description_size);
         return {
             codec: config.codec,
             codedWidth: config.coded_width,
@@ -614,7 +609,7 @@ class FFmpegBridge {
     }
 
     private AudioStructToConfig(config: AudioDecoderConfigStruct): AudioDecoderConfig {
-        const description = this.module!.HEAPU8.slice(config.description, config.description + config.description_size)
+        const description = this.module!.HEAPU8.slice(config.description, config.description + config.description_size);
         return {
             codec: config.codec,
             numberOfChannels: config.num_channels,

@@ -649,8 +649,9 @@
         48 |   uintptr_t[4] src_data
         64 |   int32_t[4] src_linesize
         80 |   int32_t stream_index
-        84 |   AVSubtitle * frame
-           | [sizeof=88, align=8]
+        84 |   uint8_t * rgba_buff
+        88 |   AVSubtitle * frame
+           | [sizeof=96, align=8]
 
 *** Dumping AST Record Layout
          0 | struct AVPacket

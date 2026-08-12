@@ -425,10 +425,11 @@ export interface SubtitleFrame {
   src_data:     Uint8Array; // @48 uintptr_t[4] uintptr_t[4] — raw bytes (decode as needed);
   src_linesize: Uint8Array; // @64 int32_t[4] int32_t[4] — raw bytes (decode as needed);
   stream_index: number; // @80 int32_t
-  frame:        number; // @84 AVSubtitle * pointer / handle;
+  rgba_buff:    number; // @84 uint8_t * pointer / handle;
+  frame:        number; // @88 AVSubtitle * pointer / handle;
 }
 
-export const SIZEOF_SubtitleFrame = 88;
+export const SIZEOF_SubtitleFrame = 96;
 export const ALIGNOF_SubtitleFrame = 8;
 export const OFFSETS_SubtitleFrame = {
   x: 0,
@@ -442,7 +443,8 @@ export const OFFSETS_SubtitleFrame = {
   src_data: 48,
   src_linesize: 64,
   stream_index: 80,
-  frame: 84,
+  rgba_buff: 84,
+  frame: 88,
 } as const;
 
 export function readSubtitleFrame(buffer: ArrayBufferLike, offset = 0): SubtitleFrame {
@@ -459,7 +461,8 @@ export function readSubtitleFrame(buffer: ArrayBufferLike, offset = 0): Subtitle
     src_data: new Uint8Array(buffer, offset + 48, 16),
     src_linesize: new Uint8Array(buffer, offset + 64, 16),
     stream_index: view.getInt32(80, true),
-    frame: view.getUint32(84, true),
+    rgba_buff: view.getUint32(84, true),
+    frame: view.getUint32(88, true),
   };
 }
 

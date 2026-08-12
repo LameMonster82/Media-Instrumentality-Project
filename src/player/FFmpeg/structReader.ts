@@ -161,6 +161,7 @@ export interface SubtitleFrame {
     src_data: (number | bigint)[];      // array of 4 pointers (uint8_t*)
     src_linesize: number[];  // array of 4 int32_t
     stream_index: number;
+    rgba_buff: number | bigint;
 }
 
 export interface ReturnType {
@@ -184,6 +185,7 @@ export interface ReturnType {
     packet: number | bigint; // AVPacket* pointer
     video_frame_ptr: number | bigint;
     audio_frame_ptr: number | bigint;
+    subtitle_frame_ptr: number | bigint;
 }
 
 export interface VideoDecoderConfigStruct {
@@ -458,6 +460,7 @@ export function readSubtitleFrame(buffer: ArrayBuffer, offset: number, is64Bit: 
         src_data,
         src_linesize,
         stream_index: info.stream_index,
+        rgba_buff: info.rgba_buff
     };
 }
 
@@ -487,6 +490,7 @@ export function readReturnType(buffer: ArrayBuffer, offset: number, is64Bit: boo
         packet: info.packet,
         video_frame_ptr: info.video_frame,
         audio_frame_ptr: info.audio_frame,
+        subtitle_frame_ptr: info.subtitle_frame
     };
 }
 

@@ -50,10 +50,9 @@ void main(){ o = texture(t, uv); }`;
         this.gl = gl;
     }
 
-    public drawFrame(videoFrame: VideoFrame | ImageBitmap) {
-        //const { format, type } = frameToGLEnumFormat(videoFrame.format!, this.gl);
-        const { width, height } = getFrameSize(videoFrame);
-        this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.UNSIGNED_BYTE, width, height, 0, this.gl.UNSIGNED_BYTE, this.gl.RGB, videoFrame);
+    public drawFrame(videoFrame: VideoFrame) {
+        const { format, type } = frameToGLEnumFormat(videoFrame.format!, this.gl);
+        this.gl.texImage2D(this.gl.TEXTURE_2D, 0, format, videoFrame.codedWidth, videoFrame.codedHeight,0, format, type, videoFrame);
         this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4);
         videoFrame.close();
     }

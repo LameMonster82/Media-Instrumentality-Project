@@ -1,6 +1,6 @@
 import styles from './videoControls.module.css';
-import { createBox } from '@/core/jsx/Box';
 import type { ControlChapter, ControlStream } from './types';
+import loadingLoop from '@Resources/LoadingIndicator.png';
 
 export interface MediaControlCallbacks {
     onPlayPause: (intent?: boolean) => Promise<boolean>;
@@ -18,7 +18,7 @@ export interface MediaControlCallbacks {
 export default class MediaControls {
     // DOM Elements (Assume these are initialized via constructor/query selectors)
     private controls: HTMLElement;
-    private chapterDataList: HTMLDataListElement = null!;
+    private chapterDataList: HTMLDivElement = null!;
     private progressBarRange: HTMLInputElement = null!;
     private progressBarHold: HTMLDivElement = null!;
     private progressHoverRange: HTMLDivElement = null!;
@@ -29,6 +29,7 @@ export default class MediaControls {
     private subtitleSelect: HTMLSelectElement = null!;
     private subtitleLabel: HTMLLabelElement = null!;
     private playButton: HTMLButtonElement = null!;
+    private loadingIcon: HTMLImageElement = null!;
     private bufferBar: HTMLSpanElement = null!;
     private numberProgress: HTMLSpanElement = null!;
     private numberDuration: HTMLSpanElement = null!;
@@ -44,9 +45,10 @@ export default class MediaControls {
     private isTryingToPlay: boolean = false;
     private hasHours: boolean = false;
     private lastVolume: number = 1;
-    private lastProgress: string = "-1";
+    private lastProgress: number = -1;
     private lastTime: number = -1;
     private cursorTimeoutId: number = 0;
+    private loadingState: boolean = true;
 
     private videoElement: HTMLVideoElement;
     private callbacks: MediaControlCallbacks;
@@ -67,18 +69,19 @@ export default class MediaControls {
 
         this.videoElement = videoElement;
         this.callbacks = callbacks;
-        const chapterList = createBox<HTMLDataListElement>();
         this.controls = <div class={ styles.controls }>
             {/* Play button */ }
             <button class={ `${styles.videoControlBtn} material-symbols-rounded` } ref={ r => this.playButton = r }>
                 play_arrow
             </button>
 
+            <img class={ styles.videoControlBtn } style={ { width: '30px' } } ref={ r => this.loadingIcon = r } src={ loadingLoop }></img>
+
             {/* Progress bar */ }
             <div class={ styles.progressBar } ref={ r => this.progressBarHold = r }>
-                <span class={ styles.backgroundSlider } ref={ r=> this.transmutatedBar = r } />
+                <span class={ styles.backgroundSlider } ref={ r => this.transmutatedBar = r } />
                 <span class={ `${styles.backgroundSlider} ${styles.activeRange}` } ref={ r => this.bufferBar = r } />
-                <datalist id="chaptersForVideo" style={ { display: "block" } } ref={ r => chapterList.element = this.chapterDataList = r } />
+                <div class={ styles.chapterBox } ref={ r => this.chapterDataList = r } />
                 <input
                     type="range"
                     class={ styles.progressRange }
@@ -86,6 +89,7 @@ export default class MediaControls {
                     min="0"
                     max="100"
                     ref={ r => this.progressBarRange = r }
+                    style={ { display: "none" } }
                 />
                 <div
                     class={ styles.progressHoverTooltip }
@@ -129,13 +133,13 @@ export default class MediaControls {
                 </i>
                 <div class={ styles.trackSelector } data-is-hidden="1" ref={ r => this.trackSelector = r }>
                     <label for={ videoSelector } ref={ r => this.videoLabel = r }>Video</label>
-                    <select id={ videoSelector } ref={ r => this.videoSelect = r } onchange={ e => this.callbacks.onVideoTrackSelect(parseFloat(this.videoSelect.selectedOptions[0].value)) } />
+                    <select id={ videoSelector } ref={ r => this.videoSelect = r } onchange={ () => this.callbacks.onVideoTrackSelect(parseFloat(this.videoSelect.selectedOptions[0].value)) } />
 
                     <label for={ audioSelector } ref={ r => this.audiolLabel = r }>Audio</label>
-                    <select id={ audioSelector } ref={ r => this.audioSelect = r } onchange={ e => this.callbacks.onAudioTrackSelect(parseFloat(this.audioSelect.selectedOptions[0].value)) } />
+                    <select id={ audioSelector } ref={ r => this.audioSelect = r } onchange={ () => this.callbacks.onAudioTrackSelect(parseFloat(this.audioSelect.selectedOptions[0].value)) } />
 
                     <label for={ subtitleSelector } ref={ r => this.subtitleLabel = r }>Subtitles</label>
-                    <select id={ subtitleSelector } ref={ r => this.subtitleSelect = r } onchange={ e => this.callbacks.onSubtitleTrackSelect(parseFloat(this.subtitleSelect.selectedOptions[0].value)) } />
+                    <select id={ subtitleSelector } ref={ r => this.subtitleSelect = r } onchange={ () => this.callbacks.onSubtitleTrackSelect(parseFloat(this.subtitleSelect.selectedOptions[0].value)) } />
                 </div>
             </div>
 
@@ -145,7 +149,9 @@ export default class MediaControls {
             </button>
         </div>;
 
-        this.progressBarRange.setAttribute("list", "chaptersForVideo");
+        this.setLoadingState(true);
+
+
         this.progressBarRange.value = "0";
         this.volumeControl.value = "0";
 
@@ -156,7 +162,7 @@ export default class MediaControls {
         this.updateAudioTracks([]);
         this.updateSubtitleTracks([]);
 
-        this.updateCurrentTime(this.callbacks.getCurrentTime(), this.callbacks.getMediaDuration());
+        this.updateCurrentTime(this.callbacks.getCurrentTime());
         this.setVolume(this.callbacks.getVolume());
     }
 
@@ -187,23 +193,27 @@ export default class MediaControls {
 
         // --- Progress Bar Hover ---
         this.progressBarRange.addEventListener('mousemove', (e) => {
-            this.progressHoverRange.classList.add('active');
+            this.progressHoverRange.classList.add(styles.active);
             const rect = this.progressBarRange.getBoundingClientRect();
             const rect2 = this.progressHoverRange.getBoundingClientRect();
 
             const clickPosition = (e.clientX - rect.left) / rect.width;
-            const duration = this.callbacks.getMediaDuration();
+            const duration = this.callbacks.getMediaDuration() / 1000;
             const potentialValue = clickPosition * duration;
 
-            let chapterName = this.chapters.find(c => c.start <= potentialValue && c.end >= potentialValue)?.title ?? "";
-            if (chapterName.length > 0) chapterName = chapterName + "\n";
+            let title: string = "";
+            const chapter = this.chapters.find(c => c.start <= potentialValue && c.end >= potentialValue);
 
-            this.progressHoverRange.textContent = chapterName + formatSeconds(potentialValue, this.hasHours).time;
+            if (chapter && chapter.title) {
+                title = chapter.title;
+            }
+
+            this.progressHoverRange.textContent = `${title}\n${formatSeconds(potentialValue, this.hasHours).time}`;
             this.progressHoverRange.style.left = `${e.offsetX - rect2.width / 2}px`;
         });
 
         this.progressBarRange.addEventListener('mouseleave', () => {
-            this.progressHoverRange.classList.remove('active');
+            this.progressHoverRange.classList.remove(styles.active);
         });
 
         // --- Volume ---
@@ -242,6 +252,7 @@ export default class MediaControls {
         // --- Hotkeys & Interactivity (Attached to video wrapper) ---
         document.addEventListener("keydown", (e) => {
             if (e.target !== this.videoElement) return;
+            if (this.loadingState) return;
             this.handleKeydown(e);
         });
 
@@ -256,14 +267,29 @@ export default class MediaControls {
         this.hideCursorDelay();
     }
 
+    public setLoadingState(loading: boolean) {
+        this.loadingState = loading;
+
+        this.loadingIcon.style.display = loading ? '' : "none";
+        this.playButton.style.display = loading ? "none" : '';
+
+        this.progressBarRange.disabled = loading;
+
+        this.videoSelect.disabled = loading;
+        this.audioSelect.disabled = loading;
+        this.subtitleSelect.disabled = loading;
+    }
+
     public setDuration(duration: number) {
         let timeObj = { time: "--:--", hours: false };
         if (duration >= 0) {
             timeObj = formatSeconds(duration, false);
+            this.progressBarRange.style.display = '';
         }
         this.numberDuration.textContent = `/${timeObj.time}`;
         this.hasHours = timeObj.hours;
         this.progressBarRange.max = duration.toString();
+        this.controls.style.setProperty("--video-duration", duration.toString());
     }
 
     public setBufferProgress(percent: number) {
@@ -283,12 +309,12 @@ export default class MediaControls {
         this.videoSelect.innerHTML = '';
         this.videoStreams = videos;
         for (const video of videos) {
-            this.videoSelect.appendChild(
-                <option
-                    selected={ video.isUsed }
-                    value={ video.index.toString() }>
-                    { optionText(video) }
-                </option>);
+            const option = <option
+                value={ video.index.toString() }>
+                { optionText(video) }
+            </option> as HTMLOptionElement;
+            option.selected = video.isUsed;
+            this.videoSelect.appendChild(option);
         }
 
         const visible = videos.length > 0 ? 'unset' : 'none';
@@ -302,11 +328,12 @@ export default class MediaControls {
         this.audioSelect.innerHTML = '';
         this.audioStreams = audios;
         for (const audio of audios) {
-            this.audioSelect.appendChild(<option
-                selected={ audio.isUsed }
+            const option = <option
                 value={ audio.index.toString() }>
                 { optionText(audio) }
-            </option>);
+            </option> as HTMLOptionElement;
+            option.selected = audio.isUsed;
+            this.audioSelect.appendChild(option);
         }
 
         const visible = audios.length > 0 ? 'unset' : 'none';
@@ -320,11 +347,12 @@ export default class MediaControls {
         this.subtitleSelect.innerHTML = '';
         this.subtitleStreams = subtitles;
         for (const subtitle of subtitles) {
-            this.subtitleSelect.appendChild(<option
-                selected={ subtitle.isUsed }
+            const option = <option
                 value={ subtitle.index.toString() }>
                 { optionText(subtitle) }
-            </option>);
+            </option> as HTMLOptionElement;
+            option.selected = subtitle.isUsed;
+            this.subtitleSelect.appendChild(option);
         }
 
         const visible = subtitles.length > 0 ? 'unset' : 'none';
@@ -340,21 +368,26 @@ export default class MediaControls {
         for (const chapter of chapters) {
             const time = chapter.start;
             this.chapterDataList?.appendChild(
-                <option value={ time.toString() }
-                    title={ chapter.title ?? chapter.id.toString() }
+                <div title={ chapter.title ?? chapter.id.toString() }
                     onclick={ () => this.callbacks.onSeekTo(time) }
+                    class={ styles.chapter }
                     style={ { left: `calc(${time} / var(--video-duration) * 100% - 1px)` } }
                 />);
         }
     }
 
-    public updateCurrentTime(time: number, duration?: number) {
-        const mediaDuration = duration ?? this.callbacks.getMediaDuration();
-        const progress = ((time / mediaDuration) * 100).toPrecision(4);
+    public updateCurrentTime(time: number) {
+        const mediaDuration = this.callbacks.getMediaDuration();
+        let progressTime = (time / mediaDuration) * 100;
+        if (!Number.isFinite(progressTime)) {
+            progressTime = 0;
+        }
 
-        if (this.lastProgress !== progress) {
-            this.progressBarRange.value = progress === "NaN" ? '--:--' : time.toString();
-            this.lastProgress = progress;
+        if (this.lastProgress !== progressTime) {
+            this.progressBarRange.value = progressTime === 0 ? '--:--' : time.toString();
+            this.lastProgress = progressTime;
+
+            const progress = progressTime.toPrecision(4);
             this.bufferBar.style.setProperty('--video-progress', `${progress}%`);
         }
 
@@ -411,14 +444,14 @@ export default class MediaControls {
         } else {
             const setupVideo = () => {
                 this.controlsContainer.classList.add(styles.fullscreen);
-                this.videoElement.classList.add(styles.fullscreenVideo);
+                this.videoElement.parentElement?.classList.add(styles.fullscreenVideo);
             };
             const exitFullscreenSetup = () => {
                 this.controlsContainer.classList.remove(styles.fullscreen);
-                this.videoElement.classList.remove(styles.fullscreenVideo);
+                this.videoElement.parentElement?.classList.remove(styles.fullscreenVideo);
             };
 
-            const parent = this.videoElement.parentElement!;
+            const parent = this.controlsContainer.parentElement!;
 
             if (parent && parent.requestFullscreen) {
                 parent.requestFullscreen().then(() => {
@@ -454,7 +487,7 @@ export default class MediaControls {
 
     private showCursor() {
         this.videoElement.style.cursor = 'auto';
-        this.controls.classList.remove("inactive");
+        this.controls.classList.remove(styles.inactive);
         if (this.cursorTimeoutId) clearTimeout(this.cursorTimeoutId);
     }
 
@@ -462,7 +495,7 @@ export default class MediaControls {
         if (this.cursorTimeoutId) clearTimeout(this.cursorTimeoutId);
         this.cursorTimeoutId = window.setTimeout(() => {
             this.videoElement.style.cursor = 'none';
-            this.controls.classList.add("inactive");
+            this.controls.classList.add(styles.inactive);
         }, 3000);
     }
 

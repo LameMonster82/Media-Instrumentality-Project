@@ -6,11 +6,22 @@
 #include "libavutil/mem.h"
 #include <stdio.h>
 
-EM_JS(int, read_packet, (void *opaque, uint8_t *buf, int buf_size),
+EM_JS(int, read_js_packet, (void *opaque, uint8_t *buf, int buf_size),
       { return self.read_packet(buf, buf_size); });
 
 EM_JS(int64_t, seek_packet, (void *opaque, int64_t offset, int whence),
       { return self.seek_packet(offset, whence); });
+
+
+int read_packet(void *opaque, uint8_t *buf, int buf_size) {
+    int len = read_js_packet(opaque, buf, buf_size);
+
+    if(len == 0) {
+        return AVERROR_EOF;
+    }
+
+    return len;
+}
 
 
 int allocate_io(BridgeContext *ctx, int buffer_size, int is_stream) {

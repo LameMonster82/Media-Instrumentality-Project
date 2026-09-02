@@ -248,22 +248,6 @@
            | [sizeof=40, align=8]
 
 *** Dumping AST Record Layout
-         0 | union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5)
-         0 |   uint64_t mask
-         0 |   AVChannelCustom * map
-           | [sizeof=8, align=8]
-
-*** Dumping AST Record Layout
-         0 | struct AVChannelLayout
-         0 |   enum AVChannelOrder order
-         4 |   int nb_channels
-         8 |   union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5) u
-         8 |     uint64_t mask
-         8 |     AVChannelCustom * map
-        16 |   void * opaque
-           | [sizeof=24, align=8]
-
-*** Dumping AST Record Layout
          0 | struct AVDictionaryEntry
          0 |   char * key
          4 |   char * value
@@ -288,6 +272,22 @@
         28 |   const AVProfile * profiles
         32 |   const char * wrapper_name
            | [sizeof=36, align=4]
+
+*** Dumping AST Record Layout
+         0 | union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5)
+         0 |   uint64_t mask
+         0 |   AVChannelCustom * map
+           | [sizeof=8, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVChannelLayout
+         0 |   enum AVChannelOrder order
+         4 |   int nb_channels
+         8 |   union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5) u
+         8 |     uint64_t mask
+         8 |     AVChannelCustom * map
+        16 |   void * opaque
+           | [sizeof=24, align=8]
 
 *** Dumping AST Record Layout
          0 | struct AVCodecContext
@@ -642,16 +642,15 @@
          4 |   int y
          8 |   int width
         12 |   int height
-        16 |   int nb_colors
-        24 |   int64_t pts
-        32 |   double ts_js
-        40 |   double dur_js
-        48 |   uintptr_t[4] src_data
-        64 |   int32_t[4] src_linesize
-        80 |   int32_t stream_index
-        84 |   uint8_t * rgba_buff
-        88 |   AVSubtitle * frame
-           | [sizeof=96, align=8]
+        16 |   int codec_width
+        20 |   int codec_height
+        24 |   int nb_colors
+        32 |   int64_t pts
+        40 |   uintptr_t[4] src_data
+        56 |   int32_t[4] src_linesize
+        72 |   int32_t stream_index
+        76 |   uint8_t * rgba_buff
+           | [sizeof=80, align=8]
 
 *** Dumping AST Record Layout
          0 | struct AVPacket
@@ -964,7 +963,8 @@
        260 |   int32_t num_channels
        264 |   uint8_t * description
        268 |   int32_t description_size
-           | [sizeof=272, align=4]
+       272 |   int32_t sample_format
+           | [sizeof=276, align=4]
 
 *** Dumping AST Record Layout
          0 | VideoDecoderConfig

@@ -9,13 +9,14 @@ export class VideoStreamTrackFallback implements MediaStreamTrackWrapper<VideoFr
     private writer: WritableStreamDefaultWriter<VideoFrame>;
 
     constructor() {
-        this.track = this.createWebGLTrack();
+        this.track = this.createBitmapTrack()
         this.track.contentHint = "motion";
         this.writableStream = this.track.writable;
         this.writer = this.writableStream.getWriter();
     }
 
-    async initialize() {}
+    async initialize() { }
+    async stealPlayEvent() { }
 
     public async writeData(frame: VideoFrame): Promise<void> {
         await this.writer.write(frame);

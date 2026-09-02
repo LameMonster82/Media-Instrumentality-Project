@@ -17,7 +17,7 @@ export default defineConfig({
         },
     },
 
-    assetsInclude: ['**/*.MP4', '**/*.xml', '**/*.wasm', '**/*.mkv'],
+    assetsInclude: ['**/*.MP4', '**/*.xml', '**/*.wasm', '**/*.mkv', '**/*.png'],
 
     esbuild: {
         jsxImportSource: "custom-jsx",

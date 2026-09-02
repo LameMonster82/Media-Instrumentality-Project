@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import type { MainModule as MainModule32 } from "@FFmpeg/ffmpeg-wasm32/ffmpeg";
 import type { MainModule as MainModule64 } from "@FFmpeg/ffmpeg-wasm64/ffmpeg";
-import type { AVChromaLocation, AVColorPrimaries, AVColorRange, AVColorSpace, AVColorTransferCharacteristic, AVSampleFormat } from "./advancedTypes/AVTypes";
+import { AVPixelFormat, type AVChromaLocation, type AVColorPrimaries, type AVColorRange, type AVColorSpace, type AVColorTransferCharacteristic, type AVSampleFormat } from "./advancedTypes/AVTypes";
 
 import * as Glue32 from "@FFmpeg/ffmpeg-wasm32/structs-wasm32";
 import * as Glue64 from "@FFmpeg/ffmpeg-wasm64/structs-wasm64";
@@ -107,7 +107,7 @@ export interface FileInfo {
     nb_streams: number;
     metadata: Record<string, string>;     // AVDictionary*
     chapters: ChapterInfo[];
-    streams: StreamInfo[];
+    streams: Map<number, StreamInfo>;
 }
 
 export interface VideoFrame {
@@ -154,10 +154,10 @@ export interface SubtitleFrame {
     y: number;
     width: number;
     height: number;
+    codecWidth: number;
+    codecHeight: number;
     nb_colors: number;
     pts: bigint;
-    ts_js: number;
-    dur_js: number;
     src_data: (number | bigint)[];      // array of 4 pointers (uint8_t*)
     src_linesize: number[];  // array of 4 int32_t
     stream_index: number;
@@ -207,6 +207,7 @@ export interface AudioDecoderConfigStruct {
     num_channels: number;
     description: number;            // uint8_t* pointer
     description_size: number;
+    sample_format: number;          // AudioSampleFormatCode (-1 = none)
 }
 
 export interface SubtitleConfigStruct {
@@ -216,7 +217,7 @@ export interface SubtitleConfigStruct {
 
 export interface AttachmentConfigStruct {
     type: AttachmentType,
-    data: Uint8Array;
+    data: Uint8Array<ArrayBuffer>;
 }
 
 export interface SmallerDemux {
@@ -263,9 +264,9 @@ export function readAVDict(module: MainModule, ptr: number, is64Bit: boolean): R
     return dict;
 }
 
-export function readChapterInfo(module: MainModule, offset: number, is64Bit: boolean): ChapterInfo {
+export function readChapterInfo(module: MainModule, memory: ArrayBufferLike, offset: number, is64Bit: boolean): ChapterInfo {
     const glue = is64Bit ? Glue64 : Glue32;
-    const info = glue.readChapterInfo(module.wasmMemory.buffer, offset);
+    const info = glue.readChapterInfo(memory, offset);
 
     const metadata = readAVDict(module, Number(info.metadata), is64Bit);
     return {
@@ -276,9 +277,12 @@ export function readChapterInfo(module: MainModule, offset: number, is64Bit: boo
     };
 }
 
-export function readStreamInfo(module: MainModule, offset: number, is64Bit: boolean): StreamInfo {
+export function readStreamInfo(module: MainModule, memory: ArrayBufferLike, offset: number, is64Bit: boolean): StreamInfo | null {
     const glue = is64Bit ? Glue64 : Glue32;
-    const info = glue.readStreamInfo(module.wasmMemory.buffer, offset);
+    const info = glue.readStreamInfo(memory, offset);
+
+    if (info.type === AVMediaType.AVMEDIA_TYPE_UNKNOWN)
+        return null;
 
     const metadata = readAVDict(module, Number(info.metadata), is64Bit);
     // Recursively parse nested configs if pointers are non-zero
@@ -288,13 +292,13 @@ export function readStreamInfo(module: MainModule, offset: number, is64Bit: bool
     let attachment_config: AttachmentConfigStruct | undefined | null;
 
     if (info.type === AVMediaType.AVMEDIA_TYPE_VIDEO) {
-        video_config = info.video_config !== 0 ? readVideoDecoderConfig(module.wasmMemory.buffer, Number(info.video_config), is64Bit) : null;
+        video_config = info.video_config !== 0 ? readVideoDecoderConfig(memory, Number(info.video_config), is64Bit) : null;
     } else if (info.type === AVMediaType.AVMEDIA_TYPE_AUDIO) {
-        audio_config = info.audio_config !== 0 ? readAudioDecoderConfig(module.wasmMemory.buffer, Number(info.audio_config), is64Bit) : null;
+        audio_config = info.audio_config !== 0 ? readAudioDecoderConfig(memory, Number(info.audio_config), is64Bit) : null;
     } else if (info.type === AVMediaType.AVMEDIA_TYPE_SUBTITLE) {
-        subtitle_config = info.subtitle_config !== 0 ? readASSSubtitleConfig(module.wasmMemory.buffer, Number(info.subtitle_config), is64Bit) : null;
+        subtitle_config = info.subtitle_config !== 0 ? readASSSubtitleConfig(memory, Number(info.subtitle_config), is64Bit) : null;
     } else if (info.type === AVMediaType.AVMEDIA_TYPE_ATTACHMENT) {
-        attachment_config = info.attachment_config !== 0 ? readAttachmentConfig(module.wasmMemory.buffer, Number(info.attachment_config), is64Bit) : null;
+        attachment_config = info.attachment_config !== 0 ? readAttachmentConfig(memory, Number(info.attachment_config), is64Bit) : null;
     }
 
     return {
@@ -309,9 +313,9 @@ export function readStreamInfo(module: MainModule, offset: number, is64Bit: bool
     };
 }
 
-export function readFileInfo(module: MainModule, offset: number, is64Bit: boolean): FileInfo {
+export function readFileInfo(module: MainModule, memory: ArrayBufferLike, offset: number, is64Bit: boolean): FileInfo {
     const glue = is64Bit ? Glue64 : Glue32;
-    const info = glue.readFileInfo(module.wasmMemory.buffer, offset);
+    const info = glue.readFileInfo(memory, offset);
 
     const metadata = readAVDict(module, Number(info.metadata), is64Bit);
     // Read arrays
@@ -320,15 +324,17 @@ export function readFileInfo(module: MainModule, offset: number, is64Bit: boolea
         const chapSize = glue.SIZEOF_ChapterInfo;
         const chaptersPtr = Number(info.chapters);
         for (let i = 0; i < info.nb_chapters; i++) {
-            chapters.push(readChapterInfo(module, chaptersPtr + i * chapSize, is64Bit));
+            chapters.push(readChapterInfo(module, memory, chaptersPtr + i * chapSize, is64Bit));
         }
     }
-    const streams: StreamInfo[] = [];
+    const streams: Map<number, StreamInfo> = new Map();
     if (Number(info.streams) !== 0) {
         const streamSize = glue.SIZEOF_StreamInfo;
         const streamsPtr = Number(info.streams);
         for (let i = 0; i < info.nb_streams; i++) {
-            streams.push(readStreamInfo(module, streamsPtr + i * streamSize, is64Bit));
+            const stream = readStreamInfo(module, memory, streamsPtr + i * streamSize, is64Bit);
+            if (stream)
+                streams.set(i, stream);
         }
     }
     return {
@@ -413,7 +419,7 @@ export function readAudioFrame(buffer: ArrayBuffer, offset: number, is64Bit: boo
 
     return {
         channels: info.channels,
-        samples: info.channels,
+        samples: info.samples,
         sample_rate: info.sample_rate,
         src_data: src_data,
         linesize: info.linesize,
@@ -435,14 +441,14 @@ export function readSubtitleFrame(buffer: ArrayBuffer, offset: number, is64Bit: 
     if (is64Bit) {
         const actual_data = new BigUint64Array(buffer, info.src_data.byteOffset, 8);
         const actual_linesize = new Int32Array(buffer, info.src_linesize.byteOffset, 8);
-        for (let i = 0; i < 8; i++) {
+        for (let i = 0; i < 4; i++) {
             src_data.push(Number(actual_data[i]));
             src_linesize.push(actual_linesize[i]);
         }
     } else {
         const actual_data = new Uint32Array(buffer, info.src_data.byteOffset, 8);
         const actual_linesize = new Int32Array(buffer, info.src_linesize.byteOffset, 8);
-        for (let i = 0; i < 8; i++) {
+        for (let i = 0; i < 4; i++) {
             src_data.push(actual_data[i]);
             src_linesize.push(actual_linesize[i]);
         }
@@ -453,10 +459,10 @@ export function readSubtitleFrame(buffer: ArrayBuffer, offset: number, is64Bit: 
         y: info.y,
         width: info.width,
         height: info.height,
+        codecWidth: info.codec_width,
+        codecHeight: info.codec_height,
         nb_colors: info.nb_colors,
         pts: info.pts,
-        ts_js: info.ts_js,
-        dur_js: info.dur_js,
         src_data,
         src_linesize,
         stream_index: info.stream_index,
@@ -494,7 +500,7 @@ export function readReturnType(buffer: ArrayBuffer, offset: number, is64Bit: boo
     };
 }
 
-export function readVideoDecoderConfig(buffer: ArrayBuffer, offset: number, is64Bit: boolean): VideoDecoderConfigStruct {
+export function readVideoDecoderConfig(buffer: ArrayBufferLike, offset: number, is64Bit: boolean): VideoDecoderConfigStruct {
     const glue = is64Bit ? Glue64 : Glue32;
     const info = glue.readVideoDecoderConfig(buffer, offset);
 
@@ -512,7 +518,7 @@ export function readVideoDecoderConfig(buffer: ArrayBuffer, offset: number, is64
     };
 }
 
-export function readAudioDecoderConfig(buffer: ArrayBuffer, offset: number, is64Bit: boolean): AudioDecoderConfigStruct {
+export function readAudioDecoderConfig(buffer: ArrayBufferLike, offset: number, is64Bit: boolean): AudioDecoderConfigStruct {
     const glue = is64Bit ? Glue64 : Glue32;
     const info = glue.readAudioDecoderConfig(buffer, offset);
     return {
@@ -520,7 +526,8 @@ export function readAudioDecoderConfig(buffer: ArrayBuffer, offset: number, is64
         sample_rate: info.sample_rate,
         num_channels: info.num_channels,
         description: Number(info.description),
-        description_size: info.description_size
+        description_size: info.description_size,
+        sample_format: info.sample_format
     };
 }
 
@@ -542,16 +549,35 @@ export function readAttachmentConfig(buffer: ArrayBufferLike, offset: number, is
     };
 }
 
-export function readSmallerDemux(buffer: ArrayBufferLike, offset: number, is64Bit: boolean): SmallerDemux {
-    const view = new DataView(buffer);
-    let off = offset;
-    const extensionsPtr = readPointer(view, off, is64Bit); off += is64Bit ? 8 : 4;
-    const long_namePtr = readPointer(view, off, is64Bit); off += is64Bit ? 8 : 4;
-    const mime_typePtr = readPointer(view, off, is64Bit); off += is64Bit ? 8 : 4;
-    const namePtr = readPointer(view, off, is64Bit);
-    const extensions = extensionsPtr !== 0 ? readCString(view, extensionsPtr) : "";
-    const long_name = long_namePtr !== 0 ? readCString(view, long_namePtr) : "";
-    const mime_type = mime_typePtr !== 0 ? readCString(view, mime_typePtr) : "";
-    const name = namePtr !== 0 ? readCString(view, namePtr) : "";
-    return { extensions, long_name, mime_type, name };
+// export function readSmallerDemux(buffer: ArrayBufferLike, offset: number, is64Bit: boolean): SmallerDemux {
+//     const view = new DataView(buffer);
+//     let off = offset;
+//     const extensionsPtr = readPointer(view, off, is64Bit); off += is64Bit ? 8 : 4;
+//     const long_namePtr = readPointer(view, off, is64Bit); off += is64Bit ? 8 : 4;
+//     const mime_typePtr = readPointer(view, off, is64Bit); off += is64Bit ? 8 : 4;
+//     const namePtr = readPointer(view, off, is64Bit);
+//     const extensions = extensionsPtr !== 0 ? readCString(view, extensionsPtr) : "";
+//     const long_name = long_namePtr !== 0 ? readCString(view, long_namePtr) : "";
+//     const mime_type = mime_typePtr !== 0 ? readCString(view, mime_typePtr) : "";
+//     const name = namePtr !== 0 ? readCString(view, namePtr) : "";
+//     return { extensions, long_name, mime_type, name };
+// }
+
+export function AVPixelFormatArrayToData(module: MainModule, pixelFormats: AVPixelFormat[], is64Bit: boolean): number | bigint {
+    const size = (pixelFormats.length + 1) * 4;
+    let ptr: number;
+    if (is64Bit) {
+        module = module as MainModule64;
+        ptr = Number(module._malloc(BigInt(size)));
+    } else {
+        module = module as MainModule32;
+        ptr = module._malloc(size);
+    }
+
+    for (let i = 0; i < pixelFormats.length; i++) {
+        module.setValue(ptr+ i * 4, pixelFormats[i], 'i32');
+    }
+    module.setValue(ptr + pixelFormats.length * 4, AVPixelFormat.AV_PIX_FMT_NONE, 'i32');
+
+    return is64Bit ? BigInt(ptr) : ptr;
 }

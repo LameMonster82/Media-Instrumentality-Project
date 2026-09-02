@@ -20,10 +20,9 @@ export class AudioStreamTrackNative implements MediaStreamTrackWrapper<AudioData
         this.writer = this.writableStream.getWriter();
     }
 
+    async initialize() { }
+    async stealPlayEvent() { }
 
-    initialize(): Promise<void> {
-        return Promise.resolve();
-    }
     enable(enable: boolean): void {
         this.track.enabled = enable;
     }

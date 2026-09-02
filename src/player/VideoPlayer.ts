@@ -11,6 +11,7 @@ import { GetAudioTrackCtor } from "./Tracks/audio/utils";
 import { audioTime, type WorkerAudioDataInit } from "./Tracks/audio/audioTypes";
 import { Dispositions } from "./FFmpeg/advancedTypes/AVTypes";
 import type { ASSTrackStream, BitmapSubArgs, TextTrackStream, VTTCueArgs } from "./Tracks/subtitles/types";
+import musicIcon from "@Resources/Icons/music.svg?url";
 
 import JASSUB, { webYCbCrMap } from "jassub";
 import type { ControlStream } from "@/components/controls/types";
@@ -65,6 +66,8 @@ export class VideoPlayer2 {
 
     constructor(videoSrc: string | File) {
         // DOM
+        this.video.classList.add(styles.videoItself);
+        this.videoContainer.classList.add(styles.player);
         this.videoContainer.appendChild(this.video);
         this.container.appendChild(this.videoContainer);
         this.video.srcObject = this.mediaStream;
@@ -104,23 +107,23 @@ export class VideoPlayer2 {
         const controls = new MediaControls(this.video, {
             onPlayPause: async (intent?: boolean) => {
                 intent ??= this.paused;
-                if (this.endOfFile && intent) {
+                if (this.endOfFile && intent && this.duration <= this.mediaTime) {
                     await this.seek(0);
                     return intent;
                 }
                 if (intent) {
-                    this.Play();
+                    this.play();
                     try {
                         this.video.play();
                     } catch { }
                 } else {
-                    this.Pause();
+                    this.pause();
                 }
                 this.controls.setPlayback(intent);
                 return intent;
             },
             onSeekTo: (time: number) => {
-                this.Pause();
+                this.pause();
                 this.seek(time * 1000);
             },
             onStepFrame: () => {
@@ -158,21 +161,23 @@ export class VideoPlayer2 {
         this.updateTime();
 
         // Attachments
-        let fonts: Uint8Array[] = [];
+        const fonts: Uint8Array[] = [];
         let cover: Blob | undefined = undefined;
-        const attachments = data.info.streams.filter(s => s.type === AVMediaType.AVMEDIA_TYPE_ATTACHMENT);
+        const streams = data.info.streams.values().toArray();
+        const attachments = streams.filter(s => s.type === AVMediaType.AVMEDIA_TYPE_ATTACHMENT);
         for (const attachment of attachments) {
             if (attachment.attachment_config?.type === AttachmentType.FONT) {
                 fonts.push(attachment.attachment_config.data);
             } else if (attachment.attachment_config?.type === AttachmentType.COVER) {
-                // @ts-ignore
+
                 cover = new Blob([attachment.attachment_config.data], { type: attachment.metadata["mimetype"] });
             }
         }
 
         // Renderers
-        const initStream = async <T extends MediaStreamTrackWrapper<unknown>>(enabled: boolean, Renderer: new (...args: any[]) => T, ...args: any[]): Promise<T> => {
-            let renderer = new Renderer(...args ?? []);
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        const initStream = async <T extends MediaStreamTrackWrapper<unknown>>(enabled: boolean, Renderer: new (...args: unknown[]) => T, ...args: unknown[]): Promise<T> => {
+            const renderer = new Renderer(...args ?? []);
             await renderer.initialize();
 
             const track = renderer.getTrack();
@@ -184,16 +189,22 @@ export class VideoPlayer2 {
             return renderer;
         };
 
-        this.activeVideoStream = data.info.streams.findIndex(s => s.type === AVMediaType.AVMEDIA_TYPE_VIDEO && !!(s.disposition & Dispositions.AV_DISPOSITION_DEFAULT));
-        this.activeAudioStream = data.info.streams.findIndex(s => s.type === AVMediaType.AVMEDIA_TYPE_AUDIO && !!(s.disposition & Dispositions.AV_DISPOSITION_DEFAULT));
-        this.activeSubtitleStream = data.info.streams.findIndex(s => s.type === AVMediaType.AVMEDIA_TYPE_SUBTITLE && !!(s.disposition & Dispositions.AV_DISPOSITION_DEFAULT));
+        for (const [index, stream] of data.info.streams) {
+            if (!!!(stream.disposition & Dispositions.AV_DISPOSITION_DEFAULT))
+                continue;
 
-        let videoStreams: ControlStream[] = [];
-        let audioStreams: ControlStream[] = [];
-        let subtitleStreams: ControlStream[] = [];
-        for (let i = 0; i < data.info.streams.length; i++) {
-            const stream = data.info.streams[i];
+            if (stream.type === AVMediaType.AVMEDIA_TYPE_VIDEO)
+                this.activeVideoStream = index;
+            if (stream.type === AVMediaType.AVMEDIA_TYPE_AUDIO)
+                this.activeAudioStream = index;
+            if (stream.type === AVMediaType.AVMEDIA_TYPE_SUBTITLE)
+                this.activeSubtitleStream = index;
+        }
 
+        const videoStreams: ControlStream[] = [{ index: -1, isUsed: false, metadata: { title: "Disable" } }];
+        const audioStreams: ControlStream[] = [{ index: -1, isUsed: false, metadata: { title: "Disable" } }];
+        const subtitleStreams: ControlStream[] = [{ index: -1, isUsed: false, metadata: { title: "Disable" } }];
+        for (const [i, stream] of data.info.streams) {
             let enabled = false;
             switch (stream.type) {
                 case AVMediaType.AVMEDIA_TYPE_VIDEO: {
@@ -201,7 +212,7 @@ export class VideoPlayer2 {
                         this.activeVideoStream = i;
                     if (this.activeVideoStream === i)
                         enabled = true;
-                    let renderer = await initStream(enabled, GetVideoTrackCtor());
+                    const renderer = await initStream(enabled, GetVideoTrackCtor());
                     this.videoRenderer.set(i, renderer);
                     videoStreams.push({
                         index: i,
@@ -215,7 +226,7 @@ export class VideoPlayer2 {
                         this.activeAudioStream = i;
                     if (this.activeAudioStream === i)
                         enabled = true;
-                    let renderer = await initStream(enabled, GetAudioTrackCtor(), stream.audio_config!.sample_rate, stream.audio_config!.num_channels);
+                    const renderer = await initStream(enabled, GetAudioTrackCtor(), stream.audio_config!.sample_rate, stream.audio_config!.num_channels);
                     this.audioRenderer.set(i, renderer);
                     audioStreams.push({
                         index: i,
@@ -232,7 +243,7 @@ export class VideoPlayer2 {
 
                     switch (stream.subtitle_config!.type) {
                         case AVSubtitleType.SUBTITLE_TEXT: {
-                            let track = this.video.addTextTrack("subtitles", stream.metadata["title"], stream.metadata["language"]);
+                            const track = this.video.addTextTrack("subtitles", stream.metadata["title"], stream.metadata["language"]);
                             track.mode = enabled ? "showing" : "disabled";
                             this.subtitleTextRenderer.set(i, {
                                 track,
@@ -246,7 +257,7 @@ export class VideoPlayer2 {
                             canvas.style.display = enabled ? "" : "none";
                             this.videoContainer.appendChild(canvas);
 
-                            let renderer = new JASSUB({
+                            const renderer = new JASSUB({
                                 canvas,
                                 debug: false,
                                 subContent: stream.subtitle_config!.subtitle_header,
@@ -337,8 +348,8 @@ export class VideoPlayer2 {
                 else buffer.push(e.data);
 
                 buffer.sort((a, b) => {
-                    if (a == null) return 1;
-                    if (b == null) return -1;
+                    if (a === null) return 1;
+                    if (b === null) return -1;
                     return a.timestamp - b.timestamp;
                 });
 
@@ -351,9 +362,7 @@ export class VideoPlayer2 {
             messageChannel2.onmessage = messageChannel.onmessage;
         };
 
-        for (let i = 0; i < data.info.streams.length; i++) {
-            const stream = data.info.streams[i];
-
+        for (const [i, stream] of data.info.streams) {
             switch (stream.type) {
                 case AVMediaType.AVMEDIA_TYPE_VIDEO: handleMessage(i, this.videoFrameBuffer); break;
                 case AVMediaType.AVMEDIA_TYPE_AUDIO: handleMessage(i, this.audioFrameBuffer); break;
@@ -367,6 +376,10 @@ export class VideoPlayer2 {
                             const stream = this.subtitleBitmapRenderer.has(i);
                             if (stream)
                                 messageChannel.onmessage = (e: MessageEvent<BitmapSubArgs>) => {
+                                    const lastFrame = this.subtitleBitmapBuffer[this.subtitleBitmapBuffer.length - 1];
+                                    if (lastFrame && lastFrame.endTime === 0) {
+                                        lastFrame.endTime = e.data.startTime;
+                                    }
                                     this.subtitleBitmapBuffer.push(e.data);
 
                                     this.subtitleBitmapBuffer.sort((a, b) => {
@@ -424,45 +437,7 @@ export class VideoPlayer2 {
 
         this.firstFrameAsPoster(cover);
         this.initDone = true;
-    }
-
-    private async timeLoop() {
-        let lastTime = performance.now();
-        while (true) {
-            let diff = performance.now() - lastTime;
-            lastTime = performance.now();
-            diff = Math.min(diff, 16);
-            if (diff < 8)
-                await new Promise(r => setTimeout(r, 0));
-
-            if (this.initDone && !this.endOfFile && !this.seeking)
-                this.feedVideoBuffer();
-
-
-            if ((this.paused && !this.stepFrame) || this.seeking) continue;
-            //console.log(diff);
-
-            this.mediaTime = Math.max(0, Math.min(this.mediaTime + diff, this.duration));
-
-            while (await this.renderData() && !this.stepFrame) { };
-            this.updateTime();
-
-            if (this.endOfFile && this.mediaTime === this.duration) {
-                this.Pause();
-            }
-            this.stepFrame = false;
-        }
-    }
-
-    private feedVideoBuffer() {
-        if (this.videoFrameBuffer.length < 16) {
-            this.requestData();
-        } else {
-            const hasFrame = this.videoFrameBuffer.some(v => v !== null);
-            if (!hasFrame) {
-                this.requestData();
-            }
-        }
+        this.controls.setLoadingState(false);
     }
 
     private async requestData() {
@@ -489,9 +464,74 @@ export class VideoPlayer2 {
         this.dataRequested = false;
     }
 
+    private async timeLoop() {
+        const stub = () => new Promise(resolve => setTimeout(resolve, 0));
+        let lastTime = performance.now();
+        while (true) {
+            const diff = performance.now() - lastTime;
+            lastTime = performance.now();
+
+            if (this.initDone && !this.endOfFile && !this.seeking)
+                this.feedVideoBuffer();
+
+
+            if ((this.paused && !this.stepFrame) || this.seeking) {
+                await stub();
+                continue;
+            }
+
+            if (!this.hasDataToWrite()) {
+                await stub();
+            }
+
+            this.mediaTime = Math.max(0, Math.min(this.mediaTime + diff, this.duration));
+
+            while (await this.renderData() && !this.stepFrame) { };
+            this.updateTime();
+
+            if (this.endOfFile && this.mediaTime === this.duration) {
+                this.pause();
+            }
+            this.stepFrame = false;
+        }
+    }
+
+    private feedVideoBuffer() {
+        if (this.videoFrameBuffer.length < 16) {
+            this.requestData();
+        } else {
+            const hasFrame = this.videoFrameBuffer.some(v => v !== null);
+            if (!hasFrame) {
+                this.requestData();
+            }
+        }
+    }
+
+    private hasDataToWrite() {
+        const videoStream = this.videoRenderer.get(this.activeVideoStream);
+        const audioStream = this.audioRenderer.get(this.activeAudioStream);
+
+        if (this.videoFrameBuffer[0] instanceof VideoFrame && videoStream) {
+            const frame = this.videoFrameBuffer[0];
+            if (frame.timestamp / 1000 <= this.mediaTime) {
+                return true;
+            }
+        }
+
+        if (this.audioFrameBuffer[0] && audioStream) {
+            const frame = this.audioFrameBuffer[0];
+            const { timestamp } = audioTime(frame);
+            if (timestamp / 1000 <= this.mediaTime) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
 
     private async renderData() {
-        let promises = [];
+        const promises = [];
         let hasFrame = false;
         const videoStream = this.videoRenderer.get(this.activeVideoStream);
         const audioStream = this.audioRenderer.get(this.activeAudioStream);
@@ -506,14 +546,19 @@ export class VideoPlayer2 {
                 promise.then(() => frame.close());
                 promises.push(promise);
                 hasFrame = true;
+
+                this.videoContainer.style.setProperty("--videoWidth", this.video.videoWidth.toString());
+                this.videoContainer.style.setProperty("--videoHeight", this.video.videoHeight.toString());
+                this.videoContainer.style.setProperty("--codecWidth", this.video.videoWidth.toString());
+                this.videoContainer.style.setProperty("--codecHeight", this.video.videoHeight.toString());
             }
         } else if (videoStream) {
-            //console.warn("Low on Video Frames");
+            console.debug("Low on Video Frames");
         }
 
         if (this.audioFrameBuffer[0] !== undefined && this.audioFrameBuffer[0] !== null && audioStream) {
             let frame = this.audioFrameBuffer[0];
-            let { timestamp, duration } = audioTime(frame);
+            const { timestamp } = audioTime(frame);
             if (timestamp / 1000 <= this.mediaTime) {
                 frame = this.audioFrameBuffer.shift()!;
                 const promise = audioStream.writeData(frame, this.mediaTime);
@@ -524,15 +569,17 @@ export class VideoPlayer2 {
                 promises.push(promise);
             }
         } else if (audioStream) {
-            //console.warn("Low on Audio Frames");
+            console.debug("Low on Audio Frames");
         }
 
         if (subtitleASSStream && hasFrame && !subtitleASSStream.track.busy) {
-            let frame = this.videoFrameBuffer[0];
+            const frame = this.videoFrameBuffer[0];
             if (!subtitleASSStream.hasColorspace && frame instanceof VideoFrame) {
                 await subtitleASSStream.track.renderer._setColorSpace(webYCbCrMap[frame.colorSpace.matrix!]);
                 subtitleASSStream.hasColorspace = true;
             }
+
+            
             subtitleASSStream.track.manualRender({
                 expectedDisplayTime: performance.now(),
                 mediaTime: this.mediaTime,
@@ -542,35 +589,39 @@ export class VideoPlayer2 {
 
             //promises.push(promise);
         } else if (subtitleBitmapStream && this.subtitleBitmapCanvas) {
-            let frame = this.videoFrameBuffer[0];
-            if (frame && (this.subtitleBitmapCanvas.canvas.width !== frame.codedWidth ||
-                this.subtitleBitmapCanvas.canvas.height !== frame.codedHeight)
-            ) {
-                this.subtitleBitmapCanvas.canvas.width = frame.codedWidth;
-                this.subtitleBitmapCanvas.canvas.height = frame.codedHeight
-            }
-            let subtitlesToRemove: string[] = [];
+
+
+            const subtitlesToRemove: string[] = [];
             for (const sub of this.subtitleBitmapBuffer) {
-                const hasBegun = sub.startTime / 1000 > this.mediaTime;
-                const hasEnded = sub.endTime / 1000 > this.mediaTime;
+                const hasBegun = sub.startTime / 1000 < this.mediaTime;
+                const hasEnded = sub.endTime !== 0 && sub.endTime / 1000 < this.mediaTime;
                 const hasBeenRendered = this.activeBitmapSubtitles.includes(sub.uuid);
+                const canvas = this.subtitleBitmapCanvas.canvas;
 
                 if (!hasBegun) {
                     // Nothing  
                 } else if (hasBegun && !hasEnded && !hasBeenRendered) {
-                    this.subtitleBitmapCanvas.drawImage(sub.frame, sub.x, sub.y);
+                    if (canvas.width !== sub.codecWidth ||
+                        canvas.height !== sub.codecHeight) {
+                        canvas.width = sub.codecWidth;
+                        canvas.height = sub.codecHeight;
+                    }
+                    canvas.style.setProperty("--codecWidth", sub.codecWidth.toString());
+                    canvas.style.setProperty("--codecHeight", sub.codecHeight.toString());
+
+                    this.subtitleBitmapCanvas.drawImage(sub.frame, sub.x, sub.y, sub.frame.width, sub.frame.height);
+                    this.activeBitmapSubtitles.push(sub.uuid);
                 } else if (hasBegun && hasEnded && hasBeenRendered) {
-                    const canvas = this.subtitleBitmapCanvas.canvas;
                     this.subtitleBitmapCanvas.clearRect(0, 0, canvas.width, canvas.height);
                     subtitlesToRemove.push(sub.uuid);
 
                     for (const id of this.activeBitmapSubtitles) {
                         const sub2 = this.subtitleBitmapBuffer.find(s => s.uuid === id);
                         if (sub2 && sub2.uuid !== sub.uuid) {
-                            this.subtitleBitmapCanvas.drawImage(sub2.frame, sub2.x, sub2.y);
+                            this.subtitleBitmapCanvas.drawImage(sub.frame, sub.x, sub.y, sub.frame.width, sub.frame.height);
                         }
                     }
-                } else {
+                } else if(hasBegun && hasEnded && !hasBeenRendered) {
                     subtitlesToRemove.push(sub.uuid);
                 }
             }
@@ -580,11 +631,12 @@ export class VideoPlayer2 {
                 if (sub2) sub2.frame.close();
             }
 
-            this.subtitleBitmapBuffer = this.subtitleBitmapBuffer.filter(s => subtitlesToRemove.includes(s.uuid));
-            this.activeBitmapSubtitles = this.activeBitmapSubtitles.filter(s => subtitlesToRemove.includes(s));
+            this.subtitleBitmapBuffer = this.subtitleBitmapBuffer.filter(s => !subtitlesToRemove.includes(s.uuid));
+            this.activeBitmapSubtitles = this.activeBitmapSubtitles.filter(s => !subtitlesToRemove.includes(s));
         }
 
         //await Promise.all(promises);
+
         return promises.length > 0;
     }
 
@@ -601,6 +653,12 @@ export class VideoPlayer2 {
             return;
         }
 
+        if (this.activeVideoStream === -1) {
+            this.video.poster = musicIcon;
+            this.posterUrl = musicIcon;
+            return;
+        }
+
         while (!(this.videoFrameBuffer[0] instanceof VideoFrame)) {
             await new Promise<void>(r => setTimeout(r, 0));
         }
@@ -608,10 +666,11 @@ export class VideoPlayer2 {
         const frame = this.videoFrameBuffer[0] as VideoFrame;
 
         const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+
         canvas.width = frame.codedWidth;
         canvas.height = frame.codedHeight;
 
-        const ctx = canvas.getContext('2d')!;
         ctx.drawImage(frame, 0, 0);
         canvas.toBlob(data => {
             coverMaker(data ?? undefined);
@@ -633,6 +692,7 @@ export class VideoPlayer2 {
         if (this.seeking) return;
         this.mediaTime = time;
         this.seeking = true;
+        this.controls.setLoadingState(true);
         const videoStream = this.videoRenderer.get(this.activeVideoStream);
         const audioStream = this.audioRenderer.get(this.activeAudioStream);
         if (this.activeVideoStream !== -1 && !force) {
@@ -645,6 +705,7 @@ export class VideoPlayer2 {
                 await videoStream?.seekTo(time, true);
                 await audioStream?.seekTo(time, true);
                 this.seeking = false;
+                this.controls.setLoadingState(false);
                 return;
             }
         }
@@ -662,6 +723,7 @@ export class VideoPlayer2 {
                 await videoStream?.seekTo(time, true);
                 await audioStream?.seekTo(time, true);
                 this.seeking = false;
+                this.controls.setLoadingState(false);
                 return;
             }
         }
@@ -692,21 +754,20 @@ export class VideoPlayer2 {
             return;
         }
 
-        this.requestData();
-
         if (this.activeVideoStream !== -1)
             while (this.videoFrameBuffer.length === 0)
-                await new Promise<void>(r => setTimeout(r, 0));
+                await this.requestData();
         else if (this.activeAudioStream !== -1)
             while (this.audioFrameBuffer.length === 0)
-                await new Promise<void>(r => setTimeout(r, 0));
+                await this.requestData();
 
         const newTime = await timePromise;
         this.mediaTime = Number(newTime!.data.time) / 1000;
         this.seeking = false;
+        this.controls.setLoadingState(false);
 
         console.debug("Playing media at", performance.now());
-        this.Play();
+        this.play();
     }
 
     private async updateTrack(type: "video" | "audio" | "subtitle", index: number): Promise<void> {
@@ -759,20 +820,28 @@ export class VideoPlayer2 {
                         sub.frame.close();
                     }
                     this.subtitleBitmapBuffer.length = 0;
-                    const enabled = this.subtitleBitmapRenderer.has(index);
-                    this.subtitleBitmapCanvas.canvas.style.display = enabled ? '' : 'none';
+
+                    for (const i of this.subtitleBitmapRenderer) {
+                        const enabled = index === i;
+                        await updateFFmpeg(i, enabled);
+                    }
+                    this.subtitleBitmapCanvas.canvas.style.display = this.subtitleBitmapRenderer.has(index) ? '' : 'none';
                 }
                 break;
             }
         }
     }
 
-    public Play() {
+    public play() {
         this.controls.setPlayback(true);
         this.paused = false;
+
+        for (const [_, stream] of this.audioRenderer) {
+            stream.stealPlayEvent();
+        }
     }
 
-    public Pause() {
+    public pause() {
         this.controls.setPlayback(false);
         this.paused = true;
     }

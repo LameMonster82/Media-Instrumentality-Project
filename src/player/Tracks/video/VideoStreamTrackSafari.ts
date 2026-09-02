@@ -29,6 +29,8 @@ export class VideoStreamTrackSafari implements MediaStreamTrackWrapper<VideoFram
         this.writableStream = this.track.writable;
     }
 
+    async stealPlayEvent() { }
+
     public async writeData(frame: VideoFrame): Promise<void> {
         this.worker.postMessage(frame, [frame]);
     }

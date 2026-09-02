@@ -10,6 +10,7 @@ export interface MediaStreamTrackWrapper<T> {
     writeData(data: T, currentTime?: number): Promise<void>;
     seekTo(time: number, fastSeek: boolean): Promise<void>;
     destroy(): void;
+    stealPlayEvent(): Promise<void>;
 }
 
 export type AnyMediaStreamTrack = MediaStreamTrackWrapper<unknown>;

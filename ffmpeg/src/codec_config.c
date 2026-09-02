@@ -30,12 +30,18 @@ AudioDecoderConfig *audio_stream_to_config(AVCodecParameters *codecpar) {
 
     ret->sample_rate   = codecpar->sample_rate;
     ret->num_channels  = codecpar->ch_layout.nb_channels;
+    ret->sample_format = AUDIO_SAMPLE_FMT_NONE;
     uint8_t *extradata = codecpar->extradata;
 
     if (strcmp(codecString, "flac") == 0) {
         strcpy(ret->codec, "flac");
-        ret->description      = extradata;
-        ret->description_size = codecpar->extradata_size;
+        if (extradata && codecpar->extradata_size > 0) {
+            ret->description = malloc(codecpar->extradata_size);
+            if (ret->description) {
+                memcpy(ret->description, extradata, codecpar->extradata_size);
+                ret->description_size = codecpar->extradata_size;
+            }
+        }
     } else if (strcmp(codecString, "mp3") == 0) {
         strcpy(ret->codec, "mp3");
     } else if (strcmp(codecString, "aac") == 0) {
@@ -45,16 +51,61 @@ AudioDecoderConfig *audio_stream_to_config(AVCodecParameters *codecpar) {
         case 28: strcpy(ret->codec, "mp4a.40.29"); break;
         default: strcpy(ret->codec, "mp4a.40.2");  break;
         }
-        if (codecpar->extradata_size > 0) {
-            ret->description      = extradata;
-            ret->description_size = codecpar->extradata_size;
+
+        if (extradata && codecpar->extradata_size > 0) {
+            ret->description = malloc(codecpar->extradata_size);
+            if (ret->description) {
+                memcpy(ret->description, extradata, codecpar->extradata_size);
+                ret->description_size = codecpar->extradata_size;
+            }
         }
     } else if (strcmp(codecString, "opus") == 0) {
         strcpy(ret->codec, "opus");
     } else if (strcmp(codecString, "vorbis") == 0) {
         strcpy(ret->codec, "vorbis");
-        ret->description      = extradata;
-        ret->description_size = codecpar->extradata_size;
+        
+        if (extradata && codecpar->extradata_size > 0) {
+            ret->description = malloc(codecpar->extradata_size);
+            if (ret->description) {
+                memcpy(ret->description, extradata, codecpar->extradata_size);
+                ret->description_size = codecpar->extradata_size;
+            }
+        }
+    } else if (codecpar->codec_id >= AV_CODEC_ID_PCM_S16LE &&
+               codecpar->codec_id < AV_CODEC_ID_ADPCM_IMA_QT) {
+        // Raw PCM can be passed through WebCodecs without decoding.
+        switch (codecpar->codec_id) {
+        case AV_CODEC_ID_PCM_U8:
+            strcpy(ret->codec, "pcm-u8");
+            ret->sample_format = AUDIO_SAMPLE_FMT_U8;
+            break;
+        case AV_CODEC_ID_PCM_S16LE:
+        case AV_CODEC_ID_PCM_S16BE:
+            strcpy(ret->codec, "pcm-s16");
+            ret->sample_format = AUDIO_SAMPLE_FMT_S16;
+            break;
+        case AV_CODEC_ID_PCM_S32LE:
+        case AV_CODEC_ID_PCM_S32BE:
+            strcpy(ret->codec, "pcm-s32");
+            ret->sample_format = AUDIO_SAMPLE_FMT_S32;
+            break;
+        case AV_CODEC_ID_PCM_F32LE:
+        case AV_CODEC_ID_PCM_F32BE:
+            strcpy(ret->codec, "pcm-f32");
+            ret->sample_format = AUDIO_SAMPLE_FMT_F32;
+            break;
+        case AV_CODEC_ID_PCM_MULAW:
+            strcpy(ret->codec, "ulaw");
+            break;
+        case AV_CODEC_ID_PCM_ALAW:
+            strcpy(ret->codec, "alaw");
+            break;
+        default:
+            // Planar / 24-bit / 64-bit / float64 PCM has no WebCodecs entry.
+            fprintf(stderr, "Unsupported audio codec: %s\n", codecString);
+            strcpy(ret->codec, codecString);
+            break;
+        }
     } else {
       fprintf(stderr, "Unsupported audio codec: %s\n", codecString);
       strcpy(ret->codec, codecString);
@@ -77,13 +128,17 @@ VideoDecoderConfig *video_stream_to_config(AVCodecParameters *codecpar) {
     ret->color_space     = codecpar->color_space;
 
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(codecpar->format);
+    int bitDepth = desc ? desc->comp[0].depth : 8;
+    int subX     = desc ? desc->log2_chroma_w : 1;
+    int subY     = desc ? desc->log2_chroma_h : 1;
+
     uint8_t *extradata   = codecpar->extradata;
     int      profile     = codecpar->profile;
     int      level       = codecpar->level;
     char     temp[32];
 
     if (strcmp(codecString, "av1") == 0) {
-        strcpy(ret->codec, "av1");
+        strcpy(ret->codec, "av01");
 
         if (profile < 0) profile = 0;
         temp[0] = '\0';
@@ -94,9 +149,15 @@ VideoDecoderConfig *video_stream_to_config(AVCodecParameters *codecpar) {
         temp[0] = '\0';
         sprintf(temp, (level < 10) ? ".0%d" : ".%d", level);
         strcat(ret->codec, temp);
-        strcat(ret->codec, "M");
 
-        int bitDepth = desc->comp->depth;
+        // seq_tier_0 lives in bit 7 of the av1C record's third byte.
+        int tier = 0;
+        if (extradata && codecpar->extradata_size >= 4 &&
+            extradata[0] == 0x81) {
+            tier = (extradata[2] >> 7) & 1;
+        }
+        strcat(ret->codec, tier ? "H" : "M");
+
         temp[0] = '\0';
         sprintf(temp, (bitDepth < 10) ? ".0%d" : ".%d", bitDepth);
         strcat(ret->codec, temp);
@@ -161,7 +222,11 @@ VideoDecoderConfig *video_stream_to_config(AVCodecParameters *codecpar) {
             sprintf(temp, "%d.", extradata[1] & 0x1F);
             strcat(ret->codec, temp);
 
-            unsigned int profileCompat = *(unsigned int *)(extradata + 2);
+            unsigned int profileCompat =
+                ((unsigned int)extradata[2] << 24) |
+                ((unsigned int)extradata[3] << 16) |
+                ((unsigned int)extradata[4] << 8) |
+                ((unsigned int)extradata[5]);
             unsigned int rev = reverse_bits(profileCompat);
             temp[0] = '\0';
             sprintf(temp, "%x.", rev);
@@ -182,10 +247,13 @@ VideoDecoderConfig *video_stream_to_config(AVCodecParameters *codecpar) {
                 }
             }
 
-            ret->description_size = codecpar->extradata_size;
-            ret->description = malloc(ret->description_size);
-            if (ret->description)
-                memcpy(ret->description, extradata, ret->description_size);
+            if (extradata && codecpar->extradata_size > 0) {
+                ret->description = malloc(codecpar->extradata_size);
+                if (ret->description) {
+                    memcpy(ret->description, extradata, codecpar->extradata_size);
+                    ret->description_size = codecpar->extradata_size;
+                }
+            }
         } else {
             if (profile < 0) profile = 0;
             if (level   < 0) level   = 0;
@@ -193,7 +261,7 @@ VideoDecoderConfig *video_stream_to_config(AVCodecParameters *codecpar) {
         }
 
     } else if (strcmp(codecString, "vp8") == 0) {
-        strcpy(ret->codec, "vp08");
+        strcpy(ret->codec, "vp8");
 
     } else if (strcmp(codecString, "vp9") == 0) {
         strcpy(ret->codec, "vp09.");
@@ -210,15 +278,11 @@ VideoDecoderConfig *video_stream_to_config(AVCodecParameters *codecpar) {
         strcat(ret->codec, temp);
         strcat(ret->codec, ".");
 
-        int bitDepth = desc->comp->depth;
-        if (!bitDepth) bitDepth = 8;
         temp[0] = '\0';
         sprintf(temp, (bitDepth < 10 ? "0%d" : "%d"), bitDepth);
         strcat(ret->codec, temp);
         strcat(ret->codec, ".");
 
-        int subX = desc->log2_chroma_w;
-        int subY = desc->log2_chroma_h;
         int chromaSubsampling;
         if      (subX > 0 && subY > 0) chromaSubsampling = 1;
         else if (subX > 0 || subY > 0) chromaSubsampling = 2;

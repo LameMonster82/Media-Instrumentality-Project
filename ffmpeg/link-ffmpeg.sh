@@ -29,13 +29,13 @@ ARGS=(
     -sINITIAL_MEMORY=32MB
     -sSTACK_SIZE=8MB
     -sDEFAULT_PTHREAD_STACK_SIZE=8MB
-    -sINCOMING_MODULE_JS_API=locateFile,mainScriptUrlOrBlob,onRuntimeInitialized,printWithColors
+    -sINCOMING_MODULE_JS_API=locateFile,mainScriptUrlOrBlob,onRuntimeInitialized,printWithColors,wasmMemory
     src/main.c src/demuxers.c src/sw_stuff.c src/codec_config.c src/io.c
     -lavcodec -lavformat -lavutil -lswscale -lswresample -lavfilter -lz -ldav1d
 )
 
 # Real build
-emcc "${ARGS[@]}" -o /output/ffmpeg-${SUFFIX}.mjs
+emcc "${ARGS[@]}" -o /output/ffmpeg-${SUFFIX}.mjs --emit-tsd /output/ffmpeg-${SUFFIX}.d.ts
 
 # Layout dump only — -fsyntax-only skips codegen/link, just ru
 emcc "${ARGS[@]}" -Xclang -fdump-record-layouts -fsyntax-only > /output/layout.txt

@@ -54,7 +54,8 @@
                     "goToDefinition": true
                 }
             }
-        ]
+        ],
+        "types": ["audioworklet"]
     },
     "include": ["src/**/*", "src/core/global.d.ts", "src/core/jsx/jsx.d.ts"],
     "exclude": [

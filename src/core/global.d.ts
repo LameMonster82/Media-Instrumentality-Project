@@ -54,3 +54,13 @@ declare module '*.js?worker&url' {
     const path: `${string}.js`;
 	export = path;
 }
+
+declare module '*?url' {
+    const path: `${string}.js`;
+	export = path;
+}
+
+declare module '*.png' {
+    const path: `${string}.png`;
+	export = path;
+}

@@ -3,9 +3,9 @@
 // https://github.com/microsoft/TypeScript/issues/14877
 
 import type { DecodeTemplate, SerializableStuff } from "@/player/atomicEventer/types";
-import { AVColorRangeToColorRange, AVColorSpaceToColorMatrixCoeff, AVColorPrimarieToColorPrimative, AVColorTransferToTransferChar, AVPixelFormatToVideoFormat, AVSampleFormatToAudioFormat, AVSampleFormat } from "../advancedTypes/AVTypes";
+import { AVColorRangeToColorRange, AVColorSpaceToColorMatrixCoeff, AVColorPrimarieToColorPrimative, AVColorTransferToTransferChar, AVPixelFormatToVideoFormat } from "../advancedTypes/AVTypes";
 import { readAudioFrame, readVideoFrame } from "../structReader";
-import { CopyVideoPlanesToBuffer, decoderRequestTemplates, decoderResponseTemplates, WebDecoderRequestType, WebDecoderResponseType, type WebDecoderWorkerInit } from "./types";
+import { copyVideoPlanesToBuffer, decoderRequestTemplates, decoderResponseTemplates, WebDecoderRequestType, WebDecoderResponseType, type WebDecoderWorkerInit } from "./types";
 import AtomicEventer from "@/player/atomicEventer/atomicEventer";
 import type { Dictionary } from "@/core/types";
 import canWasm64 from "../advancedTypes/isWasm64";
@@ -21,11 +21,11 @@ class WebDecoder {
     private outputChannel: MessagePort;
     private isVideo: boolean;
     private decoder?: VideoDecoder | AudioDecoder;
-    private isFirefox: boolean = false;
     private decoderConfig?: VideoDecoderConfig | AudioDecoderConfig;
-
+    
     private is64Bit = canWasm64();
     private supportsAudioData: boolean = typeof AudioData !== 'undefined';
+    private isFirefox: boolean = navigator.userAgent.match(/firefox|fxios/i) !== null;
 
 
     constructor(config: WebDecoderWorkerInit) {
@@ -34,7 +34,6 @@ class WebDecoder {
         this.eventer.receiveEvent(this.handleEvents.bind(this));
         this.outputChannel = config.outputChannel;
         this.isVideo = config.isVideo;
-        this.isFirefox = navigator.userAgent.match(/firefox|fxios/i) !== null;
 
         if (!config.justToCombineStuff) {
             try {
@@ -60,10 +59,6 @@ class WebDecoder {
         this.eventer.sendEvent(WebDecoderResponseType.INIT_DONE, { result: 0 });
     }
 
-    // If the ffmpeg wasm memory exceeds 4GB, we cant pass
-    // the FFmpeg memory buffer directly to any constructor
-    // and for it to copy out the data using planes.
-    // Chrome seems to not like it
     private async handleEvents(type: WebDecoderRequestType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
         switch (type) {
             case WebDecoderRequestType.DECODE_VIDEO: {
@@ -80,7 +75,7 @@ class WebDecoder {
                     return this.eventer.sendEvent(WebDecoderResponseType.INIT_DONE, { result: 0 });
                 }
                 try {
-                    this.decoder?.reset();
+                    this.decoder?.close();
                     if (this.isVideo) {
                         this.decoder = this.initializeVideo(this.decoderConfig);
                     } else {
@@ -94,29 +89,30 @@ class WebDecoder {
             }
             case WebDecoderRequestType.RECONSTRUCT_VIDEO_FRAME: {
                 const { ptr } = data as { ptr: number; };
-                const video_frame = readVideoFrame(this.moduleMemory.buffer, ptr, this.is64Bit);
+                const videoFrame = readVideoFrame(this.moduleMemory.buffer, ptr, this.is64Bit);
 
-                let format = AVPixelFormatToVideoFormat(video_frame.format);
+                const format = AVPixelFormatToVideoFormat(videoFrame.format);
 
-                const visible_width = video_frame.width - video_frame.crop_left - video_frame.crop_right;
-                const visible_height = video_frame.height - video_frame.crop_top - video_frame.crop_bottom;
+                const visibleWidth = videoFrame.width - videoFrame.crop_left - videoFrame.crop_right;
+                const visibleHeight = videoFrame.height - videoFrame.crop_top - videoFrame.crop_bottom;
 
                 let layout: PlaneLayout[] = [];
                 let transfer: ArrayBufferLike[] = [];
                 let targetBuffer: AllowSharedBufferSource = this.moduleMemory.buffer;
-                if (this.isMemoryOver2Gib()) {
-                    targetBuffer = new Uint8Array(video_frame.buffer_size);
-                    layout = CopyVideoPlanesToBuffer(
-                        format, video_frame.width, video_frame.height,
+
+                if (this.isFirefox || this.isMemoryOver2Gib()) {
+                    targetBuffer = new Uint8Array(videoFrame.buffer_size);
+                    layout = copyVideoPlanesToBuffer(
+                        format, videoFrame.width, videoFrame.height,
                         this.moduleMemory.buffer,
-                        video_frame.src_data.map(s => Number(s)), video_frame.src_linesize,
+                        videoFrame.src_data.map(s => Number(s)), videoFrame.src_linesize,
                         targetBuffer as Uint8Array<ArrayBuffer>);
                     transfer = [targetBuffer.buffer];
                 } else {
-                    for (let i = 0; i < video_frame.src_data.length; i++) {
-                        const data = Number(video_frame.src_data[i]);
+                    for (let i = 0; i < videoFrame.src_data.length; i++) {
+                        const data = Number(videoFrame.src_data[i]);
                         if (data === 0) continue;
-                        const linesize = Math.abs(video_frame.src_linesize[i]);
+                        const linesize = Math.abs(videoFrame.src_linesize[i]);
                     
                         layout.push({
                             offset: data,
@@ -125,26 +121,26 @@ class WebDecoder {
                     }
                 }
 
-                // @ts-ignore
+                // @ts-ignore transfer is in fact, valid
                 const frame = new VideoFrame(targetBuffer, {
-                    codedHeight: video_frame.height,
-                    codedWidth: video_frame.width,
+                    codedHeight: videoFrame.height,
+                    codedWidth: videoFrame.width,
                     colorSpace: {
-                        fullRange: AVColorRangeToColorRange(video_frame.color_range),
-                        matrix: AVColorSpaceToColorMatrixCoeff(video_frame.color_space) as VideoMatrixCoefficients,
-                        primaries: AVColorPrimarieToColorPrimative(video_frame.color_primaries) as VideoColorPrimaries,
-                        transfer: AVColorTransferToTransferChar(video_frame.color_transfer) as VideoTransferCharacteristics
+                        fullRange: AVColorRangeToColorRange(videoFrame.color_range),
+                        matrix: AVColorSpaceToColorMatrixCoeff(videoFrame.color_space) as VideoMatrixCoefficients,
+                        primaries: AVColorPrimarieToColorPrimative(videoFrame.color_primaries) as VideoColorPrimaries,
+                        transfer: AVColorTransferToTransferChar(videoFrame.color_transfer) as VideoTransferCharacteristics
                     },
-                    displayHeight: visible_height,
-                    displayWidth: visible_width,
-                    duration: video_frame.dur_js,
+                    displayHeight: visibleHeight,
+                    displayWidth: visibleWidth,
+                    duration: videoFrame.dur_js,
                     format: format as VideoPixelFormat,
-                    timestamp: video_frame.ts_js,
+                    timestamp: videoFrame.ts_js,
                     visibleRect: {
-                        x: video_frame.crop_left,
-                        y: video_frame.crop_top,
-                        width: visible_width,
-                        height: visible_height
+                        x: videoFrame.crop_left,
+                        y: videoFrame.crop_top,
+                        width: visibleWidth,
+                        height: visibleHeight
                     },
                     layout,
                     transfer,
@@ -157,43 +153,29 @@ class WebDecoder {
             }
             case WebDecoderRequestType.RECONSTRUCT_AUDIO_FRAME: {
                 const { ptr } = data as { ptr: number; };
-                const audio_frame = readAudioFrame(this.moduleMemory.buffer, ptr, this.is64Bit);
+                const audioFrame = readAudioFrame(this.moduleMemory.buffer, ptr, this.is64Bit);
+                
+                const dataData: Float32Array<ArrayBuffer>[] = [];
+                for (let ch = 0; ch < audioFrame.channels; ch++) {
+                    const ptr = Number(audioFrame.src_data[ch]);
+                    const stuff = this.sliceMemory(ptr, ptr + audioFrame.linesize);
+                    dataData.push(new Float32Array(stuff.buffer));
+                }
 
-                const ffmpegMemory = new Uint8Array(this.moduleMemory.buffer);
-                let dataData: Uint8Array<ArrayBuffer> = ffmpegMemory.slice(Number(audio_frame.src_data[0]), Number(audio_frame.src_data[0]) + audio_frame.linesize);
-
-                let audio: AudioData | WorkerAudioDataInit;
-                let transfer = [];
-                // if (this.supportsAudioData) {
-                //     audio = new AudioData({
-                //         data: dataData,
-                //         format: 'f32',
-                //         numberOfChannels: audio_frame.channels,
-                //         numberOfFrames: audio_frame.samples,
-                //         sampleRate: audio_frame.sample_rate,
-                //         timestamp: audio_frame.ts_js,
-                //         transfer: [dataData.buffer]
-                //     });
-                //     transfer.push(audio);
-                //     this.output(audio);
-                // } else {
-
-                audio = {
+                const audio: WorkerAudioDataInit = {
                     kind: "audioDataInit",
 
                     data: dataData,
                     format: 'f32',
-                    numberOfChannels: audio_frame.channels,
-                    numberOfFrames: audio_frame.samples,
-                    sampleRate: audio_frame.sample_rate,
-                    timestamp: audio_frame.ts_js,
-                    transfer: [dataData.buffer]
+                    numberOfChannels: audioFrame.channels,
+                    numberOfFrames: audioFrame.samples,
+                    sampleRate: audioFrame.sample_rate,
+                    timestamp: audioFrame.ts_js,
+                    transfer: dataData.map(d => d.buffer)
                 };
 
-                transfer.push(dataData.buffer);
-                this.outputChannel.postMessage(audio, transfer);
-                // }
-
+                // @ts-ignore yeeah transfer is ok
+                this.outputChannel.postMessage(audio, audio.transfer);
                 this.eventer.sendEvent(WebDecoderResponseType.FREE_AUDIO_PTR, { ptr });
             }
         }
@@ -244,22 +226,21 @@ class WebDecoder {
     private async output(output: VideoFrame | AudioData) {
         // NOTE: Depending on how firefox feels like, it
         // might be beneficial to convert the VideoFrame
-        // to RGBA or RGBX. Firefox DOES support
+        // to RGBA. Firefox DOES support
         // YUV and similar color formats but it will convert 
-        // them to RGBX upon presentation. That is not much
+        // them to RGBA upon presentation. That is not much
         // of an issue but it tends to be very slow.
         // Better take the performance hit here
 
         if (this.isFirefox
             && output instanceof VideoFrame
-            && output.format !== 'RGBA'
-            && output.format !== 'RGBX') {
+            && output.format !== 'RGBA') {
 
-            let buffer = new Uint8Array(output.allocationSize({
+            const buffer = new Uint8Array(output.allocationSize({
                 format: 'RGBA',
             }));
             await output.copyTo(buffer, { format: 'RGBA' });
-            output = new VideoFrame(buffer, {
+            const newOutput = new VideoFrame(buffer, {
                 codedWidth: output.codedWidth,
                 codedHeight: output.codedHeight,
                 format: 'RGBA',
@@ -268,6 +249,8 @@ class WebDecoder {
                 displayHeight: output.displayHeight,
                 duration: output.duration ?? undefined,
             });
+            output.close();
+            output = newOutput;
         }
 
         this.outputChannel.postMessage(output, [output]);
@@ -279,15 +262,21 @@ class WebDecoder {
             this.eventer.sendEvent(WebDecoderResponseType.FATAL_ERROR, { result: -1 });
     }
 
-    private sliceMemory(start: number, end: number): Uint8Array {
+    private sliceMemory(start: number, end: number): Uint8Array<ArrayBuffer> {
         const totalMemory = new Uint8Array(this.moduleMemory.buffer);
         return totalMemory.slice(start, end);
     }
 
-    private viewMemory(start: number, lenght: number): Uint8Array {
-        return new Uint8Array(this.moduleMemory.buffer, start, lenght);
+    private viewMemory(start: number, lenght: number): Uint8Array<ArrayBuffer> {
+        return new Uint8Array<ArrayBuffer>(this.moduleMemory.buffer, start, lenght);
     }
 
+    /** Checks if the ffmpeg module memory is over 2GiB.
+     *  If its over 2GiB then chrome is unable to use the
+     *  SharedArrayBuffer directly and we will have to
+     *  manually slice the frame out in order to put it
+     *  in a VideoFrame
+     */
     private isMemoryOver2Gib(): boolean {
         return this.moduleMemory.buffer.byteLength >= 2147483648;
     }

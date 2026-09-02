@@ -24,6 +24,14 @@ typedef struct {
   enum AVChromaLocation chroma_location;
 } VideoDecoderConfig;
 
+enum AudioSampleFormatCode {
+    AUDIO_SAMPLE_FMT_NONE = -1,
+    AUDIO_SAMPLE_FMT_U8   = 0,
+    AUDIO_SAMPLE_FMT_S16  = 1,
+    AUDIO_SAMPLE_FMT_S32  = 2,
+    AUDIO_SAMPLE_FMT_F32  = 3,
+};
+
 typedef struct {
     char codec[256];
     int32_t sample_rate;
@@ -31,6 +39,10 @@ typedef struct {
 
     uint8_t *description;
     int32_t description_size;
+
+    /* WebCodecs AudioSampleFormat for PCM passthrough (AUDIO_SAMPLE_FMT_NONE
+     * when the codec is not raw PCM). */
+    int32_t sample_format;
 } AudioDecoderConfig;
 
 typedef struct {

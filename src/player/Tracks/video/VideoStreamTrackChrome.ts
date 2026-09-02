@@ -13,6 +13,7 @@ export class VideoStreamTrackChrome implements MediaStreamTrackWrapper<VideoFram
         this.writer = this.writableStream.getWriter();
     }
     async initialize() { }
+    async stealPlayEvent() { }
 
     public async writeData(frame: VideoFrame): Promise<void> {
         await this.writer.write(frame);

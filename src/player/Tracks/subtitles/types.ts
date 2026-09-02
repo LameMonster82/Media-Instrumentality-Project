@@ -25,6 +25,8 @@ export type BitmapTrackStream = {
 export type BitmapSubArgs = {
     x: number;
     y: number;
+    codecWidth: number;
+    codecHeight: number;
     startTime: number,
     endTime: number,
     frame: ImageBitmap,

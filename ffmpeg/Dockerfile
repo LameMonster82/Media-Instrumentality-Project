@@ -17,7 +17,7 @@ ENV INSTALL_DIR=/opt
 ARG DEBUG_CFLAGS="-g3 -O0 -sSTACK_OVERFLOW_CHECK=2"
 ARG RELEASE_CFLAGS="-O3 -flto -fno-math-errno -mnontrapping-fptoint -msign-ext -mbulk-memory -matomics"
 ENV DEBUG_CFLAGS=${DEBUG_CFLAGS}
-ENV RELEASE_CFLAGS=${RELEASE_CFLAGS}
+ENV RELEASE_CFLAGS=${DEBUG_CFLAGS}
 ENV FFMPEG_VERSION=9.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -331,10 +331,10 @@ COPY --from=build-wasm32 /output/layout.txt /lib/ffmpeg-wasm32/layout.txt
 
 COPY --from=build-wasm32 /output/ffmpeg-wasm32.wasm /lib/ffmpeg-wasm32/ffmpeg-wasm32.wasm
 COPY --from=build-wasm32 /output/ffmpeg-wasm32.mjs /lib/ffmpeg-wasm32/ffmpeg.mjs
-# COPY --from=build-wasm32 /output/ffmpeg-wasm32.d.ts /lib/ffmpeg-wasm32/ffmpeg.d.ts
+COPY --from=build-wasm32 /output/ffmpeg-wasm32.d.ts /lib/ffmpeg-wasm32/ffmpeg.d.ts
 COPY --from=build-wasm64 /output/ffmpeg-wasm64.wasm /lib/ffmpeg-wasm64/ffmpeg-wasm64.wasm
 COPY --from=build-wasm64 /output/ffmpeg-wasm64.mjs /lib/ffmpeg-wasm64/ffmpeg.mjs
-# COPY --from=build-wasm64 /output/ffmpeg-wasm64.d.ts /lib/ffmpeg-wasm64/ffmpeg.d.ts
+COPY --from=build-wasm64 /output/ffmpeg-wasm64.d.ts /lib/ffmpeg-wasm64/ffmpeg.d.ts
 
 COPY --from=build-wasm32 /src/ffbuild/config.log /config-wasm32.log
 COPY --from=build-wasm64 /src/ffbuild/config.log /config-wasm64.log

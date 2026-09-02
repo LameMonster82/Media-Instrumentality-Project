@@ -14,6 +14,7 @@
     transition: border-radius 0.5s ease-in-out, opacity 0.5s ease-in-out;
     min-width: 400px;
     opacity: 1;
+    align-self: center;
 
     &.inactive {
         opacity: 0;
@@ -31,7 +32,7 @@
         position: absolute;
         width: 80%;
         /* filter: blur(1px); */
-        backdrop-filter: blur(4px);
+        /* backdrop-filter: blur(4px); */
         bottom: 2%;
     }
 
@@ -47,6 +48,7 @@
         color: white;
         transition: all 0.5s ease;
         user-select: none;
+        position: relative;
 
         &:hover {
             & .volumeControl {
@@ -161,20 +163,6 @@
     }
 }
 
-/* Kept datalist ID as a global so the browser can link it properly to the input */
-:global(#chaptersForVideo)>option {
-    cursor: pointer;
-    -webkit-appearance: none;
-    border: none;
-    border-radius: 3px;
-    position: absolute;
-    background-color: #242424;
-    width: 2px;
-    height: 12px;
-    min-block-size: 0px;
-    top: 50%;
-}
-
 .volumeControl {
     height: 8px;
     cursor: pointer;
@@ -278,7 +266,7 @@
     position: absolute;
     display: flex;
     flex-direction: column;
-    bottom: calc(3vh + 10px);
+    bottom: calc(3vh);
     background-color: rgba(0, 0, 0, 0.5);
     border-radius: 10px 10px 0px 0px;
     padding: 0px 10px 0px 10px;
@@ -333,4 +321,25 @@
     bottom: 6vh;
     width: 80vw;
     height: 3vh;
+}
+
+.chapterBox {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: stretch;
+}
+
+.chapter {
+    display: block;
+
+    cursor: pointer;
+    border: none;
+    border-radius: 3px;
+    position: absolute;
+    background-color: rgb(97 97 97);
+    width: 4px;
+    height: 20px;
+    min-block-size: 0px;
+    top: -6px;
 }

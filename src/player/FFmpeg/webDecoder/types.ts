@@ -177,20 +177,20 @@ function getPlaneDescriptors(
     }
 }
 
-export function CopyVideoPlanesToBuffer(format: ExtendedVideoFormats, width: number, height: number, src: ArrayBuffer, src_data: number[], src_linesize: number[], dst: Uint8Array<ArrayBuffer>) {
+export function copyVideoPlanesToBuffer(format: ExtendedVideoFormats, width: number, height: number, src: ArrayBuffer, srcData: number[], srcLinesize: number[], dst: Uint8Array<ArrayBuffer>) {
     const planes = getPlaneDescriptors(format, width, height);
 
     let offset = 0;
-    let layout: PlaneLayout[] = [];
+    const layout: PlaneLayout[] = [];
     const srcU8 = new Uint8Array(src); // Created once outside the loop
 
     for (let i = 0; i < planes.length; i++) {
         const plane = planes[i];
-        const src_ptr = src_data[i];
-        const stride = Math.abs(src_linesize[i]);
+        const srcPtr = srcData[i];
+        const stride = Math.abs(srcLinesize[i]);
         
         const planeSize = stride * plane.height;
-        dst.set(srcU8.subarray(src_ptr, src_ptr + planeSize), offset);
+        dst.set(srcU8.subarray(srcPtr, srcPtr + planeSize), offset);
         layout.push({
             offset,
             stride

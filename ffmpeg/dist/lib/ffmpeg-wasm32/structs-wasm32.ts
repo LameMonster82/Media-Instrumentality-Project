@@ -9,7 +9,7 @@
  */
 
 // Skipped (foreign 'struct '-prefixed records, held only as pointers):
-//   struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext, struct AVComponentDescriptor, struct AVInputFormat, struct AVIOInterruptCB, struct AVFormatContext, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVDictionaryEntry, struct AVCodec, struct AVCodecContext, struct AVCodecParameters, struct AVFrame, struct SwsContext, struct AVPacket, struct AVSubtitle, struct AVSubtitleRect, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct SwsContext, struct SwsFilter, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVFrame, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVComponentDescriptor, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext
+//   struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext, struct AVComponentDescriptor, struct AVInputFormat, struct AVIOInterruptCB, struct AVFormatContext, struct AVDictionaryEntry, struct AVCodec, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVCodecContext, struct AVCodecParameters, struct AVFrame, struct SwsContext, struct AVPacket, struct AVSubtitle, struct AVSubtitleRect, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct SwsContext, struct SwsFilter, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVFrame, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVComponentDescriptor, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext
 
 export interface BridgeContext {
   supported_pix_fmts: number; // @0 const enum AVPixelFormat * pointer / handle;
@@ -418,33 +418,31 @@ export interface SubtitleFrame {
   y:            number; // @4 int
   width:        number; // @8 int
   height:       number; // @12 int
-  nb_colors:    number; // @16 int
-  pts:          bigint; // @24 int64_t
-  ts_js:        number; // @32 double
-  dur_js:       number; // @40 double
-  src_data:     Uint8Array; // @48 uintptr_t[4] uintptr_t[4] — raw bytes (decode as needed);
-  src_linesize: Uint8Array; // @64 int32_t[4] int32_t[4] — raw bytes (decode as needed);
-  stream_index: number; // @80 int32_t
-  rgba_buff:    number; // @84 uint8_t * pointer / handle;
-  frame:        number; // @88 AVSubtitle * pointer / handle;
+  codec_width:  number; // @16 int
+  codec_height: number; // @20 int
+  nb_colors:    number; // @24 int
+  pts:          bigint; // @32 int64_t
+  src_data:     Uint8Array; // @40 uintptr_t[4] uintptr_t[4] — raw bytes (decode as needed);
+  src_linesize: Uint8Array; // @56 int32_t[4] int32_t[4] — raw bytes (decode as needed);
+  stream_index: number; // @72 int32_t
+  rgba_buff:    number; // @76 uint8_t * pointer / handle;
 }
 
-export const SIZEOF_SubtitleFrame = 96;
+export const SIZEOF_SubtitleFrame = 80;
 export const ALIGNOF_SubtitleFrame = 8;
 export const OFFSETS_SubtitleFrame = {
   x: 0,
   y: 4,
   width: 8,
   height: 12,
-  nb_colors: 16,
-  pts: 24,
-  ts_js: 32,
-  dur_js: 40,
-  src_data: 48,
-  src_linesize: 64,
-  stream_index: 80,
-  rgba_buff: 84,
-  frame: 88,
+  codec_width: 16,
+  codec_height: 20,
+  nb_colors: 24,
+  pts: 32,
+  src_data: 40,
+  src_linesize: 56,
+  stream_index: 72,
+  rgba_buff: 76,
 } as const;
 
 export function readSubtitleFrame(buffer: ArrayBufferLike, offset = 0): SubtitleFrame {
@@ -454,15 +452,14 @@ export function readSubtitleFrame(buffer: ArrayBufferLike, offset = 0): Subtitle
     y: view.getInt32(4, true),
     width: view.getInt32(8, true),
     height: view.getInt32(12, true),
-    nb_colors: view.getInt32(16, true),
-    pts: view.getBigInt64(24, true),
-    ts_js: view.getFloat64(32, true),
-    dur_js: view.getFloat64(40, true),
-    src_data: new Uint8Array(buffer, offset + 48, 16),
-    src_linesize: new Uint8Array(buffer, offset + 64, 16),
-    stream_index: view.getInt32(80, true),
-    rgba_buff: view.getUint32(84, true),
-    frame: view.getUint32(88, true),
+    codec_width: view.getInt32(16, true),
+    codec_height: view.getInt32(20, true),
+    nb_colors: view.getInt32(24, true),
+    pts: view.getBigInt64(32, true),
+    src_data: new Uint8Array(buffer, offset + 40, 16),
+    src_linesize: new Uint8Array(buffer, offset + 56, 16),
+    stream_index: view.getInt32(72, true),
+    rgba_buff: view.getUint32(76, true),
   };
 }
 
@@ -472,9 +469,10 @@ export interface AudioDecoderConfig {
   num_channels:     number; // @260 int32_t
   description:      number; // @264 uint8_t * pointer / handle;
   description_size: number; // @268 int32_t
+  sample_format:    number; // @272 int32_t
 }
 
-export const SIZEOF_AudioDecoderConfig = 272;
+export const SIZEOF_AudioDecoderConfig = 276;
 export const ALIGNOF_AudioDecoderConfig = 4;
 export const OFFSETS_AudioDecoderConfig = {
   codec: 0,
@@ -482,6 +480,7 @@ export const OFFSETS_AudioDecoderConfig = {
   num_channels: 260,
   description: 264,
   description_size: 268,
+  sample_format: 272,
 } as const;
 
 export function readAudioDecoderConfig(buffer: ArrayBufferLike, offset = 0): AudioDecoderConfig {
@@ -492,6 +491,7 @@ export function readAudioDecoderConfig(buffer: ArrayBufferLike, offset = 0): Aud
     num_channels: view.getInt32(260, true),
     description: view.getUint32(264, true),
     description_size: view.getInt32(268, true),
+    sample_format: view.getInt32(272, true),
   };
 }
 

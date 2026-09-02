@@ -7,7 +7,7 @@ import type { MainModule as MainModule32 } from "@FFmpeg/ffmpeg-wasm32/ffmpeg";
 import type { MainModule as MainModule64 } from "@FFmpeg/ffmpeg-wasm64/ffmpeg";
 
 import { RequestDataStatus, StreamSupport, type AllTargetWorkerMessages, type DecoderConfig, type DecoderSupport, type ValidDecoderTypes, type WorkerFFmpegInitComplete, type WorkerInitFFmpeg } from "./types";
-import { AVColorPrimarieToColorPrimative, AVColorRangeToColorRange, AVColorSpaceToColorMatrixCoeff, AVColorTransferToTransferChar, AVLogLevel, AVPixelFormatToVideoFormat, AVSampleFormatToAudioFormat } from "./advancedTypes/AVTypes";
+import { AVColorPrimarieToColorPrimative, AVColorRangeToColorRange, AVColorSpaceToColorMatrixCoeff, AVColorTransferToTransferChar, AVLogLevel, AVPixelFormat } from "./advancedTypes/AVTypes";
 import getSupportedPixelFormats from "./advancedTypes/supportedPixelFormats";
 import canWasm64 from "./advancedTypes/isWasm64";
 import AtomicEventer from "../atomicEventer/atomicEventer";
@@ -16,8 +16,7 @@ import type { DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
 import type { Dictionary } from "@/core/types";
 import { decoderRequestTemplates, decoderResponseTemplates, WebDecoderRequestType, WebDecoderResponseType, type WebDecoderWorkerInit } from "./webDecoder/types";
 import { FFmpegRequestEvent, ffmpegRequestTemplate, FFmpegResponseEvent, ffmpegResponseTemplate } from "./advancedTypes/atomicTypes";
-import { MediaType, readFileInfo, readReturnType, ResultStatus, type VideoDecoderConfigStruct, type AudioDecoderConfigStruct, AVSubtitleType, AVMediaType } from "./structReader";
-import type { WorkerAudioDataInit } from "../Tracks/audio/audioTypes";
+import { MediaType, readFileInfo, readReturnType, ResultStatus, type VideoDecoderConfigStruct, type AudioDecoderConfigStruct, AVSubtitleType, AVMediaType, AVPixelFormatArrayToData } from "./structReader";
 import type { BitmapSubArgs, VTTCueArgs } from "../Tracks/subtitles/types";
 
 // Default type of `self` is `WorkerGlobalScope & typeof globalThis`
@@ -40,7 +39,7 @@ type Stream = {
 class FFmpegBridge {
     private module: MainModule | undefined;
     private is64Bit = canWasm64();
-    private supportsAudioData: boolean = typeof AudioData !== 'undefined';
+    private isFirefox: boolean = navigator.userAgent.match(/firefox|fxios/i) !== null;
 
     // Seeker
     private seekerWorker: Worker = null!;
@@ -51,8 +50,11 @@ class FFmpegBridge {
     // File
     private fileUrl: string | File = "";
 
+    // Streams
     private streams: Record<number, Stream> = {};
 
+    // Memory
+    private wasmMemory: WebAssembly.Memory;
 
     // Events
     private seekerEventer: AtomicEventer<
@@ -61,8 +63,6 @@ class FFmpegBridge {
         typeof seekerRequestTemplates,
         typeof seekerResponseTemplates> = new AtomicEventer(undefined, seekerRequestTemplates, seekerResponseTemplates);
 
-    private seekerSeekDone = (_data: { result: number, fileSize: bigint; }) => { };
-
     private videoEventer: AtomicEventer<
         FFmpegResponseEvent,
         FFmpegRequestEvent,
@@ -70,19 +70,29 @@ class FFmpegBridge {
         typeof ffmpegRequestTemplate> | undefined;
 
     constructor() {
-
+        // 33554432 / 65536
+        const initial = this.is64Bit ? 512n : 512;
+        const maximum = this.is64Bit ? 262144n : 32768;
+        const adress = this.is64Bit ? 'i64' : 'i32';
+        
+        this.wasmMemory = new WebAssembly.Memory({
+            // @ts-ignore BigInt is ok dw
+            initial: initial,
+            // @ts-ignore BigInt is ok dw
+            maximum: maximum,
+            address: adress,
+            shared: true,
+        });
     }
 
     async initialize(dataInfo: WorkerInitFFmpeg) {
-        this.module = await this.loadWasmModule(this.is64Bit);
+        this.module = await this.loadWasmModule();
 
         // Parent Thread control
         this.videoEventer = new AtomicEventer(dataInfo.eventerBuffers, ffmpegResponseTemplate, ffmpegRequestTemplate);
         this.videoEventer.receiveEvent(this.handleVideoEvents.bind(this));
 
         // Seeker
-        const { promise, resolve } = Promise.withResolvers<{ result: number, fileSize: bigint; }>();
-        this.seekerSeekDone = resolve;
         this.fileUrl = dataInfo.fileSource;
         this.bufferSize = dataInfo.bufferSize;
 
@@ -94,7 +104,7 @@ class FFmpegBridge {
                 url: this.fileUrl,
                 atomicBuffers: this.seekerEventer.getBuffers(),
                 fetchBufferSize: this.bufferSize,
-                targetBuffer: this.module.wasmMemory,
+                targetBuffer: this.wasmMemory,
                 type: "init"
             } as UrlSeekableWorkerInit);
         } else if (dataInfo.fileSource instanceof File) {
@@ -104,36 +114,20 @@ class FFmpegBridge {
             this.seekerWorker.postMessage({
                 file: dataInfo.fileSource,
                 atomicBuffers: this.seekerEventer.getBuffers(),
-                targetBuffer: this.module.wasmMemory,
+                targetBuffer: this.wasmMemory,
                 type: "init"
             } as FileSeekableWorkerInit);
         }
 
-        const seekResults = await promise;
-        if (seekResults.result < 0) {
+        const seekResults = await this.seekerEventer.waitUntilEvent(SeekerResponseType.SEEK_DONE);
+        if (seekResults === null || seekResults.data.result < 0) {
             throw Error("Seeker could not init. Ughhhh");
         }
-        this.fileSize = seekResults.fileSize;
+        this.fileSize = seekResults.data.fileSize;
 
-        // Supported Pixel formats
-        const pixFmts = getSupportedPixelFormats();
-        let pixFmtPtr: number | bigint;
-        if (this.is64Bit) {
-            const module = this.module as MainModule64;
-            const size = BigInt(pixFmts.length) * 4n;
-            pixFmtPtr = Number(module._malloc(size));
-            for (let i = 0; i < pixFmts.length; i++) {
-                module.setValue(pixFmtPtr + i * 4, pixFmts[i], 'i32');
-            }
-            pixFmtPtr = BigInt(pixFmtPtr);
-        } else {
-            const module = this.module as MainModule32;
-            const size = pixFmts.length * 4;
-            pixFmtPtr = module._malloc(size);
-            for (let i = 0; i < pixFmts.length; i++) {
-                module.setValue(pixFmtPtr + i * 4, pixFmts[i], 'i32');
-            }
-        }
+        // Supported Pixel formats. Limit to RGBA only for firefox
+        const pixFmts = this.isFirefox ? [AVPixelFormat.AV_PIX_FMT_RGBA] : getSupportedPixelFormats();
+        const pixFmtPtr = AVPixelFormatArrayToData(this.module, pixFmts, this.is64Bit);
 
         // Init FFmpeg
         const ret = this.module._init_ffmpeg(dataInfo.bufferSize, 0, AVLogLevel.AV_LOG_INFO, pixFmtPtr as never, 6);
@@ -146,31 +140,30 @@ class FFmpegBridge {
         if (Number(fileInfoPtr) === 0)
             throw Error("Could not open the file. Your problem now");
 
-        const fileInfo = readFileInfo(this.module, Number(fileInfoPtr), this.is64Bit);
+        const fileInfo = readFileInfo(this.module, this.wasmMemory.buffer, Number(fileInfoPtr), this.is64Bit);
         console.log(fileInfo);
 
         // Stream Setup
-        const streamPromises = fileInfo.streams.filter(s =>
+        const streams = fileInfo.streams.values().toArray();
+        const streamPromises = streams.filter(s =>
             s.type === AVMediaType.AVMEDIA_TYPE_VIDEO
             || s.type === AVMediaType.AVMEDIA_TYPE_AUDIO
             || s.type === AVMediaType.AVMEDIA_TYPE_SUBTITLE
         ).map((stream, i) => {
             switch (stream.type) {
-                case AVMediaType.AVMEDIA_TYPE_VIDEO: return this.initStream(i, stream.type, this.VideoStructToConfig(stream.video_config!));
-                case AVMediaType.AVMEDIA_TYPE_AUDIO: return this.initStream(i, stream.type, this.AudioStructToConfig(stream.audio_config!));
+                case AVMediaType.AVMEDIA_TYPE_VIDEO: return this.initStream(i, stream.type, this.videoStructToConfig(stream.video_config!));
+                case AVMediaType.AVMEDIA_TYPE_AUDIO: return this.initStream(i, stream.type, this.audioStructToConfig(stream.audio_config!));
                 case AVMediaType.AVMEDIA_TYPE_SUBTITLE: {
-                    if (stream.subtitle_config?.type === AVSubtitleType.SUBTITLE_ASS) {
-                        return Promise.resolve({
-                            streamIndex: i,
-                            type: stream.type,
-                            isSupported: false,
-                            isUsed: false,
-                            messageChannel: new MessageChannel(),
-                            secondMessageChannel: new MessageChannel(),
-                            worker: undefined,
-                            eventer: undefined
-                        });
-                    }
+                    return Promise.resolve({
+                        streamIndex: i,
+                        type: stream.type,
+                        isSupported: false,
+                        isUsed: false,
+                        messageChannel: new MessageChannel(),
+                        secondMessageChannel: new MessageChannel(),
+                        worker: undefined,
+                        eventer: undefined
+                    });
                 }
                 default:
                     console.warn("Unsupported stream type", stream.type);
@@ -187,15 +180,15 @@ class FFmpegBridge {
             }
         });
 
-        const streams = await Promise.all(streamPromises);
+        const streamResolves = await Promise.all(streamPromises);
 
-        for (const stream of streams) {
+        for (const stream of streamResolves) {
             this.streams[stream.streamIndex] = stream;
         }
         this.updateFFmpegSupportedStreams();
 
-        const port1s = new Map(streams.map(s => [s.streamIndex, s.messageChannel.port1] as const));
-        const port1sAgain = new Map(streams.map(s => [s.streamIndex, s.secondMessageChannel.port1] as const));
+        const port1s = new Map(streamResolves.map(s => [s.streamIndex, s.messageChannel.port1] as const));
+        const port1sAgain = new Map(streamResolves.map(s => [s.streamIndex, s.secondMessageChannel.port1] as const));
         self.postMessage({
             kind: "initComplete",
             info: fileInfo,
@@ -206,11 +199,11 @@ class FFmpegBridge {
         this.module._cleanup_info(fileInfoPtr as never);
     }
 
-    async loadWasmModule(canWasm64: boolean) {
+    async loadWasmModule() {
         // eslint-disable-next-line @typescript-eslint/naming-convention
-        const { default: FFmpegModuleUrl } = canWasm64 ? (await import("@FFmpeg/ffmpeg-wasm64/ffmpeg.mjs?url")) : (await import("@FFmpeg/ffmpeg-wasm32/ffmpeg.mjs?url"));
+        const { default: FFmpegModuleUrl } = this.is64Bit ? (await import("@FFmpeg/ffmpeg-wasm64/ffmpeg.mjs?url")) : (await import("@FFmpeg/ffmpeg-wasm32/ffmpeg.mjs?url"));
         // eslint-disable-next-line @typescript-eslint/naming-convention
-        const { default: FFmpegWasm } = canWasm64 ? (await import("@FFmpeg/ffmpeg-wasm64/ffmpeg-wasm64.wasm?url")) : (await import("@FFmpeg/ffmpeg-wasm32/ffmpeg-wasm32.wasm?url"));
+        const { default: FFmpegWasm } = this.is64Bit ? (await import("@FFmpeg/ffmpeg-wasm64/ffmpeg-wasm64.wasm?url")) : (await import("@FFmpeg/ffmpeg-wasm32/ffmpeg-wasm32.wasm?url"));
 
         // Loaded as a plain runtime URL (not a bundled import) so Vite's
         // worker-detection transform never runs over emscripten's pthread
@@ -224,18 +217,15 @@ class FFmpegBridge {
             onRuntimeInitialized: () => {
                 console.log("FFmpeg WebAssembly initialized.");
             },
-            printWithColors: true
+            printWithColors: true,
+            wasmMemory: this.wasmMemory
         });
 
         return newModule as MainModule;
     }
 
-    private handleSeekerEvents(type: SeekerResponseType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
+    private handleSeekerEvents(type: SeekerResponseType, _data: DecodeTemplate<Dictionary<SerializableStuff>>) {
         switch (type) {
-            case SeekerResponseType.SEEK_DONE: {
-                this.seekerSeekDone(data as { result: number, fileSize: bigint; });
-                break;
-            }
             case SeekerResponseType.BUFFER_COPIED: {
                 console.log(" buffer copioed");
             }
@@ -283,7 +273,7 @@ class FFmpegBridge {
         try {
             while (true) {
                 const resPtr = this.module!._poke_for_data();
-                const rsult = readReturnType(this.module!.wasmMemory.buffer, Number(resPtr), this.is64Bit, false);
+                const rsult = readReturnType(this.wasmMemory.buffer, Number(resPtr), this.is64Bit, false);
                 switch (rsult.status) {
                     case ResultStatus.RESULT_OK: return { status: RequestDataStatus.IMMEDIATE_RESPOSNE, packetType: -1 };
                     case ResultStatus.RESULT_ERR_SKIP:
@@ -324,7 +314,8 @@ class FFmpegBridge {
     }
 
     public readPacket(ptr: bigint, size: number) {
-        if (ptr <= 0) return 0;
+        ptr = BigInt(ptr);
+        if (ptr <= 0n) return 0;
 
         let written = 0n;
         while (written === 0n) {
@@ -348,6 +339,7 @@ class FFmpegBridge {
     };
 
     public seekPacket(offset: bigint, whence: number): bigint {
+        offset = BigInt(offset);
         if (whence === 1) { // SEEK_CUR
             if (offset > 0x7fffffffffffffffn - this.fileOffset)
                 return -1n;
@@ -378,8 +370,8 @@ class FFmpegBridge {
         return this.fileOffset;
     };
 
-    public getSWFrame(data_return: number | bigint) {
-        const rsult = readReturnType(this.module!.wasmMemory.buffer, Number(data_return), this.is64Bit, false);
+    public getSWFrame(dataReturn: number | bigint) {
+        const rsult = readReturnType(this.wasmMemory.buffer, Number(dataReturn), this.is64Bit, false);
 
         if (rsult.status !== ResultStatus.RESULT_OK) {
             console.error("SW Frame but its not ok?");
@@ -399,7 +391,7 @@ class FFmpegBridge {
 
                 switch (rsult.subtitle_type) {
                     case AVSubtitleType.SUBTITLE_BITMAP: {
-                        if (rsult.subtitle_frame == null) {
+                        if (rsult.subtitle_frame === null) {
                             console.error("Got a SW Subtitle frame without the frame??");
                             return;
                         }
@@ -413,20 +405,24 @@ class FFmpegBridge {
                             this.streams[rsult.stream_index].secondMessageChannel.port2.postMessage({
                                 x: frame.x,
                                 y: frame.y,
+                                codecWidth: frame.codecWidth,
+                                codecHeight: frame.codecHeight,
                                 startTime: Number(rsult.timestamp),
                                 endTime: Number(rsult.duration),
                                 frame: bitmap,
                                 uuid: crypto.randomUUID()
                             } as BitmapSubArgs, [bitmap]);
-                            
-                            this.module!._cleanup_subtitle_frame(rsult.subtitle_frame_ptr as any);
+                        }, err => {
+                            console.warn("Could not turn the subtitle into a bitmap. :/", err);
+                        }).finally(() => {
+                            this.module!._cleanup_subtitle_frame(rsult.subtitle_frame_ptr as number & BigInt);
                         });
 
                         break;
                     }
                     case AVSubtitleType.SUBTITLE_TEXT:
                     case AVSubtitleType.SUBTITLE_ASS: {
-                        if (rsult.subtitle_text == null) {
+                        if (rsult.subtitle_text === null) {
                             console.error("Got a SW Subtitle text without the text??");
                             return;
                         }
@@ -471,9 +467,8 @@ class FFmpegBridge {
 
         let decoderResult;
         try {
-            // TODO fight the TS compiler
-            // @ts-expect-error
-            decoderResult = await this.IsStreamSupported(type, config);
+            // @ts-expect-error TODO fight the TS compiler
+            decoderResult = await this.isStreamSupported(type, config);
         } catch {
 
         }
@@ -494,7 +489,7 @@ class FFmpegBridge {
             type: "init",
             isVideo: type === AVMediaType.AVMEDIA_TYPE_VIDEO,
             justToCombineStuff: decoderResult?.supported === true ? false : true,
-            targetBuffer: this.module.wasmMemory,
+            targetBuffer: this.wasmMemory,
             inputAtomicBuffers: eventer.getBuffers(),
             audioConfig: type === AVMediaType.AVMEDIA_TYPE_AUDIO ? config : undefined,
             videoConfig: type === AVMediaType.AVMEDIA_TYPE_VIDEO ? config : undefined,
@@ -520,15 +515,15 @@ class FFmpegBridge {
         };
     }
 
-    private IsStreamSupported(type: AVMediaType.AVMEDIA_TYPE_VIDEO, config: VideoDecoderConfig): Promise<VideoDecoderSupport>;
-    private IsStreamSupported(type: AVMediaType.AVMEDIA_TYPE_AUDIO, config: AudioDecoderConfig): Promise<AudioDecoderSupport>;
-    private IsStreamSupported<T extends ValidDecoderTypes>(
+    private isStreamSupported(type: AVMediaType.AVMEDIA_TYPE_VIDEO, config: VideoDecoderConfig): Promise<VideoDecoderSupport>;
+    private isStreamSupported(type: AVMediaType.AVMEDIA_TYPE_AUDIO, config: AudioDecoderConfig): Promise<AudioDecoderSupport>;
+    private isStreamSupported<T extends ValidDecoderTypes>(
         type: T,
         config: DecoderConfig[T]
     ): Promise<DecoderSupport[T]> {
         if (type === AVMediaType.AVMEDIA_TYPE_VIDEO) {
             return VideoDecoder.isConfigSupported(config as VideoDecoderConfig) as Promise<DecoderSupport[T]>;
-        } else if (type == AVMediaType.AVMEDIA_TYPE_AUDIO) {
+        } else if (type === AVMediaType.AVMEDIA_TYPE_AUDIO) {
             return AudioDecoder.isConfigSupported(config as AudioDecoderConfig) as Promise<DecoderSupport[T]>;
         } else {
             throw Error("Unsupported Decoder");
@@ -558,17 +553,17 @@ class FFmpegBridge {
             }
             case WebDecoderResponseType.FREE_VIDEO_PTR: {
                 const { ptr } = data as { ptr: number; };
-                this.module!._cleanup_video_frame((this.is64Bit ? BigInt(ptr) : ptr) as any);
+                this.module!._cleanup_video_frame((this.is64Bit ? BigInt(ptr) : ptr) as number & BigInt);
                 break;
             }
             case WebDecoderResponseType.FREE_AUDIO_PTR: {
                 const { ptr } = data as { ptr: number; };
-                this.module!._cleanup_audio_frame((this.is64Bit ? BigInt(ptr) : ptr) as any);
+                this.module!._cleanup_audio_frame((this.is64Bit ? BigInt(ptr) : ptr) as number & BigInt);
                 break;
             }
             case WebDecoderResponseType.PACKET_PUBLISHED: {
                 const { packetPtr } = data as { packetPtr: number; };
-                this.module!._cleanup_packet((this.is64Bit ? BigInt(packetPtr) : packetPtr) as any);
+                this.module!._cleanup_packet((this.is64Bit ? BigInt(packetPtr) : packetPtr) as number & BigInt);
             }
         }
     }
@@ -592,7 +587,7 @@ class FFmpegBridge {
         }
     }
 
-    private VideoStructToConfig(config: VideoDecoderConfigStruct): VideoDecoderConfig {
+    private videoStructToConfig(config: VideoDecoderConfigStruct): VideoDecoderConfig {
         const description = this.module!.HEAPU8.slice(config.description, config.description + config.description_size);
         return {
             codec: config.codec,
@@ -605,17 +600,23 @@ class FFmpegBridge {
                 transfer: AVColorTransferToTransferChar(config.color_trc) as VideoTransferCharacteristics
             },
             description: description.byteLength > 0 ? description : undefined,
+            hardwareAcceleration: "no-preference",
         };
     }
 
-    private AudioStructToConfig(config: AudioDecoderConfigStruct): AudioDecoderConfig {
+    private audioStructToConfig(config: AudioDecoderConfigStruct): AudioDecoderConfig {
         const description = this.module!.HEAPU8.slice(config.description, config.description + config.description_size);
+        const format = config.sample_format >= 0
+            ? (["u8", "s16", "s32", "f32"] as const)[config.sample_format]
+            : undefined;
+
         return {
             codec: config.codec,
             numberOfChannels: config.num_channels,
             sampleRate: config.sample_rate,
             description: description.byteLength > 0 ? description : undefined,
-        };
+            ...(format ? { format } : {}),
+        } as AudioDecoderConfig;
     }
 }
 

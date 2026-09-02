@@ -49,6 +49,7 @@ AVFrame *sws_frame(SwsContext *sws_ctx, AVFrame *frame,
   int ret = av_frame_get_buffer(dst, 0);
   if (ret < 0) {
     fprintf(stderr, "Could not allocate the video frame data for new format\n");
+    av_frame_free(&dst);
     return NULL;
   }
 
@@ -91,6 +92,8 @@ AVFrame *swr_frame(SwrContext *swr_ctx, AVFrame *frame,
   int ret = av_frame_get_buffer(dst, 0);
   if (ret < 0) {
     fprintf(stderr, "Could not allocate the audio frame data for new format\n");
+    av_frame_free(&dst);
+    return NULL;
   }
 
   ret = swr_convert(swr_ctx, dst->data, dst->nb_samples,

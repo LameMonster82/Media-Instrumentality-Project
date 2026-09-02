@@ -29,6 +29,8 @@ export type BitmapSubArgs = {
     codecHeight: number;
     startTime: number,
     endTime: number,
-    frame: ImageBitmap,
+    frame?: ImageBitmap,
     uuid: string;
 };
+
+export type VideoDisplayData = Pick<VideoFrameCallbackMetadata, 'expectedDisplayTime' | 'width' | 'height' | 'mediaTime'>;

@@ -48,3 +48,25 @@ export interface FileSeekableWorkerInit {
     targetBuffer: WebAssembly.Memory,
     atomicBuffers: AtomicEventerBuffers,
 }
+
+export interface RtcSeekableWorkerInit {
+    type: "init",
+    port: MessagePort,
+    fileSize: number,
+    targetBuffer: WebAssembly.Memory,
+    atomicBuffers: AtomicEventerBuffers,
+    bufferSize: number,
+    maxMessageSize?: number,
+}
+
+/**
+ * A media source that must be fetched from a share-play host over WebRTC.
+ * The MessagePort is handed to the rtcSeeker worker and bridges range requests
+ * to the host's data channel.
+ */
+export interface RemoteFileSource {
+    readonly kind: "remote";
+    readonly port: MessagePort;
+    readonly fileSize: number;
+    readonly maxMessageSize?: number;
+}

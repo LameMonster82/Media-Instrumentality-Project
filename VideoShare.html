@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VideoShare</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+        rel="stylesheet" />
+
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@48,700,1,200" />
+
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        body {
+            font-family: Inter, system-ui, sans-serif;
+            background: #111;
+            color: #eee;
+            margin: 0;
+            padding: 24px;
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        button {
+            background: #2a2a2a;
+            color: #eee;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 8px 14px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #333;
+        }
+
+        input {
+            background: #1a1a1a;
+            color: #eee;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 8px 10px;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .drop-zone {
+            border: 2px dashed #444;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            color: #999;
+            margin-bottom: 16px;
+        }
+
+        .drop-zone.dragover {
+            border-color: #7cf;
+            color: #7cf;
+        }
+
+        #members {
+            margin-bottom: 12px;
+            color: #999;
+        }
+
+        #playerContainer {
+            display: flex;
+            justify-content: center;
+        }
+
+        #playerContainer .videoContainer {
+            width: 100%;
+            max-width: 960px;
+        }
+
+        a {
+            color: #7cf;
+            word-break: break-all;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>VideoShare</h2>
+
+    <div class="row">
+        <button id="createLobby">Create lobby</button>
+        <input id="joinInput" placeholder="Lobby id or invite link" />
+        <button id="joinLobby">Join</button>
+        <input id="urlInput" placeholder="or host a URL directly" />
+        <button id="hostUrl">Host URL</button>
+    </div>
+
+    <div id="inviteRow" class="row" style="display: none">
+        Invite link: <a id="inviteLink" href="#"></a>
+    </div>
+
+    <div id="members"></div>
+
+    <div class="drop-zone" id="dropZone">
+        <p>Drop a video file here to host it for everyone</p>
+    </div>
+
+    <div id="playerContainer"></div>
+
+    <script src="src/VideoShare.ts" type="module"></script>
+</body>
+
+</html>

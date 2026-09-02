@@ -116,11 +116,11 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
         return {
             kind: "audioDataInit",
             data: output,
-            format: "f32-planar",
+            format: "f32",
             numberOfChannels: channels,
             numberOfFrames: frames,
             sampleRate: frame.sampleRate,
-            timestamp: 0,
+            timestamp: frame.timestamp,
             transfer: output.map(b => b.buffer),
         };
     }

@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "signaling": "node server/signaling.mjs"
   },
   "private": true,
   "devDependencies": {
@@ -33,6 +34,7 @@
     "assjs": "^0.1.7",
     "jassub": "^2.5.14",
     "monaco-editor": "0.55.1",
-    "three": "^0.184.0"
+    "three": "^0.184.0",
+    "ws": "^8.18.0"
   }
 }

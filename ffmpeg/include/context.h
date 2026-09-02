@@ -132,6 +132,7 @@ typedef struct {
   enum AVSubtitleType subtitle_type;
   SubtitleFrame *subtitle_frame;
   char          *subtitle_text;
+  int           empty_subtitle;
 
   int flags;
   uint8_t *packet_data;

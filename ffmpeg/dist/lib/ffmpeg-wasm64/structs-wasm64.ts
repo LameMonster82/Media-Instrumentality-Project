@@ -82,7 +82,8 @@ export interface ReturnType {
   subtitle_type:  number; // @32 enum AVSubtitleType assumed enum/int-sized (enum AVSubtitleType);
   subtitle_frame: bigint; // @40 SubtitleFrame * pointer / handle;
   subtitle_text:  bigint; // @48 char * pointer / handle;
-  flags:          number; // @56 int
+  empty_subtitle: number; // @56 int
+  flags:          number; // @60 int
   packet_data:    bigint; // @64 uint8_t * pointer / handle;
   packet_size:    number; // @72 int
   timestamp:      bigint; // @80 int64_t
@@ -101,7 +102,8 @@ export const OFFSETS_ReturnType = {
   subtitle_type: 32,
   subtitle_frame: 40,
   subtitle_text: 48,
-  flags: 56,
+  empty_subtitle: 56,
+  flags: 60,
   packet_data: 64,
   packet_size: 72,
   timestamp: 80,
@@ -120,7 +122,8 @@ export function readReturnType(buffer: ArrayBufferLike, offset = 0): ReturnType 
     subtitle_type: view.getInt32(32, true),
     subtitle_frame: view.getBigUint64(40, true),
     subtitle_text: view.getBigUint64(48, true),
-    flags: view.getInt32(56, true),
+    empty_subtitle: view.getInt32(56, true),
+    flags: view.getInt32(60, true),
     packet_data: view.getBigUint64(64, true),
     packet_size: view.getInt32(72, true),
     timestamp: view.getBigInt64(80, true),

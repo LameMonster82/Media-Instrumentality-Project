@@ -174,6 +174,7 @@ export interface ReturnType {
     subtitle_type: AVSubtitleType;
     subtitle_frame: SubtitleFrame | null;
     subtitle_text: string | null;
+    empty_subtitle: boolean;
 
     flags: number;
     packet_data: number;          // AVPacket* data pointer
@@ -488,6 +489,7 @@ export function readReturnType(buffer: ArrayBuffer, offset: number, is64Bit: boo
         subtitle_type: info.subtitle_type,
         subtitle_frame,
         subtitle_text,
+        empty_subtitle: info.empty_subtitle === 1,
         flags: info.flags,
         packet_data: Number(info.packet_data),
         packet_size: info.packet_size,

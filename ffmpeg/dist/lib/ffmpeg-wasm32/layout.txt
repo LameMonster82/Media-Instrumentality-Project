@@ -108,9 +108,10 @@
         20 |   enum AVSubtitleType subtitle_type
         24 |   SubtitleFrame * subtitle_frame
         28 |   char * subtitle_text
-        32 |   int flags
-        36 |   uint8_t * packet_data
-        40 |   int packet_size
+        32 |   int empty_subtitle
+        36 |   int flags
+        40 |   uint8_t * packet_data
+        44 |   int packet_size
         48 |   int64_t timestamp
         56 |   int64_t duration
         64 |   AVPacket * packet

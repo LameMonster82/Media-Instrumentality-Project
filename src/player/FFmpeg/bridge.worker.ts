@@ -1,17 +1,18 @@
 import urlSeekerWorker from "../seeker/urlSeeker.worker?worker";
 import fileSeekerWorker from "../seeker/fileSeeker.worker?worker";
+import rtcSeekerWorker from "../../shareplay/rtcSeeker.worker?worker";
 import webDecoderWorker from "./webDecoder/webDecoder.worker?worker";
 import type { FFmpegWorker } from "@FFmpeg/FFmpegTypes";
 
 import type { MainModule as MainModule32 } from "@FFmpeg/ffmpeg-wasm32/ffmpeg";
 import type { MainModule as MainModule64 } from "@FFmpeg/ffmpeg-wasm64/ffmpeg";
 
-import { RequestDataStatus, StreamSupport, type AllTargetWorkerMessages, type DecoderConfig, type DecoderSupport, type ValidDecoderTypes, type WorkerFFmpegInitComplete, type WorkerInitFFmpeg } from "./types";
+import { RequestDataStatus, StreamSupport, type AllTargetWorkerMessages, type DecoderConfig, type DecoderSupport, type ValidDecoderTypes, type WorkerChangeStream, type WorkerFFmpegInitComplete, type WorkerInitFFmpeg, type WorkerOk } from "./types";
 import { AVColorPrimarieToColorPrimative, AVColorRangeToColorRange, AVColorSpaceToColorMatrixCoeff, AVColorTransferToTransferChar, AVLogLevel, AVPixelFormat } from "./advancedTypes/AVTypes";
 import getSupportedPixelFormats from "./advancedTypes/supportedPixelFormats";
 import canWasm64 from "./advancedTypes/isWasm64";
 import AtomicEventer from "../atomicEventer/atomicEventer";
-import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type FileSeekableWorkerInit, type UrlSeekableWorkerInit } from "../seeker/types";
+import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type FileSeekableWorkerInit, type RemoteFileSource, type RtcSeekableWorkerInit, type UrlSeekableWorkerInit } from "../seeker/types";
 import type { DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
 import type { Dictionary } from "@/core/types";
 import { decoderRequestTemplates, decoderResponseTemplates, WebDecoderRequestType, WebDecoderResponseType, type WebDecoderWorkerInit } from "./webDecoder/types";
@@ -48,10 +49,11 @@ class FFmpegBridge {
     private fileOffset: bigint = 0n;
 
     // File
-    private fileUrl: string | File = "";
+    private fileUrl: string | File | RemoteFileSource = "";
 
     // Streams
     private streams: Record<number, Stream> = {};
+    private webDecoderLocks: Map<number, boolean> = new Map();
 
     // Memory
     private wasmMemory: WebAssembly.Memory;
@@ -74,7 +76,7 @@ class FFmpegBridge {
         const initial = this.is64Bit ? 512n : 512;
         const maximum = this.is64Bit ? 262144n : 32768;
         const adress = this.is64Bit ? 'i64' : 'i32';
-        
+
         this.wasmMemory = new WebAssembly.Memory({
             // @ts-ignore BigInt is ok dw
             initial: initial,
@@ -101,7 +103,7 @@ class FFmpegBridge {
             this.seekerEventer.receiveEvent(this.handleSeekerEvents.bind(this));
 
             this.seekerWorker.postMessage({
-                url: this.fileUrl,
+                url: dataInfo.fileSource,
                 atomicBuffers: this.seekerEventer.getBuffers(),
                 fetchBufferSize: this.bufferSize,
                 targetBuffer: this.wasmMemory,
@@ -117,6 +119,20 @@ class FFmpegBridge {
                 targetBuffer: this.wasmMemory,
                 type: "init"
             } as FileSeekableWorkerInit);
+        } else {
+            const source = dataInfo.fileSource;
+            this.seekerWorker = rtcSeekerWorker({ name: "I pull media bytes from the share-play host" });
+            this.seekerEventer.receiveEvent(this.handleSeekerEvents.bind(this));
+
+            this.seekerWorker.postMessage({
+                port: source.port,
+                fileSize: source.fileSize,
+                atomicBuffers: this.seekerEventer.getBuffers(),
+                targetBuffer: this.wasmMemory,
+                bufferSize: this.bufferSize,
+                maxMessageSize: source.maxMessageSize,
+                type: "init"
+            } as RtcSeekableWorkerInit, [source.port]);
         }
 
         const seekResults = await this.seekerEventer.waitUntilEvent(SeekerResponseType.SEEK_DONE);
@@ -199,6 +215,11 @@ class FFmpegBridge {
         this.module._cleanup_info(fileInfoPtr as never);
     }
 
+    public setStreamEnable(data: WorkerChangeStream) {
+        this.streams[data.index].isUsed = data.enabled;
+        this.updateFFmpegSupportedStreams();
+    }
+
     async loadWasmModule() {
         // eslint-disable-next-line @typescript-eslint/naming-convention
         const { default: FFmpegModuleUrl } = this.is64Bit ? (await import("@FFmpeg/ffmpeg-wasm64/ffmpeg.mjs?url")) : (await import("@FFmpeg/ffmpeg-wasm32/ffmpeg.mjs?url"));
@@ -259,13 +280,6 @@ class FFmpegBridge {
                 this.videoEventer?.sendEvent(FFmpegResponseEvent.SEEK_STATUS, { status: ret });
                 break;
             }
-            case FFmpegRequestEvent.SET_STREAM_ACTIVE: {
-                const data2 = data as { streamIndex: number, active: boolean; };
-                this.streams[data2.streamIndex].isUsed = data2.active;
-                this.updateFFmpegSupportedStreams();
-                this.videoEventer!.sendEvent(FFmpegResponseEvent.SET_STREAM_DONE, {});
-                break;
-            }
         }
     }
 
@@ -280,6 +294,10 @@ class FFmpegBridge {
                     case ResultStatus.RESULT_NEED_MORE: continue;
                     case ResultStatus.RESULT_EOF: return { status: RequestDataStatus.EOF, packetType: -1 };
                     case ResultStatus.RESULT_RAW_PACKET: {
+                        if (this.webDecoderLocks.get(rsult.stream_index) === true) {
+                            //this.streams[rsult.stream_index].eventer?.lockUntilEvent(WebDecoderResponseType.PACKET_PUBLISHED);
+                            console.warn("Warning: this web decoder hasnt finished yet");
+                        }
                         const packetType = this.sendPacketToDecoder(rsult);
                         return { status: RequestDataStatus.DECODED_BY_OTHER_THREAD, packetType };
                     }
@@ -308,8 +326,10 @@ class FFmpegBridge {
             duration: Number(rsult.duration),
             timestamp: Number(rsult.timestamp),
             isKey: (rsult.flags & 1) === 1,
-            packetPtr: Number(rsult.packet)
+            packetPtr: Number(rsult.packet),
+            streamIndex: rsult.stream_index
         });
+        this.webDecoderLocks.set(rsult.stream_index, true);
         return stream.type;
     }
 
@@ -391,6 +411,20 @@ class FFmpegBridge {
 
                 switch (rsult.subtitle_type) {
                     case AVSubtitleType.SUBTITLE_BITMAP: {
+                        if (rsult.empty_subtitle) {
+                            this.streams[rsult.stream_index].secondMessageChannel.port2.postMessage({
+                                x: 0,
+                                y: 0,
+                                codecWidth: 0,
+                                codecHeight: 0,
+                                startTime: Number(rsult.timestamp),
+                                endTime: Number(rsult.duration),
+                                frame: undefined,
+                                uuid: ""
+                            } as BitmapSubArgs);
+                            return;
+                        }
+
                         if (rsult.subtitle_frame === null) {
                             console.error("Got a SW Subtitle frame without the frame??");
                             return;
@@ -562,8 +596,9 @@ class FFmpegBridge {
                 break;
             }
             case WebDecoderResponseType.PACKET_PUBLISHED: {
-                const { packetPtr } = data as { packetPtr: number; };
+                const { packetPtr, streamIndex } = data as { packetPtr: number; streamIndex: number };
                 this.module!._cleanup_packet((this.is64Bit ? BigInt(packetPtr) : packetPtr) as number & BigInt);
+                this.webDecoderLocks.set(streamIndex, false);
             }
         }
     }
@@ -637,9 +672,11 @@ self.onmessage = async (e: MessageEvent<AllTargetWorkerMessages>) => {
             bridge.initialize(e.data);
             break;
         }
-        case "changeStream":
-        case "initFfmpegModuleOnly":
-        case "thumbnailRequest":
+        case "changeStream": {
+            bridge?.setStreamEnable(e.data);
+            self.postMessage({ kind: "ok" } as WorkerOk);
+            break;
+        }
         case "demuxerRequest":
         case "shutdown":
             console.log("idk :/");

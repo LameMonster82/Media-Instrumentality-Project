@@ -75,7 +75,7 @@ export default class MediaControls {
                 play_arrow
             </button>
 
-            <img class={ styles.videoControlBtn } style={ { width: '30px' } } ref={ r => this.loadingIcon = r } src={ loadingLoop }></img>
+            <img class={ `${styles.videoControlBtn} ${styles.iconLoading}` } ref={ r => this.loadingIcon = r } src={ loadingLoop }></img>
 
             {/* Progress bar */ }
             <div class={ styles.progressBar } ref={ r => this.progressBarHold = r }>
@@ -198,17 +198,17 @@ export default class MediaControls {
             const rect2 = this.progressHoverRange.getBoundingClientRect();
 
             const clickPosition = (e.clientX - rect.left) / rect.width;
-            const duration = this.callbacks.getMediaDuration() / 1000;
+            const duration = this.callbacks.getMediaDuration();
             const potentialValue = clickPosition * duration;
 
             let title: string = "";
             const chapter = this.chapters.find(c => c.start <= potentialValue && c.end >= potentialValue);
 
             if (chapter && chapter.title) {
-                title = chapter.title;
+                title = `${chapter.title}\n`;
             }
 
-            this.progressHoverRange.textContent = `${title}\n${formatSeconds(potentialValue, this.hasHours).time}`;
+            this.progressHoverRange.textContent = `${title}${formatSeconds(potentialValue, this.hasHours).time}`;
             this.progressHoverRange.style.left = `${e.offsetX - rect2.width / 2}px`;
         });
 
@@ -640,5 +640,5 @@ function makeDraggable(element: HTMLElement, container?: HTMLElement) { // Added
 }
 
 function optionText(stream: ControlStream) {
-    return stream.metadata["title"] ?? stream.metadata["TITLE"] ?? stream.metadata["language"] ?? stream.metadata["LANGUAGE"] ?? `Stream: ${stream.index}`;
+    return stream.metadata["title"] ?? stream.metadata["TITLE"] ?? stream.metadata["language"] ?? stream.metadata["LANGUAGE"] ?? `Untitled: ${stream.index}`;
 }

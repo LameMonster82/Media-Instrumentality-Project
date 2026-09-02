@@ -578,6 +578,7 @@ ReturnType *poke_for_data() {
 
     g_ctx.data_return->status = RESULT_OK;
     g_ctx.data_return->type = RESULT_SUBTITLE;
+    g_ctx.data_return->empty_subtitle = 0;
 
     for (int i = 0; i < sub.num_rects; i++) {
       AVSubtitleRect *rect = sub.rects[i];
@@ -609,6 +610,13 @@ ReturnType *poke_for_data() {
         }
     }
 
+      send_sw_frame(g_ctx.data_return);
+    }
+
+    if(sub.num_rects == 0) {
+      g_ctx.data_return->subtitle_type = SUBTITLE_BITMAP;
+      g_ctx.data_return->subtitle_frame = NULL;
+      g_ctx.data_return->empty_subtitle = 1;
       send_sw_frame(g_ctx.data_return);
     }
 

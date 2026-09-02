@@ -13,6 +13,15 @@ export interface MediaStreamTrackWrapper<T> {
     stealPlayEvent(): Promise<void>;
 }
 
+export interface CanvasTrackWrapper<T, U> {
+    enable(enable: boolean): Promise<void>;
+    createCanvas(callback: () => HTMLCanvasElement): void;
+    getCanvas(): HTMLCanvasElement | null;
+    writeData(data: T): Promise<void>;
+    display(data: U): Promise<void>;
+    destroy(): void;
+}
+
 export type AnyMediaStreamTrack = MediaStreamTrackWrapper<unknown>;
 
 export type AllStreamTrackTypes = AudioFFmpegStream | VideoFFmpegStream | SubtitleFFmpegStream;

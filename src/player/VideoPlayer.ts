@@ -2,19 +2,29 @@ import MediaControls from "@/components/controls/Controls";
 import styles from "./videoPlayer.module.css";
 import ffmpegWorker from "@/player/FFmpeg/bridge.worker?worker";
 import AtomicEventer from "./atomicEventer/atomicEventer";
-import { RequestDataStatus, type AllRespondWorkerEventsKind, type DictionaryWorkerEvent, type RespondEventByKind, type WorkerFFmpegInitComplete, type WorkerInitFFmpeg } from "./FFmpeg/types";
+import { RequestDataStatus, type AllRespondWorkerEventsKind, type DictionaryWorkerEvent, type RespondEventByKind, type WorkerChangeStream, type WorkerFFmpegInitComplete, type WorkerInitFFmpeg } from "./FFmpeg/types";
 import { FFmpegRequestEvent, ffmpegRequestTemplate, FFmpegResponseEvent, ffmpegResponseTemplate } from "./FFmpeg/advancedTypes/atomicTypes";
 import { AttachmentType, AVMediaType, AVSubtitleType, MediaType } from "./FFmpeg/structReader";
-import type { MediaStreamTrackWrapper } from "./Tracks/types";
+import type { CanvasTrackWrapper, MediaStreamTrackWrapper } from "./Tracks/types";
 import { GetVideoTrackCtor } from "./Tracks/video/utils";
 import { GetAudioTrackCtor } from "./Tracks/audio/utils";
 import { audioTime, type WorkerAudioDataInit } from "./Tracks/audio/audioTypes";
 import { Dispositions } from "./FFmpeg/advancedTypes/AVTypes";
-import type { ASSTrackStream, BitmapSubArgs, TextTrackStream, VTTCueArgs } from "./Tracks/subtitles/types";
+import type { BitmapSubArgs, VideoDisplayData, VTTCueArgs } from "./Tracks/subtitles/types";
+import type { RemoteFileSource } from "./seeker/types";
 import musicIcon from "@Resources/Icons/music.svg?url";
 
 import JASSUB, { webYCbCrMap } from "jassub";
 import type { ControlStream } from "@/components/controls/types";
+import { extractCoverArt, extractFonts } from "./utils";
+import SubtitleTextTrack from "./Tracks/subtitles/SubtitleTextTrack";
+import SubtitleASSTrack from "./Tracks/subtitles/SubtitleASSTrack";
+import SubtitleBitmapTrack from "./Tracks/subtitles/SubtitleBitmapTrack";
+
+export type PlaybackCommand =
+    | { kind: "play" }
+    | { kind: "pause" }
+    | { kind: "seek"; time: number }; // time in milliseconds
 
 export class VideoPlayer2 {
     // DOM
@@ -28,11 +38,7 @@ export class VideoPlayer2 {
     // Renderer
     private videoRenderer: Map<number, MediaStreamTrackWrapper<VideoFrame>> = new Map();
     private audioRenderer: Map<number, MediaStreamTrackWrapper<AudioData | WorkerAudioDataInit>> = new Map();
-    private subtitleTextRenderer: Map<number, TextTrackStream> = new Map();
-    private subtitleASSRenderer: Map<number, ASSTrackStream> = new Map();
-    private subtitleBitmapRenderer: Set<number> = new Set();
-    private subtitleBitmapCanvas: CanvasRenderingContext2D | undefined;
-    private activeBitmapSubtitles: string[] = [];
+    private subtitleRenderer: Map<number, CanvasTrackWrapper<VTTCueArgs | BitmapSubArgs, VideoDisplayData>> = new Map();
 
     private activeVideoStream: number = -1;
     private activeAudioStream: number = -1;
@@ -41,7 +47,6 @@ export class VideoPlayer2 {
     // Buffer
     private videoFrameBuffer: (VideoFrame | null)[] = [];
     private audioFrameBuffer: ((AudioData | WorkerAudioDataInit) | null)[] = [];
-    private subtitleBitmapBuffer: BitmapSubArgs[] = [];
 
     // Time
     private mediaTime: DOMHighResTimeStamp = 0;
@@ -62,9 +67,14 @@ export class VideoPlayer2 {
         FFmpegResponseEvent,
         typeof ffmpegRequestTemplate,
         typeof ffmpegResponseTemplate
-    > = new AtomicEventer(undefined, ffmpegRequestTemplate, ffmpegResponseTemplate);
+        > = new AtomicEventer(undefined, ffmpegRequestTemplate, ffmpegResponseTemplate);
 
-    constructor(videoSrc: string | File) {
+    private commandHandler: ((command: PlaybackCommand) => void) | undefined;
+
+    // FFmpeg
+    private worker: Worker;
+
+    constructor(videoSrc: string | File | RemoteFileSource) {
         // DOM
         this.video.classList.add(styles.videoItself);
         this.videoContainer.classList.add(styles.player);
@@ -79,16 +89,24 @@ export class VideoPlayer2 {
         // Worker
         const worker = ffmpegWorker({ name: "I tell ffmpeg to do the work" });
         worker.onmessage = this.handleSlowEvent.bind(this);
+
+        const transfer: Transferable[] = [];
+        if (typeof videoSrc === "object" && videoSrc !== null && !(videoSrc instanceof File) && "port" in videoSrc) {
+            transfer.push(videoSrc.port);
+        }
+
         worker.postMessage({
             fileSource: videoSrc,
             bufferSize: 32 * 1024 * 1024,
             kind: "initFfmpeg",
             eventerBuffers: this.workerEventer.getBuffers(),
-        } as WorkerInitFFmpeg);
+        } as WorkerInitFFmpeg, transfer);
 
         window.onbeforeunload = () => {
             worker.terminate();
         };
+
+        this.worker = worker;
 
         this.workerEventer.receiveEvent((data) => {
             switch (data) {
@@ -107,6 +125,11 @@ export class VideoPlayer2 {
         const controls = new MediaControls(this.video, {
             onPlayPause: async (intent?: boolean) => {
                 intent ??= this.paused;
+                if (this.commandHandler) {
+                    this.commandHandler({ kind: intent ? "play" : "pause" });
+                    this.controls.setPlayback(intent);
+                    return intent;
+                }
                 if (this.endOfFile && intent && this.duration <= this.mediaTime) {
                     await this.seek(0);
                     return intent;
@@ -123,6 +146,10 @@ export class VideoPlayer2 {
                 return intent;
             },
             onSeekTo: (time: number) => {
+                if (this.commandHandler) {
+                    this.commandHandler({ kind: "seek", time: time * 1000 });
+                    return;
+                }
                 this.pause();
                 this.seek(time * 1000);
             },
@@ -137,8 +164,8 @@ export class VideoPlayer2 {
             onVolumeChange: (volume: number) => {
                 this.video.volume = volume;
             },
-            getMediaDuration: () => this.duration,
-            getCurrentTime: () => this.mediaTime,
+            getMediaDuration: () => this.duration / 1000,
+            getCurrentTime: () => this.mediaTime / 1000,
             getVolume: () => this.video.volume,
             onVideoTrackSelect: (index: number) => this.updateTrack("video", index),
             onAudioTrackSelect: (index: number) => this.updateTrack("audio", index),
@@ -156,25 +183,36 @@ export class VideoPlayer2 {
     private async initMedia() {
         const data = await this.waitForSlowEvent("initComplete");
 
-        // Metadata
+        // --- Metadata
         this.duration = Number(data.info.duration) / 1000;
         this.updateTime();
 
-        // Attachments
-        const fonts: Uint8Array[] = [];
-        let cover: Blob | undefined = undefined;
+        // --- Attachments
         const streams = data.info.streams.values().toArray();
-        const attachments = streams.filter(s => s.type === AVMediaType.AVMEDIA_TYPE_ATTACHMENT);
-        for (const attachment of attachments) {
-            if (attachment.attachment_config?.type === AttachmentType.FONT) {
-                fonts.push(attachment.attachment_config.data);
-            } else if (attachment.attachment_config?.type === AttachmentType.COVER) {
+        const fonts = extractFonts(streams);
+        const cover = extractCoverArt(streams);
 
-                cover = new Blob([attachment.attachment_config.data], { type: attachment.metadata["mimetype"] });
-            }
+
+        for (const [index, stream] of data.info.streams) {
+            if (!!!(stream.disposition & Dispositions.AV_DISPOSITION_DEFAULT))
+                continue;
+
+            if (stream.type === AVMediaType.AVMEDIA_TYPE_VIDEO)
+                this.activeVideoStream = index;
+            if (stream.type === AVMediaType.AVMEDIA_TYPE_AUDIO)
+                this.activeAudioStream = index;
+            if (stream.type === AVMediaType.AVMEDIA_TYPE_SUBTITLE)
+                this.activeSubtitleStream = index;
         }
 
-        // Renderers
+        // We can now wait for cover when we know if there is a video stream
+        this.firstFrameAsPoster(cover ?? undefined);
+
+        // --- Renderers
+        const videoStreams: ControlStream[] = [{ index: -1, isUsed: false, metadata: { title: "Disable" } }];
+        const audioStreams: ControlStream[] = [{ index: -1, isUsed: false, metadata: { title: "Disable" } }];
+        const subtitleStreams: ControlStream[] = [{ index: -1, isUsed: false, metadata: { title: "Disable" } }];
+
         // eslint-disable-next-line @typescript-eslint/naming-convention
         const initStream = async <T extends MediaStreamTrackWrapper<unknown>>(enabled: boolean, Renderer: new (...args: unknown[]) => T, ...args: unknown[]): Promise<T> => {
             const renderer = new Renderer(...args ?? []);
@@ -189,21 +227,6 @@ export class VideoPlayer2 {
             return renderer;
         };
 
-        for (const [index, stream] of data.info.streams) {
-            if (!!!(stream.disposition & Dispositions.AV_DISPOSITION_DEFAULT))
-                continue;
-
-            if (stream.type === AVMediaType.AVMEDIA_TYPE_VIDEO)
-                this.activeVideoStream = index;
-            if (stream.type === AVMediaType.AVMEDIA_TYPE_AUDIO)
-                this.activeAudioStream = index;
-            if (stream.type === AVMediaType.AVMEDIA_TYPE_SUBTITLE)
-                this.activeSubtitleStream = index;
-        }
-
-        const videoStreams: ControlStream[] = [{ index: -1, isUsed: false, metadata: { title: "Disable" } }];
-        const audioStreams: ControlStream[] = [{ index: -1, isUsed: false, metadata: { title: "Disable" } }];
-        const subtitleStreams: ControlStream[] = [{ index: -1, isUsed: false, metadata: { title: "Disable" } }];
         for (const [i, stream] of data.info.streams) {
             let enabled = false;
             switch (stream.type) {
@@ -226,7 +249,8 @@ export class VideoPlayer2 {
                         this.activeAudioStream = i;
                     if (this.activeAudioStream === i)
                         enabled = true;
-                    const renderer = await initStream(enabled, GetAudioTrackCtor(), stream.audio_config!.sample_rate, stream.audio_config!.num_channels);
+                    const renderer = await initStream(enabled, GetAudioTrackCtor(),
+                        stream.audio_config!.sample_rate, stream.audio_config!.num_channels);
                     this.audioRenderer.set(i, renderer);
                     audioStreams.push({
                         index: i,
@@ -241,48 +265,37 @@ export class VideoPlayer2 {
                     if (this.activeSubtitleStream === i)
                         enabled = true;
 
+                    let bitmapCanvas: HTMLCanvasElement | undefined;
+                    const createCanvas = (resuse: boolean = false) => {
+                        const canvas = resuse && bitmapCanvas ? bitmapCanvas : document.createElement('canvas');
+                        canvas.classList.add(styles.canvasOverlay);
+                        canvas.style.display = "none";
+                        this.videoContainer.appendChild(canvas);
+                        if (resuse) bitmapCanvas = canvas;
+                        return canvas;
+                    };
+
                     switch (stream.subtitle_config!.type) {
                         case AVSubtitleType.SUBTITLE_TEXT: {
-                            const track = this.video.addTextTrack("subtitles", stream.metadata["title"], stream.metadata["language"]);
-                            track.mode = enabled ? "showing" : "disabled";
-                            this.subtitleTextRenderer.set(i, {
-                                track,
-                                cues: new Set()
-                            });
+                            const renderer = new SubtitleTextTrack(this.video, stream.metadata["title"], stream.metadata["language"]);
+                            renderer.createCanvas(createCanvas.bind(this));
+                            await renderer.enable(enabled);
+                            this.subtitleRenderer.set(i, renderer);
                             break;
                         }
                         case AVSubtitleType.SUBTITLE_ASS: {
-                            const canvas = document.createElement('canvas');
-                            canvas.classList.add(styles.canvasOverlay);
-                            canvas.style.display = enabled ? "" : "none";
-                            this.videoContainer.appendChild(canvas);
+                            const renderer = new SubtitleASSTrack(stream.subtitle_config!.subtitle_header, fonts);
+                            renderer.createCanvas(createCanvas.bind(this));
 
-                            const renderer = new JASSUB({
-                                canvas,
-                                debug: false,
-                                subContent: stream.subtitle_config!.subtitle_header,
-                                fonts: fonts
-                            });
-
-                            await renderer.ready;
-
-                            this.subtitleASSRenderer.set(i, {
-                                track: renderer,
-                                cues: new Set(),
-                                hasColorspace: false,
-                            });
+                            await renderer.enable(enabled);
+                            this.subtitleRenderer.set(i, renderer);
                             break;
                         }
                         case AVSubtitleType.SUBTITLE_BITMAP: {
-                            if (!this.subtitleBitmapCanvas) {
-                                const canvas = document.createElement('canvas');
-                                canvas.classList.add(styles.canvasOverlay);
-                                canvas.style.display = enabled ? "" : "none";
-                                this.videoContainer.appendChild(canvas);
-
-                                this.subtitleBitmapCanvas = canvas.getContext('2d', { alpha: true, desynchronized: true })!;
-                            }
-                            this.subtitleBitmapRenderer.add(i);
+                            const renderer = new SubtitleBitmapTrack();
+                            renderer.createCanvas(createCanvas.bind(this));
+                            await renderer.enable(enabled);
+                            this.subtitleRenderer.set(i, renderer);
                             break;
                         }
                         default: {
@@ -302,12 +315,11 @@ export class VideoPlayer2 {
                     continue;
             }
 
-            this.workerEventer.sendEvent(FFmpegRequestEvent.SET_STREAM_ACTIVE, {
-                streamIndex: i,
-                active: enabled
-            });
-
-            await this.workerEventer.waitUntilEvent(FFmpegResponseEvent.SET_STREAM_DONE);
+            this.worker.postMessage({
+                kind: "changeStream",
+                index: i,
+                enabled: enabled
+            } as WorkerChangeStream);
         }
         //this.subtitleRenderer = await initStream(subtitleStreamIndex, GetSubtitleTrackCtor());
 
@@ -335,12 +347,14 @@ export class VideoPlayer2 {
         };
 
         // Message Handling
-        const handleMessage = <T extends { timestamp: number; }>(i: number, buffer: (T | null)[]) => {
+        const handleMessage = <T extends { timestamp: number; }>(i: number, buffer: (T | null)[], type: AVMediaType) => {
             const messageChannel = data.streamPorts.get(i);
             const messageChannel2 = data.streamPorts2.get(i);
             if (!messageChannel || !messageChannel2) return;
 
             messageChannel.onmessage = (e: MessageEvent<T>) => {
+                if (type === AVMediaType.AVMEDIA_TYPE_VIDEO && this.activeVideoStream !== i) return;
+                if (type === AVMediaType.AVMEDIA_TYPE_AUDIO && this.activeAudioStream !== i) return;
                 const index = buffer.indexOf(null);
 
                 if (index > -1)
@@ -362,72 +376,23 @@ export class VideoPlayer2 {
             messageChannel2.onmessage = messageChannel.onmessage;
         };
 
+        const handleMessageSub = <T extends { timestamp: number; }>(i: number, renderer: CanvasTrackWrapper<unknown, unknown> | undefined) => {
+            if (!renderer) return;
+            const messageChannel = data.streamPorts.get(i);
+            const messageChannel2 = data.streamPorts2.get(i);
+            if (!messageChannel || !messageChannel2) return;
+
+            messageChannel.onmessage = async (e: MessageEvent<T>) => {
+                await renderer.writeData(e.data);
+            };
+            messageChannel2.onmessage = messageChannel.onmessage;
+        };
+
         for (const [i, stream] of data.info.streams) {
             switch (stream.type) {
-                case AVMediaType.AVMEDIA_TYPE_VIDEO: handleMessage(i, this.videoFrameBuffer); break;
-                case AVMediaType.AVMEDIA_TYPE_AUDIO: handleMessage(i, this.audioFrameBuffer); break;
-                case AVMediaType.AVMEDIA_TYPE_SUBTITLE: {
-                    switch (stream.subtitle_config!.type) {
-                        case AVSubtitleType.SUBTITLE_BITMAP: {
-                            const messageChannel = data.streamPorts.get(i);
-                            const messageChannel2 = data.streamPorts2.get(i);
-                            if (!messageChannel || !messageChannel2) break;
-
-                            const stream = this.subtitleBitmapRenderer.has(i);
-                            if (stream)
-                                messageChannel.onmessage = (e: MessageEvent<BitmapSubArgs>) => {
-                                    const lastFrame = this.subtitleBitmapBuffer[this.subtitleBitmapBuffer.length - 1];
-                                    if (lastFrame && lastFrame.endTime === 0) {
-                                        lastFrame.endTime = e.data.startTime;
-                                    }
-                                    this.subtitleBitmapBuffer.push(e.data);
-
-                                    this.subtitleBitmapBuffer.sort((a, b) => {
-                                        return a.startTime - b.startTime;
-                                    });
-                                };
-                            messageChannel2.onmessage = messageChannel.onmessage;
-                            break;
-                        }
-                        case AVSubtitleType.SUBTITLE_TEXT:
-                            const messageChannel = data.streamPorts.get(i);
-                            const messageChannel2 = data.streamPorts2.get(i);
-                            if (!messageChannel || !messageChannel2) break;
-
-                            const stream = this.subtitleTextRenderer.get(i);
-                            if (stream)
-                                messageChannel.onmessage = (e: MessageEvent<VTTCueArgs>) => {
-                                    const key = `${e.data.text}|${e.data.startTime}|${e.data.endTime}`;
-                                    if (stream!.cues.has(key))
-                                        return;
-
-                                    stream!.track.addCue(new VTTCue(e.data.startTime, e.data.endTime, e.data.text));
-                                };
-                            messageChannel2.onmessage = messageChannel.onmessage;
-                            break;
-                        case AVSubtitleType.SUBTITLE_ASS: {
-                            const messageChannel = data.streamPorts.get(i);
-                            const messageChannel2 = data.streamPorts2.get(i);
-                            if (!messageChannel || !messageChannel2) break;
-
-                            const stream = this.subtitleASSRenderer.get(i);
-                            if (stream)
-                                messageChannel.onmessage = (e: MessageEvent<VTTCueArgs>) => {
-                                    const key = `${e.data.text}|${e.data.startTime}|${e.data.endTime}`;
-                                    if (stream!.cues.has(key))
-                                        return;
-
-                                    stream!.track.renderer.processChunk(e.data.text, e.data.startTime, e.data.endTime);
-                                };
-                            messageChannel2.onmessage = messageChannel.onmessage;
-                            break;
-                        }
-                        default:
-                            // TODO
-                            break;
-                    }
-                    break;
-                }
+                case AVMediaType.AVMEDIA_TYPE_VIDEO: handleMessage(i, this.videoFrameBuffer, stream.type); break;
+                case AVMediaType.AVMEDIA_TYPE_AUDIO: handleMessage(i, this.audioFrameBuffer, stream.type); break;
+                case AVMediaType.AVMEDIA_TYPE_SUBTITLE: handleMessageSub(i, this.subtitleRenderer.get(i)); break;
                 default:
                     continue;
             }
@@ -435,7 +400,6 @@ export class VideoPlayer2 {
 
         //this.controls.updateAudioTracks(audios)
 
-        this.firstFrameAsPoster(cover);
         this.initDone = true;
         this.controls.setLoadingState(false);
     }
@@ -443,7 +407,7 @@ export class VideoPlayer2 {
     private async requestData() {
         if (this.dataRequested) return;
         this.dataRequested = true;
-        this.workerEventer.sendEvent(FFmpegRequestEvent.REQUEST_DATA, {});
+        await this.workerEventer.sendEvent(FFmpegRequestEvent.REQUEST_DATA, {}, true);
         const data = await this.workerEventer.waitUntilEvent(FFmpegResponseEvent.REQUEST_STATUS);
 
         if (data!.data.status === RequestDataStatus.ERR) {
@@ -532,20 +496,20 @@ export class VideoPlayer2 {
 
     private async renderData() {
         const promises = [];
-        let hasFrame = false;
         const videoStream = this.videoRenderer.get(this.activeVideoStream);
         const audioStream = this.audioRenderer.get(this.activeAudioStream);
-        const subtitleASSStream = this.subtitleASSRenderer.get(this.activeSubtitleStream);
-        const subtitleBitmapStream = this.subtitleBitmapRenderer.has(this.activeSubtitleStream);
+        const subtitleStream = this.subtitleRenderer.get(this.activeSubtitleStream);
 
         if (this.videoFrameBuffer[0] instanceof VideoFrame && videoStream) {
             let frame = this.videoFrameBuffer[0];
             if (frame.timestamp / 1000 <= this.mediaTime) {
                 frame = this.videoFrameBuffer.shift()!;
+                if ((subtitleStream as SubtitleASSTrack | undefined)?.setColorSpace && frame.colorSpace.matrix) {
+                    await (subtitleStream as SubtitleASSTrack).setColorSpace(webYCbCrMap[frame.colorSpace.matrix]);
+                }
                 const promise = videoStream.writeData(frame);
                 promise.then(() => frame.close());
                 promises.push(promise);
-                hasFrame = true;
 
                 this.videoContainer.style.setProperty("--videoWidth", this.video.videoWidth.toString());
                 this.videoContainer.style.setProperty("--videoHeight", this.video.videoHeight.toString());
@@ -572,67 +536,13 @@ export class VideoPlayer2 {
             console.debug("Low on Audio Frames");
         }
 
-        if (subtitleASSStream && hasFrame && !subtitleASSStream.track.busy) {
-            const frame = this.videoFrameBuffer[0];
-            if (!subtitleASSStream.hasColorspace && frame instanceof VideoFrame) {
-                await subtitleASSStream.track.renderer._setColorSpace(webYCbCrMap[frame.colorSpace.matrix!]);
-                subtitleASSStream.hasColorspace = true;
-            }
-
-            
-            subtitleASSStream.track.manualRender({
+        if (subtitleStream) {
+            await subtitleStream.display({
                 expectedDisplayTime: performance.now(),
                 mediaTime: this.mediaTime,
                 width: this.video.videoWidth,
                 height: this.video.videoHeight,
-            }, false);
-
-            //promises.push(promise);
-        } else if (subtitleBitmapStream && this.subtitleBitmapCanvas) {
-
-
-            const subtitlesToRemove: string[] = [];
-            for (const sub of this.subtitleBitmapBuffer) {
-                const hasBegun = sub.startTime / 1000 < this.mediaTime;
-                const hasEnded = sub.endTime !== 0 && sub.endTime / 1000 < this.mediaTime;
-                const hasBeenRendered = this.activeBitmapSubtitles.includes(sub.uuid);
-                const canvas = this.subtitleBitmapCanvas.canvas;
-
-                if (!hasBegun) {
-                    // Nothing  
-                } else if (hasBegun && !hasEnded && !hasBeenRendered) {
-                    if (canvas.width !== sub.codecWidth ||
-                        canvas.height !== sub.codecHeight) {
-                        canvas.width = sub.codecWidth;
-                        canvas.height = sub.codecHeight;
-                    }
-                    canvas.style.setProperty("--codecWidth", sub.codecWidth.toString());
-                    canvas.style.setProperty("--codecHeight", sub.codecHeight.toString());
-
-                    this.subtitleBitmapCanvas.drawImage(sub.frame, sub.x, sub.y, sub.frame.width, sub.frame.height);
-                    this.activeBitmapSubtitles.push(sub.uuid);
-                } else if (hasBegun && hasEnded && hasBeenRendered) {
-                    this.subtitleBitmapCanvas.clearRect(0, 0, canvas.width, canvas.height);
-                    subtitlesToRemove.push(sub.uuid);
-
-                    for (const id of this.activeBitmapSubtitles) {
-                        const sub2 = this.subtitleBitmapBuffer.find(s => s.uuid === id);
-                        if (sub2 && sub2.uuid !== sub.uuid) {
-                            this.subtitleBitmapCanvas.drawImage(sub.frame, sub.x, sub.y, sub.frame.width, sub.frame.height);
-                        }
-                    }
-                } else if(hasBegun && hasEnded && !hasBeenRendered) {
-                    subtitlesToRemove.push(sub.uuid);
-                }
-            }
-
-            for (const id of subtitlesToRemove) {
-                const sub2 = this.subtitleBitmapBuffer.find(s => s.uuid === id);
-                if (sub2) sub2.frame.close();
-            }
-
-            this.subtitleBitmapBuffer = this.subtitleBitmapBuffer.filter(s => !subtitlesToRemove.includes(s.uuid));
-            this.activeBitmapSubtitles = this.activeBitmapSubtitles.filter(s => !subtitlesToRemove.includes(s));
+            });
         }
 
         //await Promise.all(promises);
@@ -683,7 +593,7 @@ export class VideoPlayer2 {
         const duration: number = this.duration / 1000;
 
         this.controls.setDuration(duration);
-        this.controls.updateCurrentTime(currentTime, duration);
+        this.controls.updateCurrentTime(currentTime);
 
         this.video.currentTime = duration;
     }
@@ -729,30 +639,28 @@ export class VideoPlayer2 {
         }
         console.debug("Seeking started at", performance.now());
         this.endOfFile = false;
-        this.workerEventer.sendEvent(FFmpegRequestEvent.SEEK, { time: time });
+        await this.workerEventer.sendEvent(FFmpegRequestEvent.SEEK, { time: time }, true);
         for (const frame of this.videoFrameBuffer)
             if (frame)
                 frame.close();
         for (const frame of this.audioFrameBuffer)
             if (frame instanceof AudioData)
                 frame.close();
-        for (const frame of this.subtitleBitmapBuffer)
-            frame.frame.close();
         this.videoFrameBuffer.length = 0;
         this.audioFrameBuffer.length = 0;
-        this.subtitleBitmapBuffer.length = 0;
 
         //const subtitleStream = this.videoRenderer.get(this.activeVideoStream);
         await videoStream?.seekTo(time, true);
         await audioStream?.seekTo(time, true);
 
-        const timePromise = this.workerEventer.waitUntilEvent(FFmpegResponseEvent.SET_TIME);
         const status = await this.workerEventer.waitUntilEvent(FFmpegResponseEvent.SEEK_STATUS);
         console.debug("Seeking finishing at", performance.now());
         if (status?.data.status !== 0) {
             console.error("Status bad????", status?.data.status);
             return;
         }
+
+        const timePromise = this.workerEventer.waitUntilEvent(FFmpegResponseEvent.SET_TIME);
 
         if (this.activeVideoStream !== -1)
             while (this.videoFrameBuffer.length === 0)
@@ -766,20 +674,28 @@ export class VideoPlayer2 {
         this.seeking = false;
         this.controls.setLoadingState(false);
 
+        // In share-play mode the controller holds playback until every member
+        // has confirmed the seek; only resume here for standalone playback.
         console.debug("Playing media at", performance.now());
-        this.play();
+        if (!this.commandHandler)
+            this.play();
     }
 
     private async updateTrack(type: "video" | "audio" | "subtitle", index: number): Promise<void> {
         console.log(`Changing ${type} track to index: ${index}`);
+        this.controls.setLoadingState(true);
 
-        const updateFFmpeg = async (i: number, enabled: boolean) => {
-            this.workerEventer.sendEvent(FFmpegRequestEvent.SET_STREAM_ACTIVE, {
-                streamIndex: i,
-                active: enabled
-            });
+        const updateFFmpeg = (i: number, enabled: boolean) => {
+            const { promise, resolve } = Promise.withResolvers();
+            this.worker.addEventListener("message", resolve, { once: true });
 
-            await this.workerEventer.waitUntilEvent(FFmpegResponseEvent.SET_STREAM_DONE);
+            this.worker.postMessage({
+                kind: "changeStream",
+                index: i,
+                enabled: enabled
+            } as WorkerChangeStream);
+
+            return promise;
         };
 
         switch (type) {
@@ -790,7 +706,7 @@ export class VideoPlayer2 {
                     stream.enable(enabled);
                     await updateFFmpeg(i, enabled);
                 }
-                this.seek(this.mediaTime, true);
+                this.videoFrameBuffer.length = 0;
                 break;
             }
             case "audio": {
@@ -800,36 +716,35 @@ export class VideoPlayer2 {
                     stream.enable(enabled);
                     await updateFFmpeg(i, enabled);
                 }
+                this.audioFrameBuffer.length = 0;
                 break;
             }
             case "subtitle": {
-                this.activeSubtitleStream = index;
-                for (const [i, stream] of this.subtitleTextRenderer) {
-                    const enabled = index === i;
-                    stream.track.mode = enabled ? 'showing' : 'disabled';
-                    await updateFFmpeg(i, enabled);
-                }
-                for (const [i, stream] of this.subtitleASSRenderer) {
-                    const enabled = index === i;
-                    stream.track._canvas.style.display = enabled ? '' : 'none';
-                    await updateFFmpeg(i, enabled);
-                }
+                this.activeSubtitleStream = -1;
 
-                if (this.subtitleBitmapCanvas) {
-                    for (const sub of this.subtitleBitmapBuffer) {
-                        sub.frame.close();
-                    }
-                    this.subtitleBitmapBuffer.length = 0;
-
-                    for (const i of this.subtitleBitmapRenderer) {
-                        const enabled = index === i;
+                // Kinda odd but first disable all unused streams 
+                for (const [i, stream] of this.subtitleRenderer) {
+                    const enabled = index === i;
+                    if (!enabled) {
+                        await stream.enable(enabled);
                         await updateFFmpeg(i, enabled);
                     }
-                    this.subtitleBitmapCanvas.canvas.style.display = this.subtitleBitmapRenderer.has(index) ? '' : 'none';
                 }
+
+                // Then enable the correct one. This is in case the same canvas is used by another stream
+                const stream = this.subtitleRenderer.get(index);
+                if (stream) {
+                    await stream.enable(true);
+                    await updateFFmpeg(index, true);
+                }
+
+                this.activeSubtitleStream = index;
+
                 break;
             }
         }
+
+        this.controls.setLoadingState(false);
     }
 
     public play() {
@@ -844,6 +759,16 @@ export class VideoPlayer2 {
     public pause() {
         this.controls.setPlayback(false);
         this.paused = true;
+    }
+
+    /** External seek in milliseconds. Resolves when the seek completes. */
+    public async seekTo(timeMs: number): Promise<void> {
+        await this.seek(timeMs);
+    }
+
+    /** Routes user-initiated play/pause/seek to the share-play controller. */
+    public setCommandHandler(handler: (command: PlaybackCommand) => void): void {
+        this.commandHandler = handler;
     }
 
     public getVideo() {

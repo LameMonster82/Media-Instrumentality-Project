@@ -91,10 +91,12 @@ export default class AtomicEventer<
         const view = new DataView(this.bufferToSendTo);
         const intBuffer = new Int32Array(this.bufferToSendTo);
         const uintBuffer = new Uint8Array(this.bufferToSendTo);
-        if (awaitable || this.isMainThread)
-            await Atomics.waitAsync(intBuffer, 0, 1).value;
-        else Atomics.wait(intBuffer, 0, 1);
-        Atomics.store(intBuffer, 0, 0);
+        while (Atomics.load(intBuffer, 0) === 1) {
+            if (awaitable || this.isMainThread)
+                await Atomics.waitAsync(intBuffer, 0, 1).value;
+            else Atomics.wait(intBuffer, 0, 1);
+        }
+        //Atomics.store(intBuffer, 0, 0);
         view.setUint8(4, type as number);
 
         let offset = 5;

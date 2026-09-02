@@ -73,6 +73,11 @@
 
 
     }
+
+    .iconLoading {
+        width: 30px;
+        cursor: wait;
+    }
 }
 
 .fullscreenVideo {

@@ -62,11 +62,11 @@ class WebDecoder {
     private async handleEvents(type: WebDecoderRequestType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
         switch (type) {
             case WebDecoderRequestType.DECODE_VIDEO: {
-                this.submitVideoPacket(data as { ptr: number, size: number, duration: number, timestamp: number, isKey: boolean; packetPtr: number; });
+                this.submitVideoPacket(data as { ptr: number, size: number, duration: number, timestamp: number, isKey: boolean; packetPtr: number; streamIndex: number; });
                 break;
             }
             case WebDecoderRequestType.DECODE_AUDIO: {
-                this.submitAudioPacket(data as { ptr: number, size: number, duration: number, timestamp: number, isKey: boolean; packetPtr: number; });
+                this.submitAudioPacket(data as { ptr: number, size: number, duration: number, timestamp: number, isKey: boolean; packetPtr: number; streamIndex: number;});
                 break;
             }
             case WebDecoderRequestType.REINIT: {
@@ -181,7 +181,7 @@ class WebDecoder {
         }
     }
 
-    submitVideoPacket(info: { ptr: number, size: number, duration: number, timestamp: number, isKey: boolean; packetPtr: number; }) {
+    submitVideoPacket(info: { ptr: number, size: number, duration: number, timestamp: number, isKey: boolean; packetPtr: number; streamIndex: number; }) {
         const data = this.isMemoryOver2Gib() ? this.sliceMemory(info.ptr, info.ptr + info.size) : this.viewMemory(info.ptr, info.size);
         const encodedChunk = new EncodedVideoChunk({
             data: data,
@@ -192,10 +192,10 @@ class WebDecoder {
 
         this.decoder?.decode(encodedChunk);
 
-        this.eventer.sendEvent(WebDecoderResponseType.PACKET_PUBLISHED, { packetPtr: info.packetPtr });
+        this.eventer.sendEvent(WebDecoderResponseType.PACKET_PUBLISHED, { packetPtr: info.packetPtr, streamIndex: info.streamIndex });
     }
 
-    submitAudioPacket(info: { ptr: number, size: number, duration: number, timestamp: number; packetPtr: number; }) {
+    submitAudioPacket(info: { ptr: number, size: number, duration: number, timestamp: number; packetPtr: number;  streamIndex: number;}) {
         const data = this.isMemoryOver2Gib() ? this.sliceMemory(info.ptr, info.ptr + info.size) : this.viewMemory(info.ptr, info.size);
         const encodedChunk = new EncodedAudioChunk({
             data: data,
@@ -206,7 +206,7 @@ class WebDecoder {
 
         this.decoder?.decode(encodedChunk);
 
-        this.eventer.sendEvent(WebDecoderResponseType.PACKET_PUBLISHED, { packetPtr: info.packetPtr });
+        this.eventer.sendEvent(WebDecoderResponseType.PACKET_PUBLISHED, { packetPtr: info.packetPtr, streamIndex: info.streamIndex});
     }
 
     initializeVideo(config: VideoDecoderConfig): VideoDecoder {

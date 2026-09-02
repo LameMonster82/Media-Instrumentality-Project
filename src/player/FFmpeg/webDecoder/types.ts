@@ -25,14 +25,16 @@ export const decoderRequestTemplates = {
         duration: floatConst,
         timestamp: floatConst,
         isKey: boolConst,
-        packetPtr: floatConst
+        packetPtr: floatConst,
+        streamIndex: floatConst,
     },
     [WebDecoderRequestType.DECODE_AUDIO]: {
         ptr: floatConst,
         size: floatConst,
         duration: floatConst,
         timestamp: floatConst,
-        packetPtr: floatConst
+        packetPtr: floatConst,
+        streamIndex: floatConst,
     },
     [WebDecoderRequestType.REINIT]: emptyRequest,
     [WebDecoderRequestType.RECONSTRUCT_VIDEO_FRAME]: {
@@ -51,7 +53,8 @@ export const decoderResponseTemplates = {
         result: floatConst
     },
     [WebDecoderResponseType.PACKET_PUBLISHED]: {
-        packetPtr: floatConst
+        packetPtr: floatConst,
+        streamIndex: floatConst
     },
     [WebDecoderResponseType.FREE_VIDEO_PTR]: {
         ptr: floatConst

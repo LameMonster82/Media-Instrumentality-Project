@@ -19,7 +19,7 @@ class AudioStreamTrackWorker extends AudioWorkletProcessor implements AudioWorkl
                 }
             } else {
                 switch (e.data.kind) {
-                    case "flush": this.current = null; this.offset = 0; break;
+                    case "flush": this.current = null; this.nextOne = null; this.offset = 0; break;
                     case "close": this.active = false; break;
                 }
             }
@@ -35,21 +35,28 @@ class AudioStreamTrackWorker extends AudioWorkletProcessor implements AudioWorkl
             }
         } else {
             let samplesCopied = 0;
-            for (let ch = 0; ch < this.current.numberOfChannels; ch++) {
+            const minChannels = Math.min(this.current.numberOfChannels, output.length);
+            for (let ch = 0; ch < minChannels; ch++) {
                 const srcData = this.current.data[ch].subarray(this.offset, this.offset + output[ch].length);
                 output[ch].set(srcData);
-                samplesCopied = srcData.length;
+
+                if (ch === 0)
+                    samplesCopied = srcData.length;
             }
 
             this.offset += samplesCopied;
             if (this.offset >= this.current.data[0].length) {
-                this.current = this.nextOne;
-                this.offset = 0;
-                this.nextOne = null;
+                this.swapBuffers();
             }
         }
 
         return this.active;
+    }
+
+    swapBuffers() {
+        this.current = this.nextOne;
+        this.offset = 0;
+        this.nextOne = null;
     }
 
     private copyFromObject(data: WorkerAudioDataInit, output: Float32Array[]): number {

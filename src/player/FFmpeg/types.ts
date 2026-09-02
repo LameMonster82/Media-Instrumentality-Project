@@ -2,11 +2,12 @@ import type { Dictionary, WorkerPostMessage, WorkerShutdown } from "@/core/types
 import type { ChapterInfo } from "../Tracks/subtitles old/subtitleStream";
 import type { AudioDecoderConfigStruct, AVMediaType, FileInfo, MediaType, VideoDecoderConfigStruct } from "./structReader";
 import type { AtomicEventerBuffers } from "../atomicEventer/types";
+import type { RemoteFileSource } from "../seeker/types";
 
 //#region Main -> FFmpeg Worker
 export interface WorkerInitFFmpeg extends WorkerPostMessage {
     readonly kind: "initFfmpeg";
-    readonly fileSource: string | File;
+    readonly fileSource: string | File | RemoteFileSource;
     readonly bufferSize: number;
     readonly eventerBuffers: AtomicEventerBuffers
 }
@@ -18,8 +19,12 @@ export interface WorkerInitFFmpegOnlyModule extends WorkerPostMessage {
 
 export interface WorkerChangeStream extends WorkerPostMessage {
     readonly kind: "changeStream";
-    readonly type: "video" | "audio" | "subtitle";
-    readonly toIndex: number;
+    readonly index: number;
+    readonly enabled: boolean;
+}
+
+export interface WorkerOk extends WorkerPostMessage {
+    readonly kind: "ok";
 }
 
 export interface WorkerRequestAnswered extends WorkerPostMessage {
@@ -105,7 +110,6 @@ export interface WorkerRequestDemuxers extends WorkerPostMessage {
 
 export type AllTargetWorkerMessages =
     WorkerInitFFmpeg | WorkerChangeStream | // Video Player
-    WorkerInitFFmpegOnlyModule | WorkerRequestThumbnail | // Thumbnail stuff
     WorkerRequestDemuxers | // Demuxers and Exif
     WorkerShutdown;
 

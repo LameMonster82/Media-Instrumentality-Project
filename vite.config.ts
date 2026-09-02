@@ -44,6 +44,7 @@ export default defineConfig({
             input: {
                 main: 'index.html',
                 videoControls: 'VideoControls.html',
+                videoShare: 'VideoShare.html',
             },
         },
     },

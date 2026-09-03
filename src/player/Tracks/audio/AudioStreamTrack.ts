@@ -12,14 +12,22 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
 
     constructor(sampleRate = 44100, channels = 2) {
         this.channels = channels;
-        this.audioContext = new AudioContext({ sampleRate, latencyHint: 0 });
+        this.audioContext = new AudioContext({ sampleRate });
         this.destination = this.audioContext.createMediaStreamDestination();
         [this.track] = this.destination.stream.getAudioTracks();
         this.track.contentHint = "music";
     }
 
+    latency(): number {
+        return this.audioContext.outputLatency * 100;
+    }
+
     /** Must be awaited before the first WriteData call. */
     public async initialize(): Promise<void> {
+
+        const supportedConstraints = navigator.mediaDevices.getSupportedConstraints();
+        console.log(supportedConstraints);
+
         await this.audioContext.audioWorklet.addModule(audioWorklet);
 
         this.workletNode = new AudioWorkletNode(this.audioContext, workletName, {
@@ -43,11 +51,13 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
         if (frame instanceof AudioData) {
             frame = this.copyFromAudioData(frame);
         }
-        this.postToWorklet(frame, frame.transfer);
+
+        //console.log(this.audioContext, this.workletNode)
+        this.workletNode?.port.postMessage(frame, frame.transfer as Transferable[]);
     }
 
     public seekTo(_time: number, _fastSeek: boolean): Promise<void> {
-        this.postToWorklet({ kind: "flush" });
+        this.workletNode?.port.postMessage({ kind: "flush" });
         return Promise.resolve();
     }
 
@@ -61,7 +71,7 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
 
     public destroy(): void {
         if (this.workletNode) {
-            this.postToWorklet({ kind: "close" });
+            this.workletNode?.port.postMessage({ kind: "flush" });
             this.workletNode.disconnect();
             this.workletNode.port.close();
         }
@@ -74,43 +84,11 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
         const frames = frame.numberOfFrames;
 
         const output: Float32Array<ArrayBuffer>[] = [];
-        if (frame.format?.endsWith("-planar")) {
-            for (let ch = 0; ch < channels; ch++) {
-                const byteLength = frame.allocationSize({
-                    planeIndex: ch,
-                    format: "f32-planar",
-                });
-
-                const buffer = new Float32Array(byteLength / 4);
-                frame.copyTo(buffer, {
-                    planeIndex: ch,
-                    format: "f32-planar",
-                });
-
-                output.push(buffer);
-            }
-        } else {
-            // Interleaved source: one buffer containing frames * channels floats.
-            const byteLength = frame.allocationSize({
-                planeIndex: 0,
-                format: "f32",
-            });
-
-            const srcBuffer = new Float32Array(byteLength / 4);
-            frame.copyTo(srcBuffer, {
-                planeIndex: 0,
-                format: "f32",
-            });
-
-            for (let ch = 0; ch < channels; ch++) {
-                const buffer = new Float32Array(frames);
-
-                for (let f = 0; f < frames; f++) {
-                    buffer[f] = srcBuffer[f * channels + ch];
-                }
-
-                output.push(buffer);
-            }
+        for (let ch = 0; ch < channels; ch++) {
+            const byteLength = frame.allocationSize({ planeIndex: ch, format: "f32-planar" });
+            const buffer = new Float32Array(byteLength / 4);
+            frame.copyTo(buffer, { planeIndex: ch, format: "f32-planar" });
+            output.push(buffer);
         }
 
         return {
@@ -123,9 +101,5 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
             timestamp: frame.timestamp,
             transfer: output.map(b => b.buffer),
         };
-    }
-
-    private postToWorklet(message: AllAudioWorkletMessages, transfer: Transferable[] = []): void {
-        this.workletNode?.port.postMessage(message, transfer);
     }
 }

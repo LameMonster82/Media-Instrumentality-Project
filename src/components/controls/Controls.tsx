@@ -280,6 +280,8 @@ export default class MediaControls {
         this.subtitleSelect.disabled = loading;
     }
 
+    public getLoadingState() { return this.loadingState; };
+
     public setDuration(duration: number) {
         let timeObj = { time: "--:--", hours: false };
         if (duration >= 0) {

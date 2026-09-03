@@ -1,10 +1,8 @@
 import MediaControls from "@/components/controls/Controls";
 import styles from "./videoPlayer.module.css";
 import ffmpegWorker from "@/player/FFmpeg/bridge.worker?worker";
-import AtomicEventer from "./atomicEventer/atomicEventer";
-import { RequestDataStatus, type AllRespondWorkerEventsKind, type DictionaryWorkerEvent, type RespondEventByKind, type WorkerChangeStream, type WorkerFFmpegInitComplete, type WorkerInitFFmpeg } from "./FFmpeg/types";
-import { FFmpegRequestEvent, ffmpegRequestTemplate, FFmpegResponseEvent, ffmpegResponseTemplate } from "./FFmpeg/advancedTypes/atomicTypes";
-import { AttachmentType, AVMediaType, AVSubtitleType, MediaType } from "./FFmpeg/structReader";
+import { RequestDataStatus, type AllVideoWorkerEvents, type WorkerChangeStream, type WorkerInitFFmpeg } from "./FFmpeg/types";
+import { AVMediaType, AVSubtitleType, MediaType } from "./FFmpeg/structReader";
 import type { CanvasTrackWrapper, MediaStreamTrackWrapper } from "./Tracks/types";
 import { GetVideoTrackCtor } from "./Tracks/video/utils";
 import { GetAudioTrackCtor } from "./Tracks/audio/utils";
@@ -14,12 +12,13 @@ import type { BitmapSubArgs, VideoDisplayData, VTTCueArgs } from "./Tracks/subti
 import type { RemoteFileSource } from "./seeker/types";
 import musicIcon from "@Resources/Icons/music.svg?url";
 
-import JASSUB, { webYCbCrMap } from "jassub";
+import { webYCbCrMap } from "jassub";
 import type { ControlStream } from "@/components/controls/types";
 import { extractCoverArt, extractFonts } from "./utils";
 import SubtitleTextTrack from "./Tracks/subtitles/SubtitleTextTrack";
 import SubtitleASSTrack from "./Tracks/subtitles/SubtitleASSTrack";
 import SubtitleBitmapTrack from "./Tracks/subtitles/SubtitleBitmapTrack";
+import QuickPostmessage from "./quickMessage/QuickMessage";
 
 export type PlaybackCommand =
     | { kind: "play" }
@@ -45,8 +44,8 @@ export class VideoPlayer2 {
     private activeSubtitleStream: number = -1;
 
     // Buffer
-    private videoFrameBuffer: (VideoFrame | null)[] = [];
-    private audioFrameBuffer: ((AudioData | WorkerAudioDataInit) | null)[] = [];
+    private videoFrameBuffer: VideoFrame[] = [];
+    private audioFrameBuffer: (AudioData | WorkerAudioDataInit)[] = [];
 
     // Time
     private mediaTime: DOMHighResTimeStamp = 0;
@@ -60,14 +59,8 @@ export class VideoPlayer2 {
     private dataRequested: boolean = false;
     private endOfFile = false;
 
-    // Events
-    private eventCallback: DictionaryWorkerEvent = { initComplete: [], setTime: [], ok: [] };
-    private workerEventer: AtomicEventer<
-        FFmpegRequestEvent,
-        FFmpegResponseEvent,
-        typeof ffmpegRequestTemplate,
-        typeof ffmpegResponseTemplate
-        > = new AtomicEventer(undefined, ffmpegRequestTemplate, ffmpegResponseTemplate);
+    // Events    
+    private workerEventer2: QuickPostmessage<AllVideoWorkerEvents>;
 
     private commandHandler: ((command: PlaybackCommand) => void) | undefined;
 
@@ -84,11 +77,16 @@ export class VideoPlayer2 {
         this.video.autoplay = true;
         this.video.tabIndex = 0;
 
+        this.video.addEventListener("click", () => {
+            if (this.controls.getLoadingState()) return;
+            if (this.paused) this.play();
+            else this.pause();
+        })
+
         this.container.classList.add(styles.videoContainer);
 
         // Worker
         const worker = ffmpegWorker({ name: "I tell ffmpeg to do the work" });
-        worker.onmessage = this.handleSlowEvent.bind(this);
 
         const transfer: Transferable[] = [];
         if (typeof videoSrc === "object" && videoSrc !== null && !(videoSrc instanceof File) && "port" in videoSrc) {
@@ -99,7 +97,6 @@ export class VideoPlayer2 {
             fileSource: videoSrc,
             bufferSize: 32 * 1024 * 1024,
             kind: "initFfmpeg",
-            eventerBuffers: this.workerEventer.getBuffers(),
         } as WorkerInitFFmpeg, transfer);
 
         window.onbeforeunload = () => {
@@ -107,14 +104,11 @@ export class VideoPlayer2 {
         };
 
         this.worker = worker;
+        this.workerEventer2 = new QuickPostmessage(worker, worker);
 
-        this.workerEventer.receiveEvent((data) => {
-            switch (data) {
-                case FFmpegResponseEvent.END_OF_FILE:
-                    this.endOfFile = true;
-                    break;
-            }
-        });
+        this.workerEventer2.addEventListener("endOfFile", (_data) => {
+            this.endOfFile = true;
+        })
 
         // Init
         this.controls = this.initControls();
@@ -181,7 +175,10 @@ export class VideoPlayer2 {
     }
 
     private async initMedia() {
-        const data = await this.waitForSlowEvent("initComplete");
+        const data = await this.workerEventer2.waitForEvent("initFFmpegStatus");
+
+        if (data.status < 0 || data.info === null || data.streamPorts === null)
+            throw new Error(`FFmpeg failed to init the media with status ${data.status}`);
 
         // --- Metadata
         this.duration = Number(data.info.duration) / 1000;
@@ -348,44 +345,29 @@ export class VideoPlayer2 {
 
         // Message Handling
         const handleMessage = <T extends { timestamp: number; }>(i: number, buffer: (T | null)[], type: AVMediaType) => {
-            const messageChannel = data.streamPorts.get(i);
-            const messageChannel2 = data.streamPorts2.get(i);
-            if (!messageChannel || !messageChannel2) return;
+            const messageChannel = data.streamPorts!.get(i);
+            if (!messageChannel) return;
 
             messageChannel.onmessage = (e: MessageEvent<T>) => {
                 if (type === AVMediaType.AVMEDIA_TYPE_VIDEO && this.activeVideoStream !== i) return;
                 if (type === AVMediaType.AVMEDIA_TYPE_AUDIO && this.activeAudioStream !== i) return;
-                const index = buffer.indexOf(null);
-
-                if (index > -1)
-                    buffer[index] = e.data;
-                else buffer.push(e.data);
-
+                buffer.push(e.data);
                 buffer.sort((a, b) => {
                     if (a === null) return 1;
                     if (b === null) return -1;
                     return a.timestamp - b.timestamp;
                 });
-
-                // if (this.activeVideoStream !== -1) {
-                //     updateBufferedState(this.videoFrameBuffer);
-                // } else if (this.activeAudioStream !== -1) {
-                //     updateBufferedState(this.audioFrameBuffer);
-                // }
             };
-            messageChannel2.onmessage = messageChannel.onmessage;
         };
 
         const handleMessageSub = <T extends { timestamp: number; }>(i: number, renderer: CanvasTrackWrapper<unknown, unknown> | undefined) => {
             if (!renderer) return;
-            const messageChannel = data.streamPorts.get(i);
-            const messageChannel2 = data.streamPorts2.get(i);
-            if (!messageChannel || !messageChannel2) return;
+            const messageChannel = data.streamPorts!.get(i);
+            if (!messageChannel) return;
 
             messageChannel.onmessage = async (e: MessageEvent<T>) => {
                 await renderer.writeData(e.data);
             };
-            messageChannel2.onmessage = messageChannel.onmessage;
         };
 
         for (const [i, stream] of data.info.streams) {
@@ -407,22 +389,21 @@ export class VideoPlayer2 {
     private async requestData() {
         if (this.dataRequested) return;
         this.dataRequested = true;
-        await this.workerEventer.sendEvent(FFmpegRequestEvent.REQUEST_DATA, {}, true);
-        const data = await this.workerEventer.waitUntilEvent(FFmpegResponseEvent.REQUEST_STATUS);
+        const data = await this.workerEventer2.postMessageAndWait({ kind: "requestData" }, "dataAnswer");
 
-        if (data!.data.status === RequestDataStatus.ERR) {
+        if (data.status === RequestDataStatus.ERR) {
             console.error("Handle random error from ffmpeg");
             return;
         };
-        if (data!.data.status === RequestDataStatus.EOF) this.endOfFile = true;
-        if (data!.data.status === RequestDataStatus.DECODED_BY_OTHER_THREAD) {
-            if (data!.data.packetType === MediaType.RESULT_VIDEO) {
-                this.videoFrameBuffer.push(null);
-            } else if (data!.data.packetType === MediaType.RESULT_AUDIO) {
-                this.audioFrameBuffer.push(null);
-            } else if (data!.data.packetType === MediaType.RESULT_SUBTITLE) {
-                // TODO but probably wont be seperately decoded
-            }
+        if (data.status === RequestDataStatus.EOF) this.endOfFile = true;
+        if (data.status === RequestDataStatus.DECODED_BY_OTHER_THREAD) {
+            // if (data.packetType === MediaType.RESULT_VIDEO) {
+            //     this.videoFrameBuffer.push(null);
+            // } else if (data.packetType === MediaType.RESULT_AUDIO) {
+            //     this.audioFrameBuffer.push(null);
+            // } else if (data.packetType === MediaType.RESULT_SUBTITLE) {
+            //     // TODO but probably wont be seperately decoded
+            // }
         }
 
         this.dataRequested = false;
@@ -499,10 +480,11 @@ export class VideoPlayer2 {
         const videoStream = this.videoRenderer.get(this.activeVideoStream);
         const audioStream = this.audioRenderer.get(this.activeAudioStream);
         const subtitleStream = this.subtitleRenderer.get(this.activeSubtitleStream);
+        let renderedAFrame = false;
 
         if (this.videoFrameBuffer[0] instanceof VideoFrame && videoStream) {
             let frame = this.videoFrameBuffer[0];
-            if (frame.timestamp / 1000 <= this.mediaTime) {
+            if (frame.timestamp / 1000 <= this.mediaTime - videoStream.latency()) {
                 frame = this.videoFrameBuffer.shift()!;
                 if ((subtitleStream as SubtitleASSTrack | undefined)?.setColorSpace && frame.colorSpace.matrix) {
                     await (subtitleStream as SubtitleASSTrack).setColorSpace(webYCbCrMap[frame.colorSpace.matrix]);
@@ -510,6 +492,7 @@ export class VideoPlayer2 {
                 const promise = videoStream.writeData(frame);
                 promise.then(() => frame.close());
                 promises.push(promise);
+                renderedAFrame = true;
 
                 this.videoContainer.style.setProperty("--videoWidth", this.video.videoWidth.toString());
                 this.videoContainer.style.setProperty("--videoHeight", this.video.videoHeight.toString());
@@ -518,12 +501,14 @@ export class VideoPlayer2 {
             }
         } else if (videoStream) {
             console.debug("Low on Video Frames");
+        } else {
+            renderedAFrame = true;
         }
 
-        if (this.audioFrameBuffer[0] !== undefined && this.audioFrameBuffer[0] !== null && audioStream) {
+        if (this.audioFrameBuffer[0] && audioStream) {
             let frame = this.audioFrameBuffer[0];
             const { timestamp } = audioTime(frame);
-            if (timestamp / 1000 <= this.mediaTime) {
+            if (timestamp / 1000 <= this.mediaTime - audioStream.latency()) {
                 frame = this.audioFrameBuffer.shift()!;
                 const promise = audioStream.writeData(frame, this.mediaTime);
                 promise.then(() => {
@@ -536,7 +521,7 @@ export class VideoPlayer2 {
             console.debug("Low on Audio Frames");
         }
 
-        if (subtitleStream) {
+        if (subtitleStream && renderedAFrame) {
             await subtitleStream.display({
                 expectedDisplayTime: performance.now(),
                 mediaTime: this.mediaTime,
@@ -639,8 +624,8 @@ export class VideoPlayer2 {
         }
         console.debug("Seeking started at", performance.now());
         this.endOfFile = false;
-        const timePromise = this.waitForSlowEvent("setTime");
-        await this.workerEventer.sendEvent(FFmpegRequestEvent.SEEK, { time: time }, true);
+        const timePromise = this.workerEventer2.waitForEvent("setTime");
+        const status = await this.workerEventer2.postMessageAndWait({ kind: "seekTo", time }, "seekStatus");
         for (const frame of this.videoFrameBuffer)
             if (frame)
                 frame.close();
@@ -654,14 +639,11 @@ export class VideoPlayer2 {
         await videoStream?.seekTo(time, true);
         await audioStream?.seekTo(time, true);
 
-        const status = await this.workerEventer.waitUntilEvent(FFmpegResponseEvent.SEEK_STATUS);
         console.debug("Seeking finishing at", performance.now());
-        if (status?.data.status !== 0) {
-            console.error("Status bad????", status?.data.status);
+        if (status.status !== 0) {
+            console.error("Status bad????", status.status);
             return;
         }
-
-        debugger
 
         if (this.activeVideoStream !== -1)
             while (this.videoFrameBuffer.length === 0)
@@ -687,7 +669,7 @@ export class VideoPlayer2 {
         this.controls.setLoadingState(true);
 
         const updateFFmpeg = (i: number, enabled: boolean) => {
-            const promise = this.waitForSlowEvent("ok");
+            const promise = this.workerEventer2.waitForEvent("ok");
 
             this.worker.postMessage({
                 kind: "changeStream",
@@ -773,23 +755,5 @@ export class VideoPlayer2 {
 
     public getVideo() {
         return this.container;
-    }
-
-    private handleSlowEvent(e: MessageEvent<WorkerFFmpegInitComplete>) {
-        const events = this.eventCallback[e.data.kind];
-        if (!events) return;
-
-        for (const callback of events) {
-            callback(e.data);
-        }
-
-        this.eventCallback[e.data.kind].length = 0;
-    }
-
-    private waitForSlowEvent<E extends AllRespondWorkerEventsKind>(event: E): Promise<RespondEventByKind<E>> {
-        const { promise, resolve } = Promise.withResolvers<RespondEventByKind<E>>();
-        this.eventCallback[event] ??= [];
-        this.eventCallback[event].push(resolve);
-        return promise;
     }
 }

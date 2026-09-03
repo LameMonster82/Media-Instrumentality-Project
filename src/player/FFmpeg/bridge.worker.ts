@@ -7,7 +7,7 @@ import type { FFmpegWorker } from "@FFmpeg/FFmpegTypes";
 import type { MainModule as MainModule32 } from "@FFmpeg/ffmpeg-wasm32/ffmpeg";
 import type { MainModule as MainModule64 } from "@FFmpeg/ffmpeg-wasm64/ffmpeg";
 
-import { RequestDataStatus, StreamSupport, type AllTargetWorkerMessages, type DecoderConfig, type DecoderSupport, type ValidDecoderTypes, type WorkerChangeStream, type WorkerFFmpegInitComplete, type WorkerInitFFmpeg, type WorkerOk } from "./types";
+import { RequestDataStatus, StreamSupport, type AllVideoWorkerEvents, type AllTargetWorkerMessages, type DecoderConfig, type DecoderSupport, type ValidDecoderTypes, type WorkerChangeStream, type WorkerInitFFmpeg, type WorkerOk } from "./types";
 import { AVColorPrimarieToColorPrimative, AVColorRangeToColorRange, AVColorSpaceToColorMatrixCoeff, AVColorTransferToTransferChar, AVLogLevel, AVPixelFormat } from "./advancedTypes/AVTypes";
 import getSupportedPixelFormats from "./advancedTypes/supportedPixelFormats";
 import canWasm64 from "./advancedTypes/isWasm64";
@@ -15,10 +15,10 @@ import AtomicEventer from "../atomicEventer/atomicEventer";
 import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type FileSeekableWorkerInit, type RemoteFileSource, type RtcSeekableWorkerInit, type UrlSeekableWorkerInit } from "../seeker/types";
 import type { DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
 import type { Dictionary } from "@/core/types";
-import { decoderRequestTemplates, decoderResponseTemplates, WebDecoderRequestType, WebDecoderResponseType, type WebDecoderWorkerInit } from "./webDecoder/types";
-import { FFmpegRequestEvent, ffmpegRequestTemplate, FFmpegResponseEvent, ffmpegResponseTemplate } from "./advancedTypes/atomicTypes";
+import type { AllWebDecoderWorkerMessages } from "./webDecoder/types";
 import { MediaType, readFileInfo, readReturnType, ResultStatus, type VideoDecoderConfigStruct, type AudioDecoderConfigStruct, AVSubtitleType, AVMediaType, AVPixelFormatArrayToData } from "./structReader";
 import type { BitmapSubArgs, VTTCueArgs } from "../Tracks/subtitles/types";
+import QuickPostmessage from "../quickMessage/QuickMessage";
 
 // Default type of `self` is `WorkerGlobalScope & typeof globalThis`
 // https://github.com/microsoft/TypeScript/issues/14877
@@ -33,8 +33,7 @@ type Stream = {
     isUsed: boolean,
     worker: Worker | undefined,
     messageChannel: MessageChannel,
-    secondMessageChannel: MessageChannel,
-    eventer: AtomicEventer<WebDecoderRequestType, WebDecoderResponseType, typeof decoderRequestTemplates, typeof decoderResponseTemplates> | undefined;
+    eventer: QuickPostmessage<AllWebDecoderWorkerMessages> | undefined;
 };
 
 class FFmpegBridge {
@@ -53,7 +52,6 @@ class FFmpegBridge {
 
     // Streams
     private streams: Record<number, Stream> = {};
-    private webDecoderLocks: Map<number, boolean> = new Map();
 
     // Memory
     private wasmMemory: WebAssembly.Memory;
@@ -65,11 +63,7 @@ class FFmpegBridge {
         typeof seekerRequestTemplates,
         typeof seekerResponseTemplates> = new AtomicEventer(undefined, seekerRequestTemplates, seekerResponseTemplates);
 
-    private videoEventer: AtomicEventer<
-        FFmpegResponseEvent,
-        FFmpegRequestEvent,
-        typeof ffmpegResponseTemplate,
-        typeof ffmpegRequestTemplate> | undefined;
+    private videoEventer2: QuickPostmessage<AllVideoWorkerEvents>;
 
     constructor() {
         // 33554432 / 65536
@@ -85,14 +79,36 @@ class FFmpegBridge {
             address: adress,
             shared: true,
         });
+
+        this.videoEventer2 = new QuickPostmessage(self, self);
+        this.videoEventer2.addEventListener("requestData", () => {
+            const result = this.getFFmpegData();
+            this.videoEventer2.postMessage({
+                kind: "dataAnswer",
+                status: result.status,
+                packetType: result.packetType
+            });
+        });
+
+        this.videoEventer2.addEventListener("seekTo", async (data) => {
+            console.debug("FFmpeg got the seeker at", performance.now());
+            const promises = [];
+            for (const index in this.streams) {
+                const stream = this.streams[index];
+                const promise = stream?.eventer?.postMessageAndWait({ kind: "reinit" }, "initStatus");
+                promises.push(promise);
+            }
+            console.debug("Starting ffmpeg seek", performance.now());
+            const ret = this.module!._seek_to(data.time / 1000);
+            console.debug("Seek finished with status:", ret, "at", performance.now(), "Now waiting for web decoders");
+            await Promise.all(promises);
+            console.debug("Web decoders flushed. We good!", performance.now());
+            this.videoEventer2.postMessage({ kind: "seekStatus", status: ret });
+        });
     }
 
     async initialize(dataInfo: WorkerInitFFmpeg) {
         this.module = await this.loadWasmModule();
-
-        // Parent Thread control
-        this.videoEventer = new AtomicEventer(dataInfo.eventerBuffers, ffmpegResponseTemplate, ffmpegRequestTemplate);
-        this.videoEventer.receiveEvent(this.handleVideoEvents.bind(this));
 
         // Seeker
         this.fileUrl = dataInfo.fileSource;
@@ -176,7 +192,6 @@ class FFmpegBridge {
                         isSupported: false,
                         isUsed: false,
                         messageChannel: new MessageChannel(),
-                        secondMessageChannel: new MessageChannel(),
                         worker: undefined,
                         eventer: undefined
                     });
@@ -189,7 +204,6 @@ class FFmpegBridge {
                         isSupported: false,
                         isUsed: false,
                         messageChannel: new MessageChannel(),
-                        secondMessageChannel: new MessageChannel(),
                         worker: undefined,
                         eventer: undefined
                     });
@@ -204,13 +218,15 @@ class FFmpegBridge {
         this.updateFFmpegSupportedStreams();
 
         const port1s = new Map(streamResolves.map(s => [s.streamIndex, s.messageChannel.port1] as const));
-        const port1sAgain = new Map(streamResolves.map(s => [s.streamIndex, s.secondMessageChannel.port1] as const));
-        self.postMessage({
-            kind: "initComplete",
+        this.videoEventer2.postMessage({
+            kind: "initFFmpegStatus",
+            status: 0,
             info: fileInfo,
             streamPorts: port1s,
-            streamPorts2: port1sAgain
-        } as WorkerFFmpegInitComplete, [...port1s.values(), ...port1sAgain.values()]);
+            transferable: [...port1s.values()]
+        });
+
+
 
         this.module._cleanup_info(fileInfoPtr as never);
     }
@@ -253,36 +269,6 @@ class FFmpegBridge {
         }
     }
 
-    private async handleVideoEvents(type: FFmpegRequestEvent, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
-        switch (type) {
-            case FFmpegRequestEvent.REQUEST_DATA: {
-                const result = this.getFFmpegData();
-                return this.videoEventer?.sendEvent(FFmpegResponseEvent.REQUEST_STATUS, {
-                    status: result.status,
-                    packetType: result.packetType,
-                });
-            };
-            case FFmpegRequestEvent.SEEK: {
-                console.debug("FFmpeg got the seeker at", performance.now());
-                const data2 = data as { time: number; };
-                const promises = [];
-                for (const index in this.streams) {
-                    const stream = this.streams[index];
-                    const promise = stream?.eventer?.waitUntilEvent(WebDecoderResponseType.INIT_DONE) ?? Promise.resolve();
-                    stream.eventer?.sendEvent(WebDecoderRequestType.REINIT, {});
-                    promises.push(promise);
-                }
-                console.debug("Starting ffmpeg seek", performance.now());
-                const ret = this.module!._seek_to(data2.time / 1000);
-                console.debug("Seek finished with status:", ret, "at", performance.now(), "Now waiting for web decoders");
-                await Promise.all(promises);
-                console.debug("Web decoders flushed. We good!", performance.now());
-                this.videoEventer?.sendEvent(FFmpegResponseEvent.SEEK_STATUS, { status: ret });
-                break;
-            }
-        }
-    }
-
     private getFFmpegData(): { status: RequestDataStatus, packetType: number; } {
         try {
             while (true) {
@@ -294,10 +280,6 @@ class FFmpegBridge {
                     case ResultStatus.RESULT_NEED_MORE: continue;
                     case ResultStatus.RESULT_EOF: return { status: RequestDataStatus.EOF, packetType: -1 };
                     case ResultStatus.RESULT_RAW_PACKET: {
-                        if (this.webDecoderLocks.get(rsult.stream_index) === true) {
-                            //this.streams[rsult.stream_index].eventer?.lockUntilEvent(WebDecoderResponseType.PACKET_PUBLISHED);
-                            console.warn("Warning: this web decoder hasnt finished yet");
-                        }
                         const packetType = this.sendPacketToDecoder(rsult);
                         return { status: RequestDataStatus.DECODED_BY_OTHER_THREAD, packetType };
                     }
@@ -314,22 +296,23 @@ class FFmpegBridge {
         const streamIndex = rsult.stream_index;
         const stream = this.streams[streamIndex];
         const event = stream.type === AVMediaType.AVMEDIA_TYPE_AUDIO
-            ? WebDecoderRequestType.DECODE_AUDIO
-            : WebDecoderRequestType.DECODE_VIDEO;
+            ? MediaType.RESULT_AUDIO
+            : MediaType.RESULT_VIDEO;
 
         if (stream.type !== AVMediaType.AVMEDIA_TYPE_VIDEO && stream.type !== AVMediaType.AVMEDIA_TYPE_AUDIO)
             throw Error("We got a packet to HW decode that is not a video or audio???");
 
-        stream.eventer!.sendEvent(event, {
-            ptr: Number(rsult.packet_data),
+        stream.eventer?.postMessage({
+            kind: "decodePacket",
+            type: event,
+            ptr: rsult.packet_data,
             size: rsult.packet_size,
             duration: Number(rsult.duration),
             timestamp: Number(rsult.timestamp),
             isKey: (rsult.flags & 1) === 1,
-            packetPtr: Number(rsult.packet),
+            packetPtr: rsult.packet,
             streamIndex: rsult.stream_index
         });
-        this.webDecoderLocks.set(rsult.stream_index, true);
         return stream.type;
     }
 
@@ -350,7 +333,7 @@ class FFmpegBridge {
 
         if (written === -1n) {
             console.error("EOF :/");
-            this.videoEventer?.sendEvent(FFmpegResponseEvent.END_OF_FILE, {});
+            this.videoEventer2.postEvent("endOfFile");
             return 0;
         }
 
@@ -400,11 +383,11 @@ class FFmpegBridge {
 
         switch (rsult.type) {
             case MediaType.RESULT_VIDEO: {
-                this.streams[rsult.stream_index].eventer?.sendEvent(WebDecoderRequestType.RECONSTRUCT_VIDEO_FRAME, { ptr: Number(rsult.video_frame_ptr) });
+                this.streams[rsult.stream_index].eventer?.postMessage({ kind: "reconstruct", type: MediaType.RESULT_VIDEO, ptr: rsult.video_frame_ptr });
                 break;
             }
             case MediaType.RESULT_AUDIO: {
-                this.streams[rsult.stream_index].eventer?.sendEvent(WebDecoderRequestType.RECONSTRUCT_AUDIO_FRAME, { ptr: Number(rsult.audio_frame_ptr) });
+                this.streams[rsult.stream_index].eventer?.postMessage({ kind: "reconstruct", type: MediaType.RESULT_AUDIO, ptr: rsult.audio_frame_ptr });
                 break;
             }
             case MediaType.RESULT_SUBTITLE: {
@@ -412,7 +395,7 @@ class FFmpegBridge {
                 switch (rsult.subtitle_type) {
                     case AVSubtitleType.SUBTITLE_BITMAP: {
                         if (rsult.empty_subtitle) {
-                            this.streams[rsult.stream_index].secondMessageChannel.port2.postMessage({
+                            this.streams[rsult.stream_index].messageChannel.port2.postMessage({
                                 x: 0,
                                 y: 0,
                                 codecWidth: 0,
@@ -436,7 +419,7 @@ class FFmpegBridge {
                         const rgba = new Uint8ClampedArray(this.module!.HEAPU8.subarray(Number(frame.rgba_buff), Number(frame.rgba_buff) + size));
 
                         createImageBitmap(new ImageData(rgba, frame.width, frame.height)).then(bitmap => {
-                            this.streams[rsult.stream_index].secondMessageChannel.port2.postMessage({
+                            this.streams[rsult.stream_index].messageChannel.port2.postMessage({
                                 x: frame.x,
                                 y: frame.y,
                                 codecWidth: frame.codecWidth,
@@ -461,7 +444,7 @@ class FFmpegBridge {
                             return;
                         }
 
-                        this.streams[rsult.stream_index].secondMessageChannel.port2.postMessage({
+                        this.streams[rsult.stream_index].messageChannel.port2.postMessage({
                             startTime: Number(rsult.timestamp),
                             endTime: Number(rsult.duration),
                             text: rsult.subtitle_text
@@ -479,7 +462,7 @@ class FFmpegBridge {
     }
 
     public setTimestamp(time: bigint) {
-        self.postMessage({ kind: "setTime", time });
+        this.videoEventer2.postMessage({ kind: "setTime", time });
     }
 
     private async initStream<T extends ValidDecoderTypes = ValidDecoderTypes>(streamIndex: number,
@@ -487,7 +470,6 @@ class FFmpegBridge {
         config: DecoderConfig[T]): Promise<Stream> {
         if (!this.module) throw Error("No ffmpeg module. Whate te fyucj");
         const messageChannel = new MessageChannel();
-        const secondMessageChannel = new MessageChannel();
         const unsupportedResults = {
             streamIndex: streamIndex,
             type: type,
@@ -495,7 +477,6 @@ class FFmpegBridge {
             isUsed: false,
             worker: undefined,
             messageChannel,
-            secondMessageChannel,
             eventer: undefined
         };
 
@@ -512,27 +493,49 @@ class FFmpegBridge {
 
         const titleThing = type === AVMediaType.AVMEDIA_TYPE_VIDEO ? "Video" : (type === AVMediaType.AVMEDIA_TYPE_AUDIO ? "Audio" : "Unknown");
         const worker = webDecoderWorker({ name: `I decode stream ${titleThing} Stream #${streamIndex}` });
-        const eventer = new AtomicEventer(undefined, decoderRequestTemplates, decoderResponseTemplates);
+        const eventer = new QuickPostmessage<AllWebDecoderWorkerMessages>(worker, worker);
 
-        eventer.receiveEvent((event, data) => {
-            this.handleWebDecoderEvent(streamIndex, event, data);
+        eventer.addEventListener("initStatus", (data) => {
+            if (data.status < 0)
+                console.error("Web Decoder init failed with error", data.status, `for stream #${streamIndex}`);
+            else console.log(`Web Decoder init for stream #${streamIndex} succeeded :D`);
+        });
+        eventer.addEventListener("fatalError", () => {
+            console.error(`Web decoder for stream #${streamIndex} has died. Switching to SW decoding`);
+            this.streams[streamIndex].isSupported = false;
+            //this.streams[streamIndex].eventer = undefined;
+
+            //this.streams[streamIndex].worker?.terminate();
+            //this.streams[streamIndex].worker = undefined;
+
+            this.updateFFmpegSupportedStreams();
         });
 
-        const initDonePromise = eventer.waitUntilEvent(WebDecoderResponseType.INIT_DONE);
-        worker.postMessage({
-            type: "init",
+        eventer.addEventListener("freePtr", (data) => {
+            switch (data.ptr) {
+                case MediaType.RESULT_VIDEO: this.module!._cleanup_video_frame(data.ptr as number & BigInt); break;
+                case MediaType.RESULT_AUDIO: this.module!._cleanup_audio_frame(data.ptr as number & BigInt); break;
+                case MediaType.RESULT_PACKET: this.module!._cleanup_packet(data.ptr as number & BigInt); break;
+                default: break;
+            }
+        })
+
+        const initDonePromise = eventer.waitForEvent("initStatus");
+        eventer.postMessage({
+            kind: "initDecoder",
+            is64Bit: this.is64Bit,
             isVideo: type === AVMediaType.AVMEDIA_TYPE_VIDEO,
             justToCombineStuff: decoderResult?.supported === true ? false : true,
             targetBuffer: this.wasmMemory,
-            inputAtomicBuffers: eventer.getBuffers(),
-            audioConfig: type === AVMediaType.AVMEDIA_TYPE_AUDIO ? config : undefined,
-            videoConfig: type === AVMediaType.AVMEDIA_TYPE_VIDEO ? config : undefined,
-            outputChannel: messageChannel.port2
-        } as WebDecoderWorkerInit, [messageChannel.port2]);
+            audioConfig: type === AVMediaType.AVMEDIA_TYPE_AUDIO ? (config as AudioDecoderConfig) : undefined,
+            videoConfig: type === AVMediaType.AVMEDIA_TYPE_VIDEO ? (config as VideoDecoderConfig) : undefined,
+            outputChannel: messageChannel.port2,
+            transferable: [messageChannel.port2]
+        });
 
         const result = await initDonePromise;
 
-        if (result === null || result.data.result < 0) {
+        if (result === null || result.status < 0) {
             worker.terminate();
             return unsupportedResults;
         }
@@ -543,7 +546,6 @@ class FFmpegBridge {
             isSupported: decoderResult?.supported ?? false,
             isUsed: false,
             messageChannel,
-            secondMessageChannel,
             worker: worker,
             eventer: eventer
         };
@@ -561,45 +563,6 @@ class FFmpegBridge {
             return AudioDecoder.isConfigSupported(config as AudioDecoderConfig) as Promise<DecoderSupport[T]>;
         } else {
             throw Error("Unsupported Decoder");
-        }
-    }
-
-    private handleWebDecoderEvent(streamIndex: number, type: WebDecoderResponseType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
-        switch (type) {
-            case WebDecoderResponseType.INIT_DONE: {
-                const data2 = data as { result: number; };
-                if (data2.result < 0)
-                    console.error("Web Decoder init failed with error", data.result, `for stream #${streamIndex}`);
-                else console.log(`Web Decoder init for stream #${streamIndex} succeeded :D`);
-
-                break;
-            }
-            case WebDecoderResponseType.FATAL_ERROR: {
-                console.error(`Web decoder for stream #${streamIndex} has died. Switching to SW decoding`);
-                this.streams[streamIndex].isSupported = false;
-                //this.streams[streamIndex].eventer = undefined;
-
-                //this.streams[streamIndex].worker?.terminate();
-                //this.streams[streamIndex].worker = undefined;
-
-                this.updateFFmpegSupportedStreams();
-                break;
-            }
-            case WebDecoderResponseType.FREE_VIDEO_PTR: {
-                const { ptr } = data as { ptr: number; };
-                this.module!._cleanup_video_frame((this.is64Bit ? BigInt(ptr) : ptr) as number & BigInt);
-                break;
-            }
-            case WebDecoderResponseType.FREE_AUDIO_PTR: {
-                const { ptr } = data as { ptr: number; };
-                this.module!._cleanup_audio_frame((this.is64Bit ? BigInt(ptr) : ptr) as number & BigInt);
-                break;
-            }
-            case WebDecoderResponseType.PACKET_PUBLISHED: {
-                const { packetPtr, streamIndex } = data as { packetPtr: number; streamIndex: number };
-                this.module!._cleanup_packet((this.is64Bit ? BigInt(packetPtr) : packetPtr) as number & BigInt);
-                this.webDecoderLocks.set(streamIndex, false);
-            }
         }
     }
 

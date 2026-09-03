@@ -1,6 +1,7 @@
 import { boolConst, emptyRequest, floatConst, type AtomicEventerBuffers, type SerializableEventMap } from "@/player/atomicEventer/types";
-import type { AudioDecoderConfigStruct, VideoDecoderConfigStruct } from "../structReader";
+import type { AudioDecoderConfigStruct, MediaType, VideoDecoderConfigStruct } from "../structReader";
 import type { ExtendedVideoFormats } from "../advancedTypes/AVTypes";
+import type { WorkerPostMessage } from "@/core/types";
 
 export enum WebDecoderRequestType {
     DECODE_VIDEO = 0,
@@ -64,16 +65,56 @@ export const decoderResponseTemplates = {
     }
 } as const satisfies SerializableEventMap<WebDecoderResponseType>;
 
-export interface WebDecoderWorkerInit {
-    type: "init",
-    isVideo: boolean,
-    justToCombineStuff: boolean,
-    targetBuffer: WebAssembly.Memory,
-    inputAtomicBuffers: AtomicEventerBuffers,
-    videoConfig: VideoDecoderConfig | undefined,
-    audioConfig: AudioDecoderConfig | undefined,
-    outputChannel: MessagePort;
+export interface WebDecoderWorkerInit extends WorkerPostMessage {
+    readonly kind: "initDecoder",
+    readonly is64Bit: boolean;
+    readonly isVideo: boolean;
+    readonly justToCombineStuff: boolean;
+    readonly targetBuffer: WebAssembly.Memory,
+    readonly videoConfig: VideoDecoderConfig | undefined,
+    readonly audioConfig: AudioDecoderConfig | undefined,
+    readonly outputChannel: MessagePort;
 }
+
+export interface WorkerDecoderInitStatus extends WorkerPostMessage {
+    readonly kind: "initStatus";
+    readonly status: number;
+}
+
+export interface WorkerDecoderFatalError extends WorkerPostMessage {
+    readonly kind: "fatalError";
+}
+
+export interface WorkerDecodePacket extends WorkerPostMessage {
+    readonly kind: "decodePacket";
+    readonly type: MediaType;
+    readonly ptr: number | bigint;
+    readonly size: number;
+    readonly duration: number;
+    readonly timestamp: number;
+    readonly isKey: boolean;
+    readonly packetPtr: number | bigint;
+    readonly streamIndex: number;
+}
+
+export interface WorkerDecoderFreePtr extends WorkerPostMessage {
+    readonly kind: "freePtr";
+    readonly type: MediaType;
+    readonly ptr: number | bigint;
+}
+
+export interface WorkerDecoderReinit extends WorkerPostMessage {
+    readonly kind: "reinit";
+}
+
+export interface WorkerDecoderReconstructFrame extends WorkerPostMessage {
+    readonly kind: "reconstruct";
+    readonly type: MediaType;
+    readonly ptr: number | bigint;
+}
+
+
+export type AllWebDecoderWorkerMessages = WebDecoderWorkerInit | WorkerDecoderInitStatus | WorkerDecoderFatalError | WorkerDecodePacket | WorkerDecoderFreePtr | WorkerDecoderReinit | WorkerDecoderReconstructFrame;
 
 interface PlaneDescriptor {
     width: number;

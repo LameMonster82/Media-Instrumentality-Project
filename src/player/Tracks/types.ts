@@ -6,6 +6,7 @@ import type { SubtitleFFmpegStream } from "./subtitles old/subtitleStream";
 export interface MediaStreamTrackWrapper<T> {
     initialize(): Promise<void>;
     enable(enable: boolean): void;
+    latency(): number;
     getTrack(): MediaStreamTrack | null;
     writeData(data: T, currentTime?: number): Promise<void>;
     seekTo(time: number, fastSeek: boolean): Promise<void>;
@@ -51,6 +52,18 @@ declare global {
     export interface MediaStreamTrackGenerator<T extends VideoFrame | AudioData = VideoFrame | AudioData>
         extends MediaStreamTrack {
         readonly writable: WritableStream<T>;
+        readonly stats: T extends AudioData ? MediaStreamTrackAudioStats : never;
+    }
+
+    interface MediaStreamTrackAudioStats {
+        deliveredFrames: number,
+        deliveredFramesDuration: number,
+        totalFrames: number,
+        totalFramesDuration: number,
+        latency: number,
+        averageLatency: number,
+        minimumLatency: number,
+        maximumLatency: number;
     }
 
 

@@ -9,7 +9,6 @@ export interface WorkerInitFFmpeg extends WorkerPostMessage {
     readonly kind: "initFfmpeg";
     readonly fileSource: string | File | RemoteFileSource;
     readonly bufferSize: number;
-    readonly eventerBuffers: AtomicEventerBuffers
 }
 
 export interface WorkerInitFFmpegOnlyModule extends WorkerPostMessage {
@@ -119,11 +118,11 @@ export type AllTargetWorkerMessages =
 
 //#region FFmpeg Worker -> Main Thread
 
-export interface WorkerFFmpegInitComplete extends WorkerPostMessage {
-    readonly kind: "initComplete";
-    readonly info: FileInfo;
-    readonly streamPorts: Map<number, MessagePort>;
-    readonly streamPorts2: Map<number, MessagePort>;
+export interface WorkerFFmpegInitStatus extends WorkerPostMessage {
+    readonly kind: "initFFmpegStatus";
+    readonly status: number;
+    readonly info: FileInfo | null;
+    readonly streamPorts: Map<number, MessagePort> | null;
 }
 
 export interface WorkerSetTime extends WorkerPostMessage {
@@ -131,12 +130,36 @@ export interface WorkerSetTime extends WorkerPostMessage {
     readonly time: bigint;
 }
 
-export type AllRespondWorkerEvents = WorkerFFmpegInitComplete | WorkerSetTime | WorkerOk;
+export interface WorkerEndOfFile extends WorkerPostMessage {
+    readonly kind: "endOfFile";
+}
+
+export interface WorkerRequestData extends WorkerPostMessage {
+    readonly kind: "requestData";
+}
+
+export interface WorkerDataAnswer extends WorkerPostMessage {
+    readonly kind: "dataAnswer";
+    readonly status: RequestDataStatus;
+    readonly packetType: MediaType;
+}
+
+export interface WorkerSeekTo extends WorkerPostMessage {
+    readonly kind: "seekTo";
+    readonly time: number;
+}
+
+export interface WorkerSeekStatus extends WorkerPostMessage {
+    readonly kind: "seekStatus";
+    readonly status: number;
+}
+
+export type AllVideoWorkerEvents = WorkerFFmpegInitStatus | WorkerSetTime | WorkerOk | WorkerEndOfFile | WorkerRequestData | WorkerDataAnswer | WorkerSeekTo | WorkerSeekStatus;
 
 //#endregion
 
-export type AllRespondWorkerEventsKind = AllRespondWorkerEvents["kind"];
-export type RespondEventByKind<E extends AllRespondWorkerEventsKind> = Extract<AllRespondWorkerEvents, { kind: E }>;
+export type AllRespondWorkerEventsKind = AllVideoWorkerEvents["kind"];
+export type RespondEventByKind<E extends AllRespondWorkerEventsKind> = Extract<AllVideoWorkerEvents, { kind: E }>;
 export type DictionaryWorkerEvent = {
   [K in AllRespondWorkerEventsKind]: ((data: RespondEventByKind<K>) => void)[];
 };

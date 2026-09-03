@@ -5,6 +5,7 @@ export class VideoStreamTrackChrome implements MediaStreamTrackWrapper<VideoFram
     private writableStream: WritableStream<VideoFrame>;
     private track: MediaStreamTrackWritable<VideoFrame>;
     private writer: WritableStreamDefaultWriter<VideoFrame>;
+    private frameWriteTime: number = 0;
 
     constructor() {
         this.track = new MediaStreamTrackGenerator({ kind: 'video' });
@@ -14,9 +15,12 @@ export class VideoStreamTrackChrome implements MediaStreamTrackWrapper<VideoFram
     }
     async initialize() { }
     async stealPlayEvent() { }
+    latency() { return this.frameWriteTime }
 
     public async writeData(frame: VideoFrame): Promise<void> {
+        const now = performance.now();
         await this.writer.write(frame);
+        this.frameWriteTime = performance.now() - now;
     }
 
     enable(enable: boolean) {

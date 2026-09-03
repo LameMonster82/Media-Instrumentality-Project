@@ -126,7 +126,12 @@ export interface WorkerFFmpegInitComplete extends WorkerPostMessage {
     readonly streamPorts2: Map<number, MessagePort>;
 }
 
-export type AllRespondWorkerEvents = WorkerFFmpegInitComplete;
+export interface WorkerSetTime extends WorkerPostMessage {
+    readonly kind: "setTime";
+    readonly time: bigint;
+}
+
+export type AllRespondWorkerEvents = WorkerFFmpegInitComplete | WorkerSetTime | WorkerOk;
 
 //#endregion
 

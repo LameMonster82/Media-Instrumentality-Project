@@ -479,7 +479,7 @@ class FFmpegBridge {
     }
 
     public setTimestamp(time: bigint) {
-        this.videoEventer?.sendEvent(FFmpegResponseEvent.SET_TIME, { time });
+        self.postMessage({ kind: "setTime", time });
     }
 
     private async initStream<T extends ValidDecoderTypes = ValidDecoderTypes>(streamIndex: number,

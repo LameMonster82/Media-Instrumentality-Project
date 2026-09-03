@@ -61,7 +61,7 @@ export class VideoPlayer2 {
     private endOfFile = false;
 
     // Events
-    private eventCallback: DictionaryWorkerEvent = { initComplete: [] };
+    private eventCallback: DictionaryWorkerEvent = { initComplete: [], setTime: [], ok: [] };
     private workerEventer: AtomicEventer<
         FFmpegRequestEvent,
         FFmpegResponseEvent,
@@ -639,6 +639,7 @@ export class VideoPlayer2 {
         }
         console.debug("Seeking started at", performance.now());
         this.endOfFile = false;
+        const timePromise = this.waitForSlowEvent("setTime");
         await this.workerEventer.sendEvent(FFmpegRequestEvent.SEEK, { time: time }, true);
         for (const frame of this.videoFrameBuffer)
             if (frame)
@@ -660,7 +661,7 @@ export class VideoPlayer2 {
             return;
         }
 
-        const timePromise = this.workerEventer.waitUntilEvent(FFmpegResponseEvent.SET_TIME);
+        debugger
 
         if (this.activeVideoStream !== -1)
             while (this.videoFrameBuffer.length === 0)
@@ -670,7 +671,7 @@ export class VideoPlayer2 {
                 await this.requestData();
 
         const newTime = await timePromise;
-        this.mediaTime = Number(newTime!.data.time) / 1000;
+        this.mediaTime = Number(newTime.time) / 1000;
         this.seeking = false;
         this.controls.setLoadingState(false);
 
@@ -686,8 +687,7 @@ export class VideoPlayer2 {
         this.controls.setLoadingState(true);
 
         const updateFFmpeg = (i: number, enabled: boolean) => {
-            const { promise, resolve } = Promise.withResolvers();
-            this.worker.addEventListener("message", resolve, { once: true });
+            const promise = this.waitForSlowEvent("ok");
 
             this.worker.postMessage({
                 kind: "changeStream",
@@ -783,7 +783,7 @@ export class VideoPlayer2 {
             callback(e.data);
         }
 
-        this.eventCallback[e.data.kind] = [];
+        this.eventCallback[e.data.kind].length = 0;
     }
 
     private waitForSlowEvent<E extends AllRespondWorkerEventsKind>(event: E): Promise<RespondEventByKind<E>> {

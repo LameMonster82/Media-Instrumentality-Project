@@ -10,7 +10,6 @@ export enum FFmpegResponseEvent {
     REQUEST_STATUS,
     SET_STREAM_DONE,
     SEEK_STATUS,
-    SET_TIME,
     END_OF_FILE
 }
 
@@ -33,8 +32,5 @@ export const ffmpegResponseTemplate = {
         status: floatConst
     },
     [FFmpegResponseEvent.SET_STREAM_DONE]: emptyRequest,
-    [FFmpegResponseEvent.SET_TIME]: {
-        time: uBigNumConst
-    },
     [FFmpegResponseEvent.END_OF_FILE]: emptyRequest
 } as const satisfies SerializableEventMap<FFmpegResponseEvent>;

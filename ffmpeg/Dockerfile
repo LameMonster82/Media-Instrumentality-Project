@@ -17,7 +17,7 @@ ENV INSTALL_DIR=/opt
 ARG DEBUG_CFLAGS="-g3 -O0 -sSTACK_OVERFLOW_CHECK=2"
 ARG RELEASE_CFLAGS="-O3 -flto -fno-math-errno -mnontrapping-fptoint -msign-ext -mbulk-memory -matomics"
 ENV DEBUG_CFLAGS=${DEBUG_CFLAGS}
-ENV RELEASE_CFLAGS=${DEBUG_CFLAGS}
+ENV RELEASE_CFLAGS=${RELEASE_CFLAGS}
 ENV FFMPEG_VERSION=9.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

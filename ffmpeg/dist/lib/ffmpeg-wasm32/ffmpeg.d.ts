@@ -12,7 +12,7 @@ declare var RuntimeExports: {
      * @param {Array=} argTypes
      * @param {Object=} opts
      */
-    cwrap: (ident: any, returnType?: string | undefined, argTypes?: any[] | undefined, opts?: Object | undefined) => (...args: any[]) => any;
+    cwrap: (ident: any, returnType?: string | undefined, argTypes?: any[] | undefined, opts?: Object | undefined) => any;
     /**
      * @param {number} ptr
      * @param {string} type
@@ -80,7 +80,6 @@ interface WasmModule {
   _malloc_size(_0: number): number;
   _malloc_usable_size(_0: number): number;
   _reallocf(_0: number, _1: number): number;
-  ___set_stack_limits(_0: number, _1: number): void;
 }
 
 export type MainModule = WasmModule & typeof RuntimeExports;

@@ -42,6 +42,9 @@
             "@FFmpeg/*": [
                 "./ffmpeg/dist/lib/*"
             ],
+            "@Server/*": [
+                "./server/shared/*"
+            ],
         },
         // Some stricter flags (disabled by default)
         "noUnusedLocals": false,
@@ -57,7 +60,7 @@
         ],
         "types": ["audioworklet"]
     },
-    "include": ["src/**/*", "src/core/global.d.ts", "src/core/jsx/jsx.d.ts"],
+    "include": ["src/**/*", "src/core/global.d.ts", "src/core/jsx/jsx.d.ts", "server/**/*"],
     "exclude": [
         "dist",
         "node_modules",

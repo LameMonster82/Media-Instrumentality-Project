@@ -2,12 +2,12 @@ import type { Dictionary, WorkerPostMessage, WorkerShutdown } from "@/core/types
 import type { ChapterInfo } from "../Tracks/subtitles old/subtitleStream";
 import type { AudioDecoderConfigStruct, AVMediaType, FileInfo, MediaType, VideoDecoderConfigStruct } from "./structReader";
 import type { AtomicEventerBuffers } from "../atomicEventer/types";
-import type { RemoteFileSource } from "../seeker/types";
+import type { RemoteFileSource, RtcSeekableWorkerInit, WorkerRemoteSoruce } from "../seeker/types";
 
 //#region Main -> FFmpeg Worker
 export interface WorkerInitFFmpeg extends WorkerPostMessage {
     readonly kind: "initFfmpeg";
-    readonly fileSource: string | File | RemoteFileSource;
+    readonly fileSource: string | File | WorkerRemoteSoruce;
     readonly bufferSize: number;
 }
 
@@ -154,7 +154,7 @@ export interface WorkerSeekStatus extends WorkerPostMessage {
     readonly status: number;
 }
 
-export type AllVideoWorkerEvents = WorkerFFmpegInitStatus | WorkerSetTime | WorkerOk | WorkerEndOfFile | WorkerRequestData | WorkerDataAnswer | WorkerSeekTo | WorkerSeekStatus;
+export type AllVideoWorkerEvents = WorkerFFmpegInitStatus | WorkerSetTime | WorkerOk | WorkerEndOfFile | WorkerRequestData | WorkerDataAnswer | WorkerSeekTo | WorkerSeekStatus | RtcSeekableWorkerInit;
 
 //#endregion
 

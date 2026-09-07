@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
-    "signaling": "node server/signaling.mjs"
+    "signaling": "node --env-file=.env server/signaling.ts"
   },
   "private": true,
   "devDependencies": {
@@ -29,6 +29,7 @@
     "@bjorn3/browser_wasi_shim": "^0.4.2",
     "@types/three": "^0.184.1",
     "@types/webxr": "^0.5.24",
+    "@types/ws": "^8.18.1",
     "@uswriting/exiftool": "^1.0.9",
     "ass-compiler": "^0.1.16",
     "assjs": "^0.1.7",

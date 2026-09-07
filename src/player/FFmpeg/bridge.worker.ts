@@ -1,6 +1,5 @@
 import urlSeekerWorker from "../seeker/urlSeeker.worker?worker";
 import fileSeekerWorker from "../seeker/fileSeeker.worker?worker";
-import rtcSeekerWorker from "../../shareplay/rtcSeeker.worker?worker";
 import webDecoderWorker from "./webDecoder/webDecoder.worker?worker";
 import type { FFmpegWorker } from "@FFmpeg/FFmpegTypes";
 
@@ -12,7 +11,7 @@ import { AVColorPrimarieToColorPrimative, AVColorRangeToColorRange, AVColorSpace
 import getSupportedPixelFormats from "./advancedTypes/supportedPixelFormats";
 import canWasm64 from "./advancedTypes/isWasm64";
 import AtomicEventer from "../atomicEventer/atomicEventer";
-import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type FileSeekableWorkerInit, type RemoteFileSource, type RtcSeekableWorkerInit, type UrlSeekableWorkerInit } from "../seeker/types";
+import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type FileSeekableWorkerInit, type RemoteFileSource, type RtcSeekableWorkerInit, type UrlSeekableWorkerInit, type WorkerRemoteSoruce } from "../seeker/types";
 import type { DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
 import type { Dictionary } from "@/core/types";
 import type { AllWebDecoderWorkerMessages } from "./webDecoder/types";
@@ -48,7 +47,7 @@ class FFmpegBridge {
     private fileOffset: bigint = 0n;
 
     // File
-    private fileUrl: string | File | RemoteFileSource = "";
+    private fileUrl: string | File | WorkerRemoteSoruce = "";
 
     // Streams
     private streams: Record<number, Stream> = {};
@@ -137,18 +136,15 @@ class FFmpegBridge {
             } as FileSeekableWorkerInit);
         } else {
             const source = dataInfo.fileSource;
-            this.seekerWorker = rtcSeekerWorker({ name: "I pull media bytes from the share-play host" });
             this.seekerEventer.receiveEvent(this.handleSeekerEvents.bind(this));
 
-            this.seekerWorker.postMessage({
-                port: source.port,
-                fileSize: source.fileSize,
+            self.postMessage({
+                kind: "initRtcSeekr",
+                fileSize: 0,
                 atomicBuffers: this.seekerEventer.getBuffers(),
                 targetBuffer: this.wasmMemory,
                 bufferSize: this.bufferSize,
-                maxMessageSize: source.maxMessageSize,
-                type: "init"
-            } as RtcSeekableWorkerInit, [source.port]);
+            } as RtcSeekableWorkerInit);
         }
 
         const seekResults = await this.seekerEventer.waitUntilEvent(SeekerResponseType.SEEK_DONE);

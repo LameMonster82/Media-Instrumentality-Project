@@ -133,3 +133,9 @@ export interface WebDecoderQueueMessage extends WorkerPostMessage {
     streamIndex: number;
     queue: number;
 }
+
+export enum Intent {
+  Play,
+  Pause,
+  Seek
+}

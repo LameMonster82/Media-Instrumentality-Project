@@ -11,7 +11,7 @@ import { GetAudioTrackCtor } from "./Tracks/audio/utils";
 import { audioTime, type WorkerAudioDataInit } from "./Tracks/audio/audioTypes";
 import { Dispositions } from "./FFmpeg/advancedTypes/AVTypes";
 import type { BitmapSubArgs, VideoDisplayData, VTTCueArgs } from "./Tracks/subtitles/types";
-import type { RemoteFileSource } from "./seeker/types";
+import type { RemoteFileSource, WorkerRemoteSoruce } from "./seeker/types";
 import musicIcon from "@Resources/Icons/music.svg?url";
 
 import JASSUB, { webYCbCrMap } from "jassub";
@@ -20,11 +20,8 @@ import { extractCoverArt, extractFonts } from "./utils";
 import SubtitleTextTrack from "./Tracks/subtitles/SubtitleTextTrack";
 import SubtitleASSTrack from "./Tracks/subtitles/SubtitleASSTrack";
 import SubtitleBitmapTrack from "./Tracks/subtitles/SubtitleBitmapTrack";
-
-export type PlaybackCommand =
-    | { kind: "play" }
-    | { kind: "pause" }
-    | { kind: "seek"; time: number }; // time in milliseconds
+import { Intent } from "./types";
+import RTCSeeker from "./seeker/rtcSeeker.worker";
 
 export class VideoPlayer2 {
     // DOM
@@ -61,18 +58,24 @@ export class VideoPlayer2 {
     private endOfFile = false;
 
     // Events
-    private eventCallback: DictionaryWorkerEvent = { initComplete: [], setTime: [], ok: [] };
+    private eventCallback: DictionaryWorkerEvent = { initComplete: [], setTime: [], ok: [], initRtcSeekr: [] };
     private workerEventer: AtomicEventer<
         FFmpegRequestEvent,
         FFmpegResponseEvent,
         typeof ffmpegRequestTemplate,
         typeof ffmpegResponseTemplate
-        > = new AtomicEventer(undefined, ffmpegRequestTemplate, ffmpegResponseTemplate);
+    > = new AtomicEventer(undefined, ffmpegRequestTemplate, ffmpegResponseTemplate);
 
-    private commandHandler: ((command: PlaybackCommand) => void) | undefined;
+    private onPlayCB: ((time: number) => void)[] = [];
+    private onPauseCB: ((time: number) => void)[] = [];
+    private onSeekCB: ((time: number) => void)[] = [];
+
+    private rtcSeeker: RTCSeeker | undefined;
 
     // FFmpeg
     private worker: Worker;
+
+    private initPromise = Promise.withResolvers<void>();
 
     constructor(videoSrc: string | File | RemoteFileSource) {
         // DOM
@@ -90,17 +93,27 @@ export class VideoPlayer2 {
         const worker = ffmpegWorker({ name: "I tell ffmpeg to do the work" });
         worker.onmessage = this.handleSlowEvent.bind(this);
 
-        const transfer: Transferable[] = [];
-        if (typeof videoSrc === "object" && videoSrc !== null && !(videoSrc instanceof File) && "port" in videoSrc) {
-            transfer.push(videoSrc.port);
+        let workerSrc: string | File | WorkerRemoteSoruce;
+        if (typeof videoSrc === "object" && !(videoSrc instanceof File) && videoSrc.kind === "remote") { 
+            workerSrc = { kind: "remoteSource" };
+        } else {
+            workerSrc = videoSrc as string | File;
         }
 
         worker.postMessage({
-            fileSource: videoSrc,
+            fileSource: workerSrc,
             bufferSize: 32 * 1024 * 1024,
             kind: "initFfmpeg",
             eventerBuffers: this.workerEventer.getBuffers(),
-        } as WorkerInitFFmpeg, transfer);
+        } as WorkerInitFFmpeg);
+
+        if (typeof videoSrc === "object" && !(videoSrc instanceof File) && videoSrc.kind === "remote") {
+            this.waitForSlowEvent("initRtcSeekr").then(async data => {
+                this.rtcSeeker = new RTCSeeker(data, videoSrc.info, videoSrc.port, 32 * 1024 * 1024);
+                await this.rtcSeeker.seek();
+            })
+
+        }
 
         window.onbeforeunload = () => {
             worker.terminate();
@@ -121,35 +134,44 @@ export class VideoPlayer2 {
         this.initMedia().then(this.timeLoop.bind(this));
     }
 
+    private callIntent(intent: Intent, time: number) {
+        let whatToDo: ((time: number) => void)[] | undefined;
+        if (intent === Intent.Play)
+            whatToDo = this.onPlayCB;
+        else if (intent === Intent.Pause)
+            whatToDo = this.onPauseCB;
+        else if (intent === Intent.Seek)
+            whatToDo = this.onSeekCB;
+
+        for (const callback of whatToDo ?? []) {
+            callback(time);
+        }
+    }
+
     private initControls(): MediaControls {
         const controls = new MediaControls(this.video, {
             onPlayPause: async (intent?: boolean) => {
                 intent ??= this.paused;
-                if (this.commandHandler) {
-                    this.commandHandler({ kind: intent ? "play" : "pause" });
-                    this.controls.setPlayback(intent);
-                    return intent;
-                }
                 if (this.endOfFile && intent && this.duration <= this.mediaTime) {
+                    this.callIntent(Intent.Seek, 0);
                     await this.seek(0);
                     return intent;
                 }
                 if (intent) {
+                    this.callIntent(Intent.Play, this.mediaTime);
                     this.play();
                     try {
                         this.video.play();
                     } catch { }
                 } else {
+                    this.callIntent(Intent.Pause, this.mediaTime);
                     this.pause();
                 }
                 this.controls.setPlayback(intent);
                 return intent;
             },
             onSeekTo: (time: number) => {
-                if (this.commandHandler) {
-                    this.commandHandler({ kind: "seek", time: time * 1000 });
-                    return;
-                }
+                this.callIntent(Intent.Seek, time * 1000);
                 this.pause();
                 this.seek(time * 1000);
             },
@@ -159,6 +181,7 @@ export class VideoPlayer2 {
                 if (this.videoFrameBuffer[0]) {
                     this.mediaTime = this.videoFrameBuffer[0].timestamp / 1000;
                     this.stepFrame = true;
+                    this.callIntent(Intent.Pause, this.mediaTime);
                 }
             },
             onVolumeChange: (volume: number) => {
@@ -402,6 +425,8 @@ export class VideoPlayer2 {
 
         this.initDone = true;
         this.controls.setLoadingState(false);
+
+        this.initPromise.resolve();
     }
 
     private async requestData() {
@@ -661,8 +686,6 @@ export class VideoPlayer2 {
             return;
         }
 
-        debugger
-
         if (this.activeVideoStream !== -1)
             while (this.videoFrameBuffer.length === 0)
                 await this.requestData();
@@ -678,8 +701,6 @@ export class VideoPlayer2 {
         // In share-play mode the controller holds playback until every member
         // has confirmed the seek; only resume here for standalone playback.
         console.debug("Playing media at", performance.now());
-        if (!this.commandHandler)
-            this.play();
     }
 
     private async updateTrack(type: "video" | "audio" | "subtitle", index: number): Promise<void> {
@@ -747,7 +768,9 @@ export class VideoPlayer2 {
         this.controls.setLoadingState(false);
     }
 
-    public play() {
+    public play(hackTime?: number) {
+        if (hackTime)
+            this.mediaTime = hackTime;
         this.controls.setPlayback(true);
         this.paused = false;
 
@@ -756,7 +779,9 @@ export class VideoPlayer2 {
         }
     }
 
-    public pause() {
+    public pause(hackTime?: number) {
+        if (hackTime)
+            this.mediaTime = hackTime;
         this.controls.setPlayback(false);
         this.paused = true;
     }
@@ -766,13 +791,40 @@ export class VideoPlayer2 {
         await this.seek(timeMs);
     }
 
-    /** Routes user-initiated play/pause/seek to the share-play controller. */
-    public setCommandHandler(handler: (command: PlaybackCommand) => void): void {
-        this.commandHandler = handler;
+    public onPlay(callback: (time: number) => void) {
+        this.onPlayCB.push(callback);
+    }
+
+    public onPause(callback: (time: number) => void) {
+        this.onPauseCB.push(callback);
+    }
+
+    public onSeek(callback: (time: number) => void) {
+        this.onSeekCB.push(callback);
+    }
+
+    public setLoadingState(loading: boolean) {
+        this.controls.setLoadingState(loading);
     }
 
     public getVideo() {
         return this.container;
+    }
+
+    public init() {
+        return this.initPromise.promise;
+    }
+
+    public isPaused() {
+        return this.paused;
+    }
+
+    public isSeek() {
+        return this.seeking;
+    }
+
+    public getTime() {
+        return this.mediaTime;
     }
 
     private handleSlowEvent(e: MessageEvent<WorkerFFmpegInitComplete>) {

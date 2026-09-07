@@ -1,6 +1,10 @@
+import type { RemoteFileSource } from "./player/seeker/types";
+import { Intent } from "./player/types";
 import { VideoPlayer2 } from "./player/VideoPlayer";
-import { LobbyController } from "./shareplay/LobbyController";
-import { BroadcastChannelSignalingTransport, WebSocketSignalingTransport, type SignalingTransport } from "./shareplay/SignalingTransport";
+import Lobby from "./shareplay/lobby";
+import type { WebSocketAnswerSDP, WebSocketICECandidates } from "./shareplay/types";
+
+declare var self: Window;
 
 const createLobbyBtn = document.getElementById("createLobby") as HTMLButtonElement;
 const joinInput = document.getElementById("joinInput") as HTMLInputElement;
@@ -13,12 +17,8 @@ const membersEl = document.getElementById("members") as HTMLDivElement;
 const dropZone = document.getElementById("dropZone") as HTMLDivElement;
 const playerContainer = document.getElementById("playerContainer") as HTMLDivElement;
 
-let lobby: LobbyController | undefined;
+let lobby: Lobby | undefined;
 let currentPlayer: VideoPlayer2 | undefined;
-
-function makeLobbyId(): string {
-    return crypto.randomUUID().slice(0, 8);
-}
 
 function inviteUrl(lobbyId: string): string {
     const url = new URL(location.href);
@@ -30,38 +30,81 @@ function inviteUrl(lobbyId: string): string {
     return url.toString();
 }
 
-function makeTransport(lobbyId: string, wsUrl?: string): SignalingTransport {
-    if (wsUrl) return new WebSocketSignalingTransport(wsUrl, lobbyId);
-    return new BroadcastChannelSignalingTransport(lobbyId);
-}
+async function startLobby(wsUrl: string, lobbyId?: string): Promise<void> {
+    let more = "";
+    if (lobbyId)
+        more = `?lobby=${encodeURIComponent(lobbyId)}`
+    lobby = new Lobby(`${wsUrl}${more}`);
 
-function startLobby(lobbyId: string, wsUrl?: string): void {
-    const transport = makeTransport(lobbyId, wsUrl);
-    lobby = new LobbyController(lobbyId, transport);
+    lobbyId = await lobby.connect();
 
     inviteRow.style.display = "flex";
     inviteLink.href = inviteUrl(lobbyId);
     inviteLink.textContent = inviteUrl(lobbyId);
 
-    lobby.onMembersChange = (members) => {
-        membersEl.textContent = `Members: ${members.length} other${members.length === 1 ? "" : "s"}`;
-    };
-
-    lobby.onMediaChange = () => {
-        swapPlayer();
-    };
+    lobby.onUserCount((members) => {
+        membersEl.textContent = `Members: ${members} other${members === 1 ? "" : "s"}`;
+    });
 }
 
 function swapPlayer(): void {
-    if (!lobby || !lobby.currentMedia) return;
+    if (!lobby) return;
 
-    // VideoPlayer2 has no explicit destroy yet, so just replace the DOM node.
-    const source = lobby.getCurrentSource();
-    const player = new VideoPlayer2(source);
-    lobby.setPlayer(player);
+    const file = lobby.hostFile();
+    if (file) {
+        currentPlayer = new VideoPlayer2(file);
+    } else {
+        const port = lobby.setupSeekerChannel();
+        const remoteFile: RemoteFileSource = {
+            kind: "remote",
+            port: port,
+            info: lobby.getRTCInfo()!
+        }
+        currentPlayer = new VideoPlayer2(remoteFile);
+    }
 
-    playerContainer.replaceChildren(player.getVideo());
-    currentPlayer = player;
+    const inetntEvent = async (intent: Intent, time: number) => {
+        currentPlayer!.setLoadingState(true);
+        await lobby!.intent(intent, time);
+        currentPlayer!.setLoadingState(false);
+    }
+
+    lobby.onIntentStatus(() => {
+        let intent = Intent.Play;
+        if (currentPlayer!.isPaused())
+            intent = Intent.Pause;
+        if (currentPlayer!.isSeek())
+            intent = Intent.Seek;
+        return {
+            intent,
+            time: currentPlayer!.getTime()
+        }
+    })
+
+    currentPlayer.onPlay((time) => lobby!.intent(Intent.Play, time));
+    currentPlayer.onPause((time) => lobby!.intent(Intent.Pause, time));
+    currentPlayer.onSeek((time) => lobby!.intent(Intent.Seek, time));
+
+    lobby.onPlay((time) => { currentPlayer!.play(time); return Promise.resolve(); });
+    lobby.onPause((time) => { currentPlayer!.pause(time); return Promise.resolve(); })
+    lobby.onSeek((time) => currentPlayer!.seekTo(time))
+
+    playerContainer.replaceChildren(currentPlayer.getVideo());
+
+    currentPlayer.init().then(async () => {
+        if (lobby!.hostFile() !== null) return;
+        const status = await lobby!.getStatus();
+        const currTime = currentPlayer!.getTime();
+        if (status.time - 1 > currTime || status.time + 1 < currTime) {
+            await currentPlayer!.seekTo(status.time);
+        }
+
+        if (status.intent === Intent.Play) {
+            currentPlayer!.play(status.time);
+        } else {
+            currentPlayer!.pause(status.time);
+        }
+    })
 }
 
 function parseInvite(raw: string): string | undefined {
@@ -76,21 +119,19 @@ function parseInvite(raw: string): string | undefined {
 }
 
 createLobbyBtn.addEventListener("click", () => {
-    const params = new URLSearchParams(location.search);
-    startLobby(makeLobbyId(), params.get("ws") ?? undefined);
+    startLobby("ws://localhost:8080");
 });
 
 joinBtn.addEventListener("click", () => {
     const lobbyId = parseInvite(joinInput.value);
     if (lobbyId) {
-        const params = new URLSearchParams(location.search);
-        startLobby(lobbyId, params.get("ws") ?? undefined);
+        startLobby("ws://localhost:8080", lobbyId);
     }
 });
 
 hostUrlBtn.addEventListener("click", () => {
     const url = urlInput.value.trim();
-    if (url && lobby) lobby.hostUrl(url);
+    //if (url && lobby) lobby.hostUrl(url);
 });
 
 dropZone.addEventListener("click", () => {
@@ -99,7 +140,10 @@ dropZone.addEventListener("click", () => {
     input.accept = "video/*";
     input.onchange = () => {
         const file = input.files?.[0];
-        if (file && lobby) lobby.hostFile(file);
+        if (file && lobby) {
+            lobby.setAsHost(file);
+            swapPlayer();
+        }
     };
     input.click();
 });
@@ -117,13 +161,17 @@ dropZone.addEventListener("drop", (e) => {
     e.preventDefault();
     dropZone.classList.remove("dragover");
     const file = e.dataTransfer?.files?.[0];
-    if (file && lobby) lobby.hostFile(file);
+    if (file && lobby) {
+        lobby.setAsHost(file);
+        swapPlayer();
+    }
 });
 
 // Auto-join from ?lobby=<id>
 const initial = new URLSearchParams(location.search);
 const initialLobby = initial.get("lobby");
 if (initialLobby) {
-    startLobby(initialLobby, initial.get("ws") ?? undefined);
     joinInput.value = initialLobby;
+    await startLobby("ws://localhost:8080", initialLobby);
+    swapPlayer();
 }

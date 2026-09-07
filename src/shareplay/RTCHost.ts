@@ -1,71 +1,63 @@
-import { RTC_CONFIG, type RtcSignal } from "./types";
+import type { RTCRequestData } from "./types";
 
-type RangeRequest = { type: "requestRange"; offset: number; size: number };
-
-/**
- * Host side of the media transfer. Each peer connects with a WebRTC data
- * channel ("media"); the host reads the requested byte range from its local
- * File and writes the raw bytes back over that channel.
- */
-export class RTCHost {
+export default class RTCHost {
     private file: File;
-    private pcs = new Map<string, RTCPeerConnection>();
+    private connection: RTCPeerConnection;
+    private channel: RTCDataChannel | undefined;
+    public otherID: string;
+    private lastBuffer: Uint8Array<ArrayBuffer> | undefined;
 
-    onSignal: (to: string, data: RtcSignal) => void = () => { };
 
-    constructor(file: File) {
+    constructor(file: File, otherID: string, info: RTCConfiguration) {
         this.file = file;
+        this.otherID = otherID;
+
+        this.connection = new RTCPeerConnection(info);
     }
 
-    /** Handle an offer/answer/ICE candidate coming from a peer. */
-    async handleSignal(from: string, data: RtcSignal): Promise<void> {
-        let pc = this.pcs.get(from);
-        if (!pc) {
-            pc = new RTCPeerConnection(RTC_CONFIG);
-            this.pcs.set(from, pc);
+    public createChannel() {
+        if (this.channel) return;
+        this.channel = this.connection.createDataChannel("data-channel");
+        this.channel.onopen = () => { console.log("channel opened"); };
+        this.channel.onclose = () => { console.log("channel close"); };
+        this.channel.onmessage = this.handleMessages.bind(this);
+    }
 
-            pc.onicecandidate = (e) => {
-                if (e.candidate) this.onSignal(from, { ice: e.candidate.toJSON() });
-            };
-            pc.ondatachannel = (e) => this.attachChannel(e.channel, pc?.sctp?.maxMessageSize ?? 16384);
+    public async getOffer() {
+        const offer = await this.connection.createOffer();
+        await this.connection.setLocalDescription(offer);
+
+        return this.connection.localDescription!;
+    }
+
+    public async setSDP(sdp: RTCSessionDescriptionInit) {
+        await this.connection.setRemoteDescription(new RTCSessionDescription(sdp));
+    }
+    public async addICECandidates(candidate: RTCLocalIceCandidateInit) {
+        await this.connection.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+
+    private async handleMessages(ev: MessageEvent<string>) {
+        if (typeof ev.data !== "string") return;
+        const data = JSON.parse(ev.data) as RTCRequestData;
+        if (data.kind != "requestData") return;
+
+        const maxMessageSize = this.connection.sctp?.maxMessageSize ?? 65565;
+
+        const maxSize = Math.min(maxMessageSize - 8, data.size, this.file.size - data.offset);
+        let targetBuffer = this.lastBuffer;
+        if (!targetBuffer || targetBuffer.byteLength !== maxSize + 8) {
+            targetBuffer = new Uint8Array(maxSize + 8);
+            this.lastBuffer = targetBuffer;
         }
 
-        if ("sdp" in data) {
-            await pc.setRemoteDescription(data.sdp);
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            if (pc.localDescription)
-                this.onSignal(from, { sdp: pc.localDescription.toJSON() });
-        } else {
-            await pc.addIceCandidate(data.ice);
-        }
-    }
+        const dataView = new DataView(targetBuffer.buffer);
+        dataView.setBigUint64(0, BigInt(data.offset));
 
-    setFile(file: File): void {
-        this.file = file;
-    }
+        const blob = this.file.slice(data.offset, data.offset + maxSize);
+        const array = await blob.arrayBuffer();
+        targetBuffer.set(new Uint8Array(array), 8);
 
-    private attachChannel(channel: RTCDataChannel, maxSize: number): void {
-        channel.onmessage = async (e: MessageEvent<string>) => {
-            if (typeof e.data !== "string") return;
-            let msg: RangeRequest;
-            try {
-                msg = JSON.parse(e.data);
-            } catch {
-                return;
-            }
-
-            if (msg.type === "requestRange") {
-                const size = Math.min(msg.size, maxSize)
-                const blob = this.file.slice(msg.offset, msg.offset + size);
-                const bytes = await blob.arrayBuffer();
-                channel.send(bytes);
-            }
-        };
-    }
-
-    close(): void {
-        for (const pc of this.pcs.values()) pc.close();
-        this.pcs.clear();
+        this.channel?.send(targetBuffer);
     }
 }

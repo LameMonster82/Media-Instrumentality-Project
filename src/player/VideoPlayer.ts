@@ -50,6 +50,7 @@ export class VideoPlayer2 {
     private seeking: boolean = false;
     private stepFrame: boolean = false;
     private duration: number = 0;
+    private volume: number = 1;
 
     // Locked prevents local control while a seek is being synchronized across
     // the lobby (remote playback commands still apply).
@@ -82,6 +83,7 @@ export class VideoPlayer2 {
         this.container.appendChild(this.videoContainer);
         this.video.srcObject = this.mediaStream;
         this.video.autoplay = true;
+        this.video.muted = true;
         this.video.tabIndex = 0;
 
         this.video.addEventListener("click", () => {
@@ -185,17 +187,17 @@ export class VideoPlayer2 {
                 }
             },
             onVolumeChange: (volume: number) => {
-                this.video.volume = volume;
+                this.volume = volume;
+                for (const renderer of this.audioRenderer.values())
+                    renderer.setVolume?.(volume);
             },
             getMediaDuration: () => this.duration / 1000,
             getCurrentTime: () => this.mediaTime / 1000,
-            getVolume: () => this.video.volume,
+            getVolume: () => this.volume,
             onVideoTrackSelect: (index: number) => this.updateTrack("video", index),
             onAudioTrackSelect: (index: number) => this.updateTrack("audio", index),
             onSubtitleTrackSelect: (index: number) => this.updateTrack("subtitle", index),
         });
-
-        this.video.addEventListener('volumechange', () => this.controls.setVolume(this.video.volume));
 
         this.container.append(controls.controlsContainer);
         controls.controlsContainer.classList.add(styles.unsetPosition);
@@ -242,9 +244,9 @@ export class VideoPlayer2 {
         // eslint-disable-next-line @typescript-eslint/naming-convention
         const initStream = async <T extends MediaStreamTrackWrapper<unknown>>(enabled: boolean, Renderer: new (...args: unknown[]) => T, ...args: unknown[]): Promise<T> => {
             const renderer = new Renderer(...args ?? []);
-            await renderer.initialize();
+            await renderer.initialize?.();
 
-            const track = renderer.getTrack();
+            const track = renderer.getTrack?.();
             if (track) {
                 track.enabled = enabled;
                 this.mediaStream.addTrack(track);
@@ -262,6 +264,7 @@ export class VideoPlayer2 {
                     if (this.activeVideoStream === i)
                         enabled = true;
                     const renderer = await initStream(enabled, GetVideoTrackCtor());
+                    renderer.startTime = stream.startTime / 1000;
                     this.videoRenderer.set(i, renderer);
                     videoStreams.push({
                         index: i,
@@ -277,6 +280,7 @@ export class VideoPlayer2 {
                         enabled = true;
                     const renderer = await initStream(enabled, GetAudioTrackCtor(),
                         stream.audio_config!.sample_rate, stream.audio_config!.num_channels);
+                    renderer.startTime = stream.startTime / 1000;
                     this.audioRenderer.set(i, renderer);
                     audioStreams.push({
                         index: i,
@@ -305,6 +309,7 @@ export class VideoPlayer2 {
                         case AVSubtitleType.SUBTITLE_TEXT: {
                             const renderer = new SubtitleTextTrack(this.video, stream.metadata["title"], stream.metadata["language"]);
                             renderer.createCanvas(createCanvas.bind(this));
+                            renderer.startTime = stream.startTime / 1000000;
                             await renderer.enable(enabled);
                             this.subtitleRenderer.set(i, renderer);
                             break;
@@ -312,6 +317,7 @@ export class VideoPlayer2 {
                         case AVSubtitleType.SUBTITLE_ASS: {
                             const renderer = new SubtitleASSTrack(stream.subtitle_config!.subtitle_header, fonts);
                             renderer.createCanvas(createCanvas.bind(this));
+                            renderer.startTime = stream.startTime / 1000000;
 
                             await renderer.enable(enabled);
                             this.subtitleRenderer.set(i, renderer);
@@ -320,6 +326,7 @@ export class VideoPlayer2 {
                         case AVSubtitleType.SUBTITLE_BITMAP: {
                             const renderer = new SubtitleBitmapTrack();
                             renderer.createCanvas(createCanvas.bind(this));
+                            renderer.startTime = stream.startTime / 1000000;
                             await renderer.enable(enabled);
                             this.subtitleRenderer.set(i, renderer);
                             break;
@@ -515,7 +522,7 @@ export class VideoPlayer2 {
 
         if (this.videoFrameBuffer[0] instanceof VideoFrame && videoStream) {
             let frame = this.videoFrameBuffer[0];
-            if (frame.timestamp / 1000 <= this.mediaTime - videoStream.latency()) {
+            if (frame.timestamp / 1000 <= this.mediaTime - (videoStream.latency?.() ?? 0) - videoStream.startTime) {
                 frame = this.videoFrameBuffer.shift()!;
                 if ((subtitleStream as SubtitleASSTrack | undefined)?.setColorSpace && frame.colorSpace.matrix) {
                     await (subtitleStream as SubtitleASSTrack).setColorSpace(webYCbCrMap[frame.colorSpace.matrix]);
@@ -539,7 +546,7 @@ export class VideoPlayer2 {
         if (this.audioFrameBuffer[0] && audioStream) {
             let frame = this.audioFrameBuffer[0];
             const { timestamp } = audioTime(frame);
-            if (timestamp / 1000 <= this.mediaTime - audioStream.latency()) {
+            if (timestamp / 1000 <= this.mediaTime - (audioStream.latency?.() ?? 0) - audioStream.startTime) {
                 frame = this.audioFrameBuffer.shift()!;
                 const promise = audioStream.writeData(frame, this.mediaTime);
                 promise.then(() => {

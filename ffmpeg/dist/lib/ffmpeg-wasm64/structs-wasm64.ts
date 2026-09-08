@@ -203,24 +203,26 @@ export interface StreamInfo {
   type:              number; // @0 enum AVMediaType assumed enum/int-sized (enum AVMediaType);
   duration:          number; // @8 double
   disposition:       number; // @16 int
-  video_config:      bigint; // @24 VideoDecoderConfig * pointer / handle;
-  audio_config:      bigint; // @32 AudioDecoderConfig * pointer / handle;
-  subtitle_config:   bigint; // @40 SubtitleConfig * pointer / handle;
-  attachment_config: bigint; // @48 AttachmentConfig * pointer / handle;
-  metadata:          bigint; // @56 AVDictionary * pointer / handle;
+  start_time:        bigint; // @24 int64_t
+  video_config:      bigint; // @32 VideoDecoderConfig * pointer / handle;
+  audio_config:      bigint; // @40 AudioDecoderConfig * pointer / handle;
+  subtitle_config:   bigint; // @48 SubtitleConfig * pointer / handle;
+  attachment_config: bigint; // @56 AttachmentConfig * pointer / handle;
+  metadata:          bigint; // @64 AVDictionary * pointer / handle;
 }
 
-export const SIZEOF_StreamInfo = 64;
+export const SIZEOF_StreamInfo = 72;
 export const ALIGNOF_StreamInfo = 8;
 export const OFFSETS_StreamInfo = {
   type: 0,
   duration: 8,
   disposition: 16,
-  video_config: 24,
-  audio_config: 32,
-  subtitle_config: 40,
-  attachment_config: 48,
-  metadata: 56,
+  start_time: 24,
+  video_config: 32,
+  audio_config: 40,
+  subtitle_config: 48,
+  attachment_config: 56,
+  metadata: 64,
 } as const;
 
 export function readStreamInfo(buffer: ArrayBufferLike, offset = 0): StreamInfo {
@@ -229,11 +231,12 @@ export function readStreamInfo(buffer: ArrayBufferLike, offset = 0): StreamInfo 
     type: view.getInt32(0, true),
     duration: view.getFloat64(8, true),
     disposition: view.getInt32(16, true),
-    video_config: view.getBigUint64(24, true),
-    audio_config: view.getBigUint64(32, true),
-    subtitle_config: view.getBigUint64(40, true),
-    attachment_config: view.getBigUint64(48, true),
-    metadata: view.getBigUint64(56, true),
+    start_time: view.getBigInt64(24, true),
+    video_config: view.getBigUint64(32, true),
+    audio_config: view.getBigUint64(40, true),
+    subtitle_config: view.getBigUint64(48, true),
+    attachment_config: view.getBigUint64(56, true),
+    metadata: view.getBigUint64(64, true),
   };
 }
 

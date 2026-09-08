@@ -212,6 +212,8 @@ FileInfo *open_file() {
     if (stream->duration != AV_NOPTS_VALUE)
       duration = stream->duration * av_q2d(stream->time_base);
 
+    int64_t start = (stream->start_time != AV_NOPTS_VALUE) ? stream->start_time : 0;
+    info->streams[i].start_time = av_rescale_q(start, stream->time_base, (AVRational){1, 1000000});
     info->streams[i].duration = duration;
     if (type == AVMEDIA_TYPE_VIDEO) {
       info->streams[i].video_config = video_stream_to_config(stream->codecpar);
@@ -235,7 +237,7 @@ FileInfo *open_file() {
           av_freep(&ctx->subtitle_header);
           ff_ass_subtitle_header_full(ctx,
             1920, 1080,               // Screen res
-            "Arial", 128,              // font, font_size
+            "Arial", 64,              // font, font_size
             0xffffff, 0xffffff, 0, 0, // primary, secondary, outline, back (ABGR)
             0, 0, 0,                  // bold, italic, underline
             1, 2);                    // border_style, alignment

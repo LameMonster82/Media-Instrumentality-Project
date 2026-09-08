@@ -7,6 +7,7 @@ class AudioStreamTrackWorker extends AudioWorkletProcessor implements AudioWorkl
     private pending: WorkerAudioDataInit[] = [];
     private offset = 0;
     private active = true;
+    private paused = false;
 
 
     constructor() {
@@ -20,6 +21,8 @@ class AudioStreamTrackWorker extends AudioWorkletProcessor implements AudioWorkl
             } else {
                 switch (e.data.kind) {
                     case "flush": this.current = null; this.pending.length = 0; this.offset = 0; break;
+                    case "pause": this.paused = true; break;
+                    case "play": this.paused = false; break;
                     case "close": this.active = false; break;
                 }
             }
@@ -29,59 +32,46 @@ class AudioStreamTrackWorker extends AudioWorkletProcessor implements AudioWorkl
     process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean {
         const [output] = outputs;
 
-        if (this.current === null && this.pending.length > 0) {
-            this.current = this.pending.shift()!;
-            this.offset = 0;
-        }
-
-        const n = output[0].length;
-        let outputOffset = 0;
-        while (this.current) {
-            const written = this.writeToOutput(this.current, output, outputOffset);
-            if (written + outputOffset >= n) break;
-            console.warn("UNDERRUN");
-            outputOffset = written;
-            this.offset = 0;
-            this.current = this.pending.shift() ?? null;  // catch-up: oldest already trimmed on overflow
-        }
-
-        if (this.current === null) {
-            //for (const ch of output) ch.fill(0);      // silence-pad on underrun
-            console.warn("NO AUDIO");
+        if (this.paused) {
+            for (const ch of output) ch.fill(0);
             return this.active;
         }
 
-        this.offset += n;
-        if (this.offset >= this.current.data[0].length) {
-            this.offset = 0;
-            this.current = this.pending.shift() ?? null;  // catch-up: oldest already trimmed on overflow
+        const n = output[0].length;
+        const numOut = output.length;
+        let outPos = 0;
+
+        while (outPos < n) {
+            if (this.current === null && this.pending.length > 0) {
+                this.current = this.pending.shift()!;
+                this.offset = 0;
+            }
+
+            if (this.current === null) {
+                for (let ch = 0; ch < numOut; ch++)
+                    output[ch].fill(0, outPos, n);
+                return this.active;
+            }
+
+            const frame = this.current;
+            const numCh = Math.min(numOut, frame.numberOfChannels);
+            const copy = Math.min(frame.data[0].length - this.offset, n - outPos);
+
+            for (let ch = 0; ch < numCh; ch++)
+                output[ch].set(frame.data[ch].subarray(this.offset, this.offset + copy), outPos);
+            for (let ch = numCh; ch < numOut; ch++)
+                output[ch].fill(0, outPos, outPos + copy);
+
+            this.offset += copy;
+            outPos += copy;
+
+            if (this.offset >= frame.data[0].length) {
+                this.offset = 0;
+                this.current = null;
+            }
         }
 
         return this.active;
-    }
-
-    private writeToOutput(current: WorkerAudioDataInit, output: Float32Array<ArrayBufferLike>[], offset: number): number {
-        const minCh = Math.min(output.length, current.numberOfChannels);
-        let written = 0;
-        for (let ch = 0; ch < minCh; ch++) {
-            const writing = current.data[ch].subarray(this.offset, this.offset + output[ch].length - offset);
-            output[ch].set(writing, offset);
-            if (ch === 0)
-                written = writing.length;
-        }
-
-        return written;
-    }
-
-    private copyFromObject(data: WorkerAudioDataInit, output: Float32Array[]): number {
-        let samplesCopied = 0;
-        for (let ch = 0; ch < data.numberOfChannels; ch++) {
-            const srcData = data.data[ch].subarray(this.offset, this.offset + output[ch].length);
-            output[ch].set(srcData);
-            samplesCopied = srcData.length;
-        }
-
-        return samplesCopied;
     }
 }
 registerProcessor(workletName, AudioStreamTrackWorker);

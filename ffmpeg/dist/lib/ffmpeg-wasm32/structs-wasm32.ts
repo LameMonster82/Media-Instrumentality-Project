@@ -203,24 +203,26 @@ export interface StreamInfo {
   type:              number; // @0 enum AVMediaType assumed enum/int-sized (enum AVMediaType);
   duration:          number; // @8 double
   disposition:       number; // @16 int
-  video_config:      number; // @20 VideoDecoderConfig * pointer / handle;
-  audio_config:      number; // @24 AudioDecoderConfig * pointer / handle;
-  subtitle_config:   number; // @28 SubtitleConfig * pointer / handle;
-  attachment_config: number; // @32 AttachmentConfig * pointer / handle;
-  metadata:          number; // @36 AVDictionary * pointer / handle;
+  start_time:        bigint; // @24 int64_t
+  video_config:      number; // @32 VideoDecoderConfig * pointer / handle;
+  audio_config:      number; // @36 AudioDecoderConfig * pointer / handle;
+  subtitle_config:   number; // @40 SubtitleConfig * pointer / handle;
+  attachment_config: number; // @44 AttachmentConfig * pointer / handle;
+  metadata:          number; // @48 AVDictionary * pointer / handle;
 }
 
-export const SIZEOF_StreamInfo = 40;
+export const SIZEOF_StreamInfo = 56;
 export const ALIGNOF_StreamInfo = 8;
 export const OFFSETS_StreamInfo = {
   type: 0,
   duration: 8,
   disposition: 16,
-  video_config: 20,
-  audio_config: 24,
-  subtitle_config: 28,
-  attachment_config: 32,
-  metadata: 36,
+  start_time: 24,
+  video_config: 32,
+  audio_config: 36,
+  subtitle_config: 40,
+  attachment_config: 44,
+  metadata: 48,
 } as const;
 
 export function readStreamInfo(buffer: ArrayBufferLike, offset = 0): StreamInfo {
@@ -229,11 +231,12 @@ export function readStreamInfo(buffer: ArrayBufferLike, offset = 0): StreamInfo 
     type: view.getInt32(0, true),
     duration: view.getFloat64(8, true),
     disposition: view.getInt32(16, true),
-    video_config: view.getUint32(20, true),
-    audio_config: view.getUint32(24, true),
-    subtitle_config: view.getUint32(28, true),
-    attachment_config: view.getUint32(32, true),
-    metadata: view.getUint32(36, true),
+    start_time: view.getBigInt64(24, true),
+    video_config: view.getUint32(32, true),
+    audio_config: view.getUint32(36, true),
+    subtitle_config: view.getUint32(40, true),
+    attachment_config: view.getUint32(44, true),
+    metadata: view.getUint32(48, true),
   };
 }
 

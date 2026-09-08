@@ -6,6 +6,8 @@ export default class SubtitleTextTrack implements CanvasTrackWrapper<VTTCueArgs,
     private track: TextTrack;
     private cues: Set<string> = new Set();
 
+    public startTime: number = 0;
+
     constructor(video: HTMLVideoElement, title?: string, language?: string) {
         this.track = video.addTextTrack("subtitles", title, language);
     }
@@ -26,7 +28,7 @@ export default class SubtitleTextTrack implements CanvasTrackWrapper<VTTCueArgs,
         if (this.cues.has(key))
             return;
         
-        this.track.addCue(new VTTCue(data.startTime, data.endTime, data.text));
+        this.track.addCue(new VTTCue(data.startTime - this.startTime, data.endTime - this.startTime, data.text));
     }
     async display(_data: VideoDisplayData) {
         // done by the video element

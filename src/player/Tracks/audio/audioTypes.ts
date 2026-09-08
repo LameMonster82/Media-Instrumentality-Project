@@ -18,8 +18,14 @@ export interface WorkerAudioFlush extends WorkerPostMessage {
 export interface WorkerAudioClose extends WorkerPostMessage {
     readonly kind: "close"
 }
+export interface WorkerAudioPause extends WorkerPostMessage {
+    readonly kind: "pause"
+}
+export interface WorkerAudioPlay extends WorkerPostMessage {
+    readonly kind: "play"
+}
 
-export type AllAudioWorkletMessages = WorkerAudioDataInit | WorkerAudioFlush | WorkerAudioClose;
+export type AllAudioWorkletMessages = WorkerAudioDataInit | WorkerAudioFlush | WorkerAudioClose | WorkerAudioPause | WorkerAudioPlay;
 
 export function audioTime(audio: AudioData | WorkerAudioDataInit) {
     return {

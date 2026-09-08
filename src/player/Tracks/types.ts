@@ -2,16 +2,19 @@ import type { Dictionary } from "@/core/types";
 import type { Intent } from "../types";
 
 export interface MediaStreamTrackWrapper<T> {
-    initialize(): Promise<void>;
+    startTime: number;
+    initialize?(): Promise<void>;
     enable(enable: boolean): void;
-    latency(): number;
-    getTrack(): MediaStreamTrack | null;
+    latency?(): number;
+    getTrack?(): MediaStreamTrack | null;
+    setVolume?(volume: number): void;
     writeData(data: T, currentTime?: number): Promise<void>;
     intent(intent: Intent, time: number): Promise<void>;
     destroy(): void;
 }
 
 export interface CanvasTrackWrapper<T, U> {
+    startTime: number;
     enable(enable: boolean): Promise<void>;
     createCanvas(callback: () => HTMLCanvasElement): void;
     getCanvas(): HTMLCanvasElement | null;

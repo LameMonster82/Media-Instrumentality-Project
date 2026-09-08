@@ -10,6 +10,8 @@ export class VideoStreamTrackSafari implements MediaStreamTrackWrapper<VideoFram
     private track: MediaStreamTrackWritable<VideoFrame> | undefined;
     private initPromise: Promise<MediaStreamTrackWritable<VideoFrame>>;
 
+    public startTime: number = 0;
+
 
     constructor() {
         const { promise, resolve } = promiseRes<MediaStreamTrackWritable<VideoFrame>>();
@@ -28,10 +30,6 @@ export class VideoStreamTrackSafari implements MediaStreamTrackWrapper<VideoFram
         this.track = await this.initPromise;
         this.track.contentHint = "motion";
         this.writableStream = this.track.writable;
-    }
-
-    latency(): number {
-        return 0;
     }
 
     public async writeData(frame: VideoFrame): Promise<void> {

@@ -10,6 +10,8 @@ export class VideoStreamTrackFallback implements MediaStreamTrackWrapper<VideoFr
     private writer: WritableStreamDefaultWriter<VideoFrame>;
     private frameTimeWrite = 0;
 
+    public startTime: number = 0;
+
     constructor() {
         this.track = this.createBitmapTrack()
         this.track.contentHint = "motion";
@@ -17,7 +19,6 @@ export class VideoStreamTrackFallback implements MediaStreamTrackWrapper<VideoFr
         this.writer = this.writableStream.getWriter();
     }
 
-    async initialize() { }
     latency(): number {
         return this.frameTimeWrite;
     }

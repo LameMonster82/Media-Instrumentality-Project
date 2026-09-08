@@ -7,6 +7,8 @@ export class AudioStreamTrackNative implements MediaStreamTrackWrapper<AudioData
     private track: MediaStreamTrackGenerator<AudioData>;
     private writer: WritableStreamDefaultWriter<AudioData>;
 
+    public startTime: number = 0;
+
     public static isSupported(): boolean {
         return 'MediaStreamTrackGenerator' in self && 'AudioData' in self;
     }
@@ -19,11 +21,6 @@ export class AudioStreamTrackNative implements MediaStreamTrackWrapper<AudioData
         this.writableStream = track.writable;
         this.track = track;
         this.writer = this.writableStream.getWriter();
-    }
-
-    async initialize() { }
-    latency(): number {
-        return 0;
     }
 
     enable(enable: boolean): void {

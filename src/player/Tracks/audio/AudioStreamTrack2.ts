@@ -11,6 +11,8 @@ export class AudioStreamTrack2 implements MediaStreamTrackWrapper<AudioData | Wo
     private activeSources: Set<AudioBufferSourceNode> = new Set();
     private nextStartTime = 0;
 
+    public startTime: number = 0;
+
     constructor(sampleRate = 44100, _channels = 2) {
         this.audioContext = new AudioContext({ sampleRate });
         this.destination = this.audioContext.createMediaStreamDestination();
@@ -20,11 +22,6 @@ export class AudioStreamTrack2 implements MediaStreamTrackWrapper<AudioData | Wo
 
     latency(): number {
         return this.audioContext.outputLatency * 100;
-    }
-
-    /** Must be awaited before the first WriteData call. */
-    public async initialize(): Promise<void> {
-        // No worklet module to load for the AudioBufferSourceNode path.
     }
 
     public async writeData(frame: AudioData | WorkerAudioDataInit): Promise<void> {

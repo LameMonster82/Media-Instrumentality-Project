@@ -247,6 +247,14 @@ class WebDecoder {
             output = newOutput;
         }
 
+        if (output instanceof AudioData) {
+            const finalMessage = copyFromAudioData(output);
+            output.close();
+
+            this.outputChannel.postMessage(finalMessage, finalMessage.transfer as Transferable[]);
+            return;
+        }
+
         this.outputChannel.postMessage(output, [output]);
     }
 
@@ -274,6 +282,30 @@ class WebDecoder {
     private isMemoryOver2Gib(): boolean {
         return this.moduleMemory.buffer.byteLength >= 2147483648;
     }
+}
+
+function copyFromAudioData(frame: AudioData): WorkerAudioDataInit {
+    const channels = frame.numberOfChannels;
+    const frames = frame.numberOfFrames;
+
+    const output: Float32Array<ArrayBuffer>[] = [];
+    for (let ch = 0; ch < channels; ch++) {
+        const byteLength = frame.allocationSize({ planeIndex: ch, format: "f32-planar" });
+        const buffer = new Float32Array(byteLength / 4);
+        frame.copyTo(buffer, { planeIndex: ch, format: "f32-planar" });
+        output.push(buffer);
+    }
+
+    return {
+        kind: "audioDataInit",
+        data: output,
+        format: "f32",
+        numberOfChannels: channels,
+        numberOfFrames: frames,
+        sampleRate: frame.sampleRate,
+        timestamp: frame.timestamp,
+        transfer: output.map(b => b.buffer),
+    };
 }
 
 // Its just gonna live here

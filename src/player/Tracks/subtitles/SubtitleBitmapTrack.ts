@@ -9,6 +9,8 @@ export default class SubtitleBitmapTrack implements CanvasTrackWrapper<BitmapSub
     private buffer: BitmapSubArgs[] = [];
     private activeSubs: string[] = [];
 
+    public startTime: number = 0;
+
     constructor() {
 
     }
@@ -46,8 +48,8 @@ export default class SubtitleBitmapTrack implements CanvasTrackWrapper<BitmapSub
         const subtitlesToRemove: string[] = [];
         for (const sub of this.buffer) {
             if (!sub.frame) continue;
-            const hasBegun = sub.startTime / 1000 < data.mediaTime;
-            const hasEnded = sub.endTime !== 0 && sub.endTime / 1000 < data.mediaTime;
+            const hasBegun = sub.startTime / 1000 < data.mediaTime - this.startTime ;
+            const hasEnded = sub.endTime !== 0 && sub.endTime / 1000 < data.mediaTime - this.startTime;
             const hasBeenRendered = this.activeSubs.includes(sub.uuid);
 
             if (!hasBegun) {

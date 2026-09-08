@@ -90,6 +90,7 @@ export interface ChapterInfo {
 export interface StreamInfo {
     type: AVMediaType;
     duration: number;
+    startTime: number;
     disposition: number;
     video_config: VideoDecoderConfigStruct | null | undefined;
     audio_config: AudioDecoderConfigStruct | null | undefined;
@@ -305,6 +306,7 @@ export function readStreamInfo(module: MainModule, memory: ArrayBufferLike, offs
     return {
         type: info.type,
         duration: info.duration,
+        startTime: Number(info.start_time),
         disposition: info.disposition,
         video_config,
         audio_config,

@@ -486,11 +486,11 @@ export default class MediaControls {
     private toggleTrackSelector() {
         if (this.trackSelector.dataset.isHidden === '1') {
             this.trackSelector.style.height = `${this.trackSelector.scrollHeight}px`;
-            this.trackSelector.classList.add('open');
+            this.trackSelector.classList.add(styles.open);
             this.controls.classList.add('tracklist-open');
             this.trackSelector.dataset.isHidden = '0';
         } else {
-            this.trackSelector.classList.remove('open');
+            this.trackSelector.classList.remove(styles.open);
             this.controls.classList.remove('tracklist-open');
             this.trackSelector.style.height = "0px";
             this.trackSelector.dataset.isHidden = '1';

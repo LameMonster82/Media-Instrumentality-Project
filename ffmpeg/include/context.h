@@ -27,6 +27,7 @@ typedef struct {
   enum AVMediaType type;
   double duration;
   int disposition;
+  int64_t start_time;
   VideoDecoderConfig *video_config;
   AudioDecoderConfig *audio_config;
   SubtitleConfig *subtitle_config;

@@ -250,12 +250,13 @@
          0 |   enum AVMediaType type
          8 |   double duration
         16 |   int disposition
-        20 |   VideoDecoderConfig * video_config
-        24 |   AudioDecoderConfig * audio_config
-        28 |   SubtitleConfig * subtitle_config
-        32 |   AttachmentConfig * attachment_config
-        36 |   AVDictionary * metadata
-           | [sizeof=40, align=8]
+        24 |   int64_t start_time
+        32 |   VideoDecoderConfig * video_config
+        36 |   AudioDecoderConfig * audio_config
+        40 |   SubtitleConfig * subtitle_config
+        44 |   AttachmentConfig * attachment_config
+        48 |   AVDictionary * metadata
+           | [sizeof=56, align=8]
 
 *** Dumping AST Record Layout
          0 | struct AVDictionaryEntry

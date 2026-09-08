@@ -12,6 +12,8 @@ export default class SubtitleASSTrack implements CanvasTrackWrapper<VTTCueArgs, 
     private colorSpace: "RGB" | "BT709" | "BT601" = 'RGB'
     private canvasCallback: (() => HTMLCanvasElement) | undefined;
 
+    public startTime: number = 0;
+
     constructor(header: string, fonts: Uint8Array[] = []) {
         this.header = header;
         this.fonts = fonts;
@@ -36,6 +38,7 @@ export default class SubtitleASSTrack implements CanvasTrackWrapper<VTTCueArgs, 
 
             const canvas = this.canvasCallback();
             this.jassub = new JASSUB({
+                timeOffset: this.startTime,
                 canvas,
                 debug: false,
                 subContent: this.header,

@@ -238,7 +238,11 @@ class FFmpegBridge {
         const { default: FFmpegModule } = await import(/* @vite-ignore */ FFmpegModuleUrl);
 
         const newModule = await FFmpegModule({
-            locateFile: (_file: string, _scriptDirectory: string) => location.origin + FFmpegWasm,
+            locateFile: (_file: string, _scriptDirectory: string) => {
+                if (FFmpegWasm.startsWith("http"))
+                    return FFmpegWasm
+                else return location.origin + FFmpegWasm
+            },
             mainScriptUrlOrBlob: FFmpegModuleUrl,
             onRuntimeInitialized: () => {
                 console.log("FFmpeg WebAssembly initialized.");

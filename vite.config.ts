@@ -43,8 +43,7 @@ export default defineConfig({
         rollupOptions: {
             input: {
                 main: 'index.html',
-                videoControls: 'VideoControls.html',
-                videoShare: 'VideoShare.html',
+                player: 'player.html',
             },
         },
     },

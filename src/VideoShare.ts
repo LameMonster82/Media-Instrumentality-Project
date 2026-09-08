@@ -62,6 +62,8 @@ let hostedFile: File | undefined;
 // ---------------------------------------------------------------------------
 
 function signalingUrl(): string {
+    const configured = import.meta.env.VITE_SIGNALING_URL;
+    if (configured) return configured;
     return `ws://${location.hostname}:${signalingPort}`;
 }
 

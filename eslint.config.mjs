@@ -189,6 +189,61 @@ export default [
             }],
         },
     },
+    // Node server (signaling) — separate tsconfig, Node globals
+    {
+        files: ["server/**/*.ts"],
+        languageOptions: {
+            parser: tsparser,
+            parserOptions: {
+                project: "./server/tsconfig.json",
+                ecmaVersion: "latest",
+                sourceType: "module",
+            },
+            globals: {
+                process: "readonly",
+                console: "readonly",
+                setTimeout: "readonly",
+                clearTimeout: "readonly",
+                setInterval: "readonly",
+                clearInterval: "readonly",
+                fetch: "readonly",
+                URL: "readonly",
+                crypto: "readonly",
+            },
+        },
+        plugins: {
+            "@typescript-eslint": tseslint,
+        },
+        rules: {
+            "@typescript-eslint/no-unused-vars": ["warn", {
+                argsIgnorePattern: "^_",
+                varsIgnorePattern: "^_",
+                caughtErrorsIgnorePattern: "^_",
+            }],
+            "@typescript-eslint/consistent-type-imports": [
+                "error",
+                { prefer: "type-imports", fixStyle: "separate-type-imports" },
+            ],
+            "@typescript-eslint/naming-convention": [
+                "error",
+                { selector: ["variable", "function"], format: ["camelCase"], leadingUnderscore: "allow" },
+                { selector: "variable", modifiers: ["const"], format: ["camelCase", "UPPER_CASE"] },
+                { selector: "parameter", format: ["camelCase"], leadingUnderscore: "allow" },
+                { selector: ["class", "interface", "typeLike", "enum"], format: ["PascalCase"] },
+                { selector: "classMethod", format: ["camelCase"] },
+                { selector: "classProperty", format: ["camelCase"] },
+                { selector: "enumMember", format: ["UPPER_CASE", "PascalCase"] },
+                { selector: "typeProperty", format: ["camelCase", "PascalCase", "UPPER_CASE"] },
+                { selector: "variable", modifiers: ["destructured"], format: null },
+            ],
+            "prefer-const": "error",
+            "no-var": "error",
+            "eqeqeq": ["error", "always"],
+            "no-throw-literal": "error",
+            "no-debugger": "warn",
+            "no-console": "off",
+        },
+    },
     // Test files: relax rules
     {
         files: ["src/**/*.test.ts", "src/**/*.spec.ts", "src/**/*Test.ts"],

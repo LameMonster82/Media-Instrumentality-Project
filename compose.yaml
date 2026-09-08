@@ -1,0 +1,15 @@
+services:
+  signaling:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: shareplay-signaling
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      PORT: "8765"
+      # Pulled from the project `.env` (or the shell env). Empty/absent values
+      # are fine — the server falls back to a public STUN server.
+      CLOUDFLARE_TURN_TOKEN_ID: ${CLOUDFLARE_TURN_TOKEN_ID:-}
+      CLOUDFLARE_TURN_TOKEN_API: ${CLOUDFLARE_TURN_TOKEN_API:-}

@@ -1,7 +1,4 @@
 import type { Dictionary } from "@/core/types";
-import type { AudioFFmpegStream } from "./audio/audioTypes";
-import type { VideoFFmpegStream } from "./video/videoTypes";
-import type { SubtitleFFmpegStream } from "./subtitles old/subtitleStream";
 import type { Intent } from "../types";
 
 export interface MediaStreamTrackWrapper<T> {
@@ -23,10 +20,6 @@ export interface CanvasTrackWrapper<T, U> {
     intent(intent: Intent, time: number): Promise<void>;
     destroy(): void;
 }
-
-export type AnyMediaStreamTrack = MediaStreamTrackWrapper<unknown>;
-
-export type AllStreamTrackTypes = AudioFFmpegStream | VideoFFmpegStream | SubtitleFFmpegStream;
 
 export interface FFmpegStream<T> {
     type: string,

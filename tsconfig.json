@@ -60,7 +60,7 @@
         ],
         "types": ["audioworklet"]
     },
-    "include": ["src/**/*", "src/core/global.d.ts", "src/core/jsx/jsx.d.ts", "server/**/*"],
+    "include": ["src/**/*", "src/core/global.d.ts", "src/core/jsx/jsx.d.ts", "server/shared/**/*"],
     "exclude": [
         "dist",
         "node_modules",

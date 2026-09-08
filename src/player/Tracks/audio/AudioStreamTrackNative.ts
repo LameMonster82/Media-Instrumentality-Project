@@ -1,6 +1,6 @@
 import type { Intent } from "@/player/types";
 import type { MediaStreamTrackWrapper } from "../types";
-import type { WorkerAudioData, WorkerAudioDataInit } from "./audioTypes";
+import type { WorkerAudioDataInit } from "./audioTypes";
 
 export class AudioStreamTrackNative implements MediaStreamTrackWrapper<AudioData | WorkerAudioDataInit> {
     private writableStream: WritableStream<AudioData>;

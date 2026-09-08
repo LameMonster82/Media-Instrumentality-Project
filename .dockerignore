@@ -1,0 +1,8 @@
+node_modules
+build
+dist
+ffmpeg
+.git
+.vscode
+.env
+*.md

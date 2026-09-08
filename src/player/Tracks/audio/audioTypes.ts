@@ -1,13 +1,4 @@
 import type { WorkerPostMessage } from "@/core/types";
-import type { FFmpegStream } from "../types";
-
-/** Timestamp and duration in Microseconds */
-export interface WorkerAudioData extends WorkerPostMessage {
-    readonly kind: "audioData";
-    readonly streamIndex: number;
-    readonly audioData: AudioData;
-    readonly transferable: AudioData[];
-}
 
 /** Timestamp and duration in Microseconds */
 export interface WorkerAudioDataInit extends WorkerPostMessage {
@@ -29,13 +20,6 @@ export interface WorkerAudioClose extends WorkerPostMessage {
 }
 
 export type AllAudioWorkletMessages = WorkerAudioDataInit | WorkerAudioFlush | WorkerAudioClose;
-export type AllAudioFrameTypes = WorkerAudioData | WorkerAudioDataInit;
-
-export interface AudioFFmpegStream extends FFmpegStream<AllAudioFrameTypes> {
-    type: "audio",
-    sampleRate: number;
-    channels: number;
-}
 
 export function audioTime(audio: AudioData | WorkerAudioDataInit) {
     return {

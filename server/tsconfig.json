@@ -1,0 +1,20 @@
+{
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "NodeNext",
+        "moduleResolution": "nodenext",
+        "lib": ["ESNext", "DOM"],
+        "types": ["node"],
+
+        "strict": true,
+        "skipLibCheck": true,
+        "noEmit": true,
+        "verbatimModuleSyntax": true,
+        "noUncheckedIndexedAccess": false,
+
+        "paths": {
+            "@Server/*": ["./shared/*.js"]
+        }
+    },
+    "include": ["**/*.ts"]
+}

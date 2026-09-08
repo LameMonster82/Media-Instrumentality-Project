@@ -1,13 +1,13 @@
 import { AttachmentType, AVMediaType, type StreamInfo } from "./FFmpeg/structReader";
 
 
-export function extractFonts(streams: StreamInfo[]): Uint8Array<ArrayBuffer>[] {
+export function extractFonts(streams: StreamInfo[]): string[] {
     const attachments = streams.filter(s => s.type === AVMediaType.AVMEDIA_TYPE_ATTACHMENT);
 
-    const fonts: Uint8Array<ArrayBuffer>[] = [];
+    const fonts: string[] = [];
     for (const attachment of attachments) {
         if (attachment.attachment_config?.type === AttachmentType.FONT) {
-            fonts.push(attachment.attachment_config.data);
+            fonts.push(URL.createObjectURL(new Blob([attachment.attachment_config.data.buffer], {type: attachment.metadata["mimetype"]})));
         }
     }
 

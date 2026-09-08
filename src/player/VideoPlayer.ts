@@ -455,7 +455,7 @@ export class VideoPlayer2 {
             lastTime = performance.now();
 
             if (this.initDone && !this.endOfFile && !this.seeking)
-                this.feedVideoBuffer();
+                this.feedBuffers();
 
 
             if ((this.paused && !this.stepFrame) || this.seeking) {
@@ -479,14 +479,11 @@ export class VideoPlayer2 {
         }
     }
 
-    private feedVideoBuffer() {
-        if (this.videoFrameBuffer.length < 16) {
+    private feedBuffers() {
+        if (this.activeVideoStream >= 0 && this.videoFrameBuffer.length < 16) {
             this.requestData();
-        } else {
-            const hasFrame = this.videoFrameBuffer.some(v => v !== null);
-            if (!hasFrame) {
-                this.requestData();
-            }
+        } else if(this.activeAudioStream >= 0 && this.audioFrameBuffer.length < 16) {
+            this.requestData();
         }
     }
 
@@ -496,7 +493,7 @@ export class VideoPlayer2 {
 
         if (this.videoFrameBuffer[0] instanceof VideoFrame && videoStream) {
             const frame = this.videoFrameBuffer[0];
-            if (frame.timestamp / 1000 <= this.mediaTime) {
+            if (frame.timestamp / 1000 <= this.mediaTime - (videoStream.latency?.() ?? 0) + videoStream.startTime) {
                 return true;
             }
         }
@@ -504,7 +501,7 @@ export class VideoPlayer2 {
         if (this.audioFrameBuffer[0] && audioStream) {
             const frame = this.audioFrameBuffer[0];
             const { timestamp } = audioTime(frame);
-            if (timestamp / 1000 <= this.mediaTime) {
+            if (timestamp / 1000 <= this.mediaTime - (audioStream.latency?.() ?? 0) + audioStream.startTime) {
                 return true;
             }
         }
@@ -522,7 +519,7 @@ export class VideoPlayer2 {
 
         if (this.videoFrameBuffer[0] instanceof VideoFrame && videoStream) {
             let frame = this.videoFrameBuffer[0];
-            if (frame.timestamp / 1000 <= this.mediaTime - (videoStream.latency?.() ?? 0) - videoStream.startTime) {
+            if (frame.timestamp / 1000 <= this.mediaTime - (videoStream.latency?.() ?? 0) + videoStream.startTime) {
                 frame = this.videoFrameBuffer.shift()!;
                 if ((subtitleStream as SubtitleASSTrack | undefined)?.setColorSpace && frame.colorSpace.matrix) {
                     await (subtitleStream as SubtitleASSTrack).setColorSpace(webYCbCrMap[frame.colorSpace.matrix]);
@@ -546,7 +543,7 @@ export class VideoPlayer2 {
         if (this.audioFrameBuffer[0] && audioStream) {
             let frame = this.audioFrameBuffer[0];
             const { timestamp } = audioTime(frame);
-            if (timestamp / 1000 <= this.mediaTime - (audioStream.latency?.() ?? 0) - audioStream.startTime) {
+            if (timestamp / 1000 <= this.mediaTime - (audioStream.latency?.() ?? 0) + audioStream.startTime) {
                 frame = this.audioFrameBuffer.shift()!;
                 const promise = audioStream.writeData(frame, this.mediaTime);
                 promise.then(() => {

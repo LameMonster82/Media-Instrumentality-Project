@@ -7,14 +7,14 @@ export default class SubtitleASSTrack implements CanvasTrackWrapper<VTTCueArgs, 
     private cues: Map<string, VTTCueArgs> = new Map();
 
     private header: string;
-    private fonts: Uint8Array[];
+    private fonts: string[];
     private jassub: JASSUB | undefined;
     private colorSpace: "RGB" | "BT709" | "BT601" = 'RGB'
     private canvasCallback: (() => HTMLCanvasElement) | undefined;
 
     public startTime: number = 0;
 
-    constructor(header: string, fonts: Uint8Array[] = []) {
+    constructor(header: string, fonts: string[] = []) {
         this.header = header;
         this.fonts = fonts;
     }

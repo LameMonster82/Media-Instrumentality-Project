@@ -59,6 +59,12 @@ export default class MediaControls {
 
     private chapters: ControlChapter[] = [];
 
+    // Firefox mainly tends to not actually drop the mouse
+    // input when an input range gets disable. This can cause
+    // a double seek where firefox may (with the not dropped input)
+    // trigger a second input and do an unintentional seek.
+    private itIsToBeSeeked: boolean = false;
+
     constructor(
         videoElement: HTMLVideoElement, // Passed so controls handle fullscreen/cursor
         callbacks: MediaControlCallbacks
@@ -177,15 +183,15 @@ export default class MediaControls {
             // this.callbacks.onPlayPause(false);
         });
 
-        let hasInputted = false;
+
         this.progressBarRange.addEventListener('input', (e) => {
             e.stopPropagation();
-            if (hasInputted) return;
-            hasInputted = true;
+            if (this.itIsToBeSeeked) return;
+            this.itIsToBeSeeked = true;
             setTimeout(() => {
                 this.updateCurrentTime(this.progressBarRange.valueAsNumber);
                 this.callbacks.onSeekTo(this.progressBarRange.valueAsNumber);
-                hasInputted = false;
+                this.itIsToBeSeeked = false;
             }, 0);
         });
 
@@ -285,9 +291,9 @@ export default class MediaControls {
 
         this.progressBarRange.disabled = loading;
 
-        this.videoSelect.disabled = loading;
-        this.audioSelect.disabled = loading;
-        this.subtitleSelect.disabled = loading;
+        this.videoSelect.disabled = loading || this.videoStreams.length <= 1;
+        this.audioSelect.disabled = loading || this.audioStreams.length <= 1;
+        this.subtitleSelect.disabled = loading || this.subtitleStreams.length <= 1;
     }
 
     public getLoadingState() { return this.loadingState; };
@@ -396,7 +402,8 @@ export default class MediaControls {
         }
 
         if (this.lastProgress !== progressTime) {
-            this.progressBarRange.value = progressTime === 0 ? '--:--' : time.toString();
+            if(!this.itIsToBeSeeked)
+                this.progressBarRange.value = progressTime === 0 ? '--:--' : time.toString();
             this.lastProgress = progressTime;
 
             const progress = progressTime.toPrecision(4);

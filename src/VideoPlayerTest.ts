@@ -2,6 +2,7 @@ import { VideoPlayer2 } from "./player/VideoPlayer";
 
 const container = document.getElementById("containerAgain")!;
 const dropZone = document.getElementById("dropZone")!;
+const title = document.getElementById("media-title")!;
 const fileInput = document.getElementById("fileInput") as HTMLInputElement;
 
 function loadVideo(url: string | File) {
@@ -11,6 +12,7 @@ function loadVideo(url: string | File) {
 }
 
 function loadFile(file: File) {
+    title.textContent = file.name;
     loadVideo(file);
 }
 

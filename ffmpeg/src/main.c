@@ -137,7 +137,10 @@ FileInfo *open_file() {
     if (type == AVMEDIA_TYPE_ATTACHMENT) {
       const AVDictionaryEntry *mimetype =
           av_dict_get(stream->metadata, "mimetype", NULL, 0);
-      if (mimetype && strncmp(mimetype->value, "font/", 5) == 0) {
+      if (mimetype && (strcmp(mimetype->value, "application/x-truetype-font") == 0 || // TTF
+                      strcmp(mimetype->value, "application/x-font") == 0) ||          // TTF
+                      strcmp(mimetype->value, "application/vnd.ms-opentype") == 0) {  // OTF
+                        // woff/woff2 i havent met yet
         AttachmentConfig *att = calloc(1, sizeof(AttachmentConfig));
         att->type = FONT;
         att->data = stream->codecpar->extradata;

@@ -1,7 +1,7 @@
 import type { MediaStreamTrackWrapper } from "../types";
 import { workletName, type WorkerAudioDataInit } from "./audioTypes";
 
-import audioWorklet from "./audio.worker.js?url&no-inline";
+import audioWorklet from "./audio.worker.js?worker&url";
 import { Intent } from "@/player/types";
 
 export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | WorkerAudioDataInit> {

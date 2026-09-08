@@ -1,7 +1,7 @@
 import type { MediaStreamTrackWrapper } from "../types";
 import { workletName, type WorkerAudioDataInit } from "./audioTypes";
 
-import audioWorklet from "./audio.worker.js?url";
+import audioWorklet from "./audio.worker.js?url&no-inline";
 import { Intent } from "@/player/types";
 
 export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | WorkerAudioDataInit> {
@@ -27,8 +27,7 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
 
     /** Must be awaited before the first WriteData call. */
     public async initialize(): Promise<void> {
-        // i ... dont know why
-        await this.audioContext.audioWorklet.addModule(audioWorklet.replace("video/mp2t", "application/javascript"));
+        await this.audioContext.audioWorklet.addModule(audioWorklet);
 
         this.workletNode = new AudioWorkletNode(this.audioContext, workletName, {
             numberOfInputs: 0,

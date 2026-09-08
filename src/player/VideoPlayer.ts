@@ -87,7 +87,7 @@ export class VideoPlayer2 {
         this.video.addEventListener("click", () => {
             if (this.locked || this.controls.getLoadingState()) return;
             this.controls.playPause();
-        })
+        });
 
         this.container.classList.add(styles.videoContainer);
 
@@ -95,7 +95,7 @@ export class VideoPlayer2 {
         const worker = ffmpegWorker({ name: "I tell ffmpeg to do the work" });
 
         let workerSrc: string | File | WorkerRemoteSoruce;
-        if (typeof videoSrc === "object" && !(videoSrc instanceof File) && videoSrc.kind === "remote") { 
+        if (typeof videoSrc === "object" && !(videoSrc instanceof File) && videoSrc.kind === "remote") {
             workerSrc = { kind: "remoteSource" };
         } else {
             workerSrc = videoSrc as string | File;
@@ -107,22 +107,22 @@ export class VideoPlayer2 {
             kind: "initFfmpeg",
         } as WorkerInitFFmpeg);
 
-        
+
         window.onbeforeunload = () => {
             worker.terminate();
         };
-        
+
         this.worker = worker;
         this.workerEventer2 = new QuickPostmessage(worker, worker);
-        
+
         this.workerEventer2.addEventListener("endOfFile", (_data) => {
             this.endOfFile = true;
-        })
-        
+        });
+
         if (typeof videoSrc === "object" && !(videoSrc instanceof File) && videoSrc.kind === "remote") {
             this.workerEventer2.waitForEvent("initRtcSeekr").then(async data => {
                 this.rtcSeeker = new RTCSeeker(data, videoSrc.info, videoSrc.port, 32 * 1024 * 1024);
-            })
+            });
 
         }
 
@@ -682,19 +682,24 @@ export class VideoPlayer2 {
             return;
         }
 
+        let seekedTime: number | undefined = undefined;
         if (this.activeVideoStream !== -1) {
             while (this.videoFrameBuffer.length === 0)
                 await this.requestData();
+            seekedTime = this.videoFrameBuffer[0].timestamp / 1000;
             const stream = this.videoRenderer.get(this.activeVideoStream);
             if (stream)
                 await stream.writeData(this.videoFrameBuffer[0].clone());
         }
-        else if (this.activeAudioStream !== -1)
+        else if (this.activeAudioStream !== -1) {
             while (this.audioFrameBuffer.length === 0)
                 await this.requestData();
 
+            seekedTime = this.audioFrameBuffer[0].timestamp / 1000;
+        }
+
         const newTime = await timePromise;
-        this.mediaTime = Number(newTime.time) / 1000;
+        this.mediaTime = seekedTime ?? Number(newTime.time) / 1000;
         this.seeking = false;
         this.updateTime();
         this.controls.setLoadingState(false);
@@ -794,8 +799,8 @@ export class VideoPlayer2 {
         const audioStream = this.audioRenderer.get(this.activeAudioStream);
         const subtitleStream = this.subtitleRenderer.get(this.activeSubtitleStream);
 
-        videoStream?.intent(Intent.Pause, this.mediaTime)
-        audioStream?.intent(Intent.Pause, this.mediaTime)
+        videoStream?.intent(Intent.Pause, this.mediaTime);
+        audioStream?.intent(Intent.Pause, this.mediaTime);
         subtitleStream?.intent(Intent.Pause, this.mediaTime);
     }
 

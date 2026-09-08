@@ -27,7 +27,8 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
 
     /** Must be awaited before the first WriteData call. */
     public async initialize(): Promise<void> {
-        await this.audioContext.audioWorklet.addModule(audioWorklet);
+        // i ... dont know why
+        await this.audioContext.audioWorklet.addModule(audioWorklet.replace("video/mp2t", "application/javascript"));
 
         this.workletNode = new AudioWorkletNode(this.audioContext, workletName, {
             numberOfInputs: 0,

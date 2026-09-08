@@ -66,3 +66,7 @@ export interface RTCRequestData extends WebSocketMessage {
     offset: number,
     size: number
 }
+
+export interface RTCDataRequesttAnswered extends WebSocketMessage {
+    kind: "requestAnswered"
+}

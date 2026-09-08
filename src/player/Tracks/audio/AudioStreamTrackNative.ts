@@ -1,3 +1,4 @@
+import type { Intent } from "@/player/types";
 import type { MediaStreamTrackWrapper } from "../types";
 import type { WorkerAudioData, WorkerAudioDataInit } from "./audioTypes";
 
@@ -21,7 +22,6 @@ export class AudioStreamTrackNative implements MediaStreamTrackWrapper<AudioData
     }
 
     async initialize() { }
-    async stealPlayEvent() { }
     latency(): number {
         return this.track.stats.averageLatency / 1000;
     }
@@ -36,7 +36,15 @@ export class AudioStreamTrackNative implements MediaStreamTrackWrapper<AudioData
             audio = audioData;
         } else {
             audioData.transfer = audioData.transferable as ArrayBuffer[];
-            audio = new AudioData(audioData);
+            audio = new AudioData({
+                format: audioData.format,
+                numberOfChannels: audioData.numberOfChannels,
+                numberOfFrames: audioData.numberOfFrames,
+                sampleRate: audioData.sampleRate,
+                timestamp: audioData.timestamp,
+                data: audioData.data[0],
+                transfer: audioData.data.map(d => d.buffer)
+            });
         }
 
         await this.writer.write(audio);
@@ -46,7 +54,7 @@ export class AudioStreamTrackNative implements MediaStreamTrackWrapper<AudioData
         return this.track;
     }
 
-    seekTo(_time: number, _fastSeek: boolean): Promise<void> {
+    intent(_intent: Intent, _time: number): Promise<void> {
         return Promise.resolve();
     }
 

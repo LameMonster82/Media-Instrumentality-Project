@@ -1,3 +1,4 @@
+import { Intent } from "@/player/types";
 import type { MediaStreamTrackWrapper } from "../types";
 import type { WorkerAudioDataInit } from "./audioTypes";
 
@@ -24,12 +25,6 @@ export class AudioStreamTrack2 implements MediaStreamTrackWrapper<AudioData | Wo
     /** Must be awaited before the first WriteData call. */
     public async initialize(): Promise<void> {
         // No worklet module to load for the AudioBufferSourceNode path.
-    }
-
-    async stealPlayEvent(): Promise<void> {
-        if (this.audioContext.state !== 'running') {
-            await this.audioContext.resume();
-        }
     }
 
     public async writeData(frame: AudioData | WorkerAudioDataInit): Promise<void> {
@@ -67,13 +62,18 @@ export class AudioStreamTrack2 implements MediaStreamTrackWrapper<AudioData | Wo
         source.onended = () => this.activeSources.delete(source);
     }
 
-    public seekTo(_time: number, _fastSeek: boolean): Promise<void> {
-        for (const source of this.activeSources) {
-            try { source.stop(); } catch { }
+    public async intent(intent: Intent, _time: number) {
+        if (intent === Intent.Play) {
+            await this.audioContext.resume();
+        } else if (intent === Intent.Pause) {
+            await this.audioContext.suspend();
+        } else if (intent === Intent.Seek) {
+            for (const source of this.activeSources) {
+                try { source.stop(); } catch { }
+            }
+            this.activeSources.clear();
+            this.nextStartTime = 0;
         }
-        this.activeSources.clear();
-        this.nextStartTime = 0;
-        return Promise.resolve();
     }
 
     public getTrack(): MediaStreamTrack {

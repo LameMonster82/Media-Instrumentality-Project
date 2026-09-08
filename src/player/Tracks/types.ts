@@ -2,6 +2,7 @@ import type { Dictionary } from "@/core/types";
 import type { AudioFFmpegStream } from "./audio/audioTypes";
 import type { VideoFFmpegStream } from "./video/videoTypes";
 import type { SubtitleFFmpegStream } from "./subtitles old/subtitleStream";
+import type { Intent } from "../types";
 
 export interface MediaStreamTrackWrapper<T> {
     initialize(): Promise<void>;
@@ -9,9 +10,8 @@ export interface MediaStreamTrackWrapper<T> {
     latency(): number;
     getTrack(): MediaStreamTrack | null;
     writeData(data: T, currentTime?: number): Promise<void>;
-    seekTo(time: number, fastSeek: boolean): Promise<void>;
+    intent(intent: Intent, time: number): Promise<void>;
     destroy(): void;
-    stealPlayEvent(): Promise<void>;
 }
 
 export interface CanvasTrackWrapper<T, U> {
@@ -20,6 +20,7 @@ export interface CanvasTrackWrapper<T, U> {
     getCanvas(): HTMLCanvasElement | null;
     writeData(data: T): Promise<void>;
     display(data: U): Promise<void>;
+    intent(intent: Intent, time: number): Promise<void>;
     destroy(): void;
 }
 

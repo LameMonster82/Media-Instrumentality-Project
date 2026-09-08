@@ -51,6 +51,14 @@ wss.on('connection', async (ws, req) => {
     const disconnect = () => {
         const filtered = room.filter(c => c.ws !== ws);
         ws.close();
+        const username = info.iceServers?.find(s => s.username);
+        if(username)
+            fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${process.env.CLOUDFLARE_TURN_TOKEN_ID}/credentials/${username.username}/revoke`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${process.env.CLOUDFLARE_TURN_TOKEN_API}`,
+                }
+            })
         if (filtered.length === 0) {
             rooms.delete(lobbyId!);
         } else {

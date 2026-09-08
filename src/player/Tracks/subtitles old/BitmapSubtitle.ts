@@ -124,7 +124,7 @@ export class BitmapSubtitle implements MediaStreamTrackWrapper<BitmapSubtitleInf
         this.style.remove();
     }
 
-    public seekTo(_time: number, _fastSeek: boolean) {
+    public intent(_time: number, _fastSeek: boolean) {
         return Promise.resolve();
     }
 }

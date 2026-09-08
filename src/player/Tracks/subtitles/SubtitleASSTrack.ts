@@ -1,6 +1,7 @@
 import JASSUB from "jassub";
 import type { VideoDisplayData, VTTCueArgs } from "./types";
 import type { CanvasTrackWrapper } from "../types";
+import type { Intent } from "@/player/types";
 
 export default class SubtitleASSTrack implements CanvasTrackWrapper<VTTCueArgs, VideoDisplayData> {
     private cues: Map<string, VTTCueArgs> = new Map();
@@ -68,6 +69,16 @@ export default class SubtitleASSTrack implements CanvasTrackWrapper<VTTCueArgs, 
 
     async display(data: VideoDisplayData) {
         await this.jassub?.manualRender(data, false);
+    }
+
+    intent(_intent: Intent, time: number): Promise<void> {
+        if (!this.jassub) return Promise.resolve();
+        return this.display({
+            expectedDisplayTime: performance.now(),
+            width: this.jassub._videoWidth,
+            height: this.jassub._videoHeight,
+            mediaTime: time
+        })
     }
 
     async setColorSpace(colorSpace: "RGB" | "BT709" | "BT601") {

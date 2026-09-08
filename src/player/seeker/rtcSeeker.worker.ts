@@ -5,7 +5,7 @@ import AtomicEventer from "../atomicEventer/atomicEventer";
 import type { DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
 import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type RtcSeekableWorkerInit, type UrlSeekableWorkerInit } from "./types";
 import RingBuffer from "./ringBuffer";
-import type { WebSocketOfferSDP, WebSocketAnswerSDP, WebSocketICECandidates, RTCRequestData, WebSocketRequestSeeker } from "@/shareplay/types";
+import type { WebSocketOfferSDP, WebSocketAnswerSDP, WebSocketICECandidates, RTCRequestData, WebSocketRequestSeeker, RTCDataRequesttAnswered } from "@/shareplay/types";
 
 export default class RTCSeeker {
     private connection: RTCPeerConnection;
@@ -17,6 +17,8 @@ export default class RTCSeeker {
 
     private ringBuffer: RingBuffer;
     private ringBufferSpaceNotify: () => void = () => { };
+    private ringBufferFilledNotify: () => void = () => { };
+    private ringBufferDoneNotify: () => void = () => { };
     private ringBufferFileCursor = 0;
 
     private sharedBuffer: WebAssembly.Memory;
@@ -28,6 +30,8 @@ export default class RTCSeeker {
         typeof seekerRequestTemplates>;
 
     private destroyed = false;
+    private currentDataResolver: ((data: null) => void) | undefined;
+    private currentSeek: Promise<void> | undefined;
 
 
     constructor(data: RtcSeekableWorkerInit, info: RTCConfiguration, port: MessagePort, bufferSize: number = 32 * 1024 * 1024) {
@@ -48,12 +52,18 @@ export default class RTCSeeker {
         this.eventer.receiveEvent(this.handleEvents.bind(this));
 
         this.connection.onicecandidate = this.handleICECandidates.bind(this);
-        this.connection.ondatachannel = (data) => {
+        this.connection.ondatachannel = async (data) => {
             if (this.dataChannel) return;
+            data.channel.binaryType = "arraybuffer";
             this.dataChannel = data.channel;
 
             this.dataLoop();
-        }
+
+            this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, {
+                result: 0,
+                fileSize: BigInt(await this.totalFileSize)
+            });
+        };
 
         port.postMessage({ kind: "requestSeeker", userId: "" } as WebSocketRequestSeeker);
     }
@@ -90,8 +100,9 @@ export default class RTCSeeker {
     private async handleEvents(type: SeekerRequestType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
         switch (type) {
             case SeekerRequestType.SEEK: {
+                await this.currentSeek;
                 const dataThing = data as { offset: number, urlChange: string; };
-                this.seek(dataThing.offset);
+                this.currentSeek = this.seek(dataThing.offset);
                 return;
             }
             case SeekerRequestType.REQUEST_DATA: {
@@ -111,36 +122,58 @@ export default class RTCSeeker {
     public async seek(offset: number = 0) {
         if (this.destroyed) return;
 
+        const fileSize = await this.totalFileSize;
+        if (offset >= fileSize)
+            debugger;
+
+        if (this.dataChannel?.onmessage) {
+            const { promise, resolve } = Promise.withResolvers<void>();
+            this.ringBufferDoneNotify = resolve;
+            await promise;
+        }
+
         this.ringBuffer.emptyBuffer();
         this.ringBufferFileCursor = offset;
         this.ringBufferSpaceNotify();
 
         this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, {
             result: 0,
-            fileSize: BigInt(await this.totalFileSize)
+            fileSize: BigInt(fileSize)
         });
     }
 
     private async dataLoop() {
+        const fileSize = await this.totalFileSize;
         while (!this.destroyed) {
-            const size = this.ringBuffer.getFreeSpace();
+            await this.currentSeek;
+            const freeSpace = this.ringBuffer.getFreeSpace();
+            const usedSpace = this.ringBuffer.getUsedSpace();
+            const fileOffset = this.ringBufferFileCursor + usedSpace;
+            const totalUnreadSpace = Math.max(fileSize - fileOffset, 0);
+
+            const size = Math.min(totalUnreadSpace, freeSpace);
+
             if (size > 0) {
-                const missingStart = this.ringBufferFileCursor + this.ringBuffer.getUsedSpace();
-                const { promise, resolve } = Promise.withResolvers<MessageEvent<ArrayBuffer>>();
-                this.dataChannel!.onmessage = resolve;
+                const { promise, resolve } = Promise.withResolvers<void>();
+                this.dataChannel!.onmessage = (data: MessageEvent<ArrayBuffer | RTCDataRequesttAnswered>) => {
+                    if (data.data instanceof ArrayBuffer)
+                        this.ringBuffer.append(new Uint8Array(data.data));
+                    else {
+                        resolve();
+                    }
+                };
+
                 this.dataChannel!.send(JSON.stringify({
                     kind: "requestData",
-                    offset: missingStart,
-                    size,
+                    offset: fileOffset,
+                    size: size
                 } as RTCRequestData));
 
-                const data = (await promise).data;
-                const dataView = new DataView(data);
-                const offset = dataView.getBigUint64(0, false);
-                if (Number(offset) !== missingStart)
-                    continue;
+                await promise;
 
-                this.ringBuffer.append(new Uint8Array(data, 8, data.byteLength - 8));
+                this.dataChannel!.onmessage = null;
+                this.ringBufferFilledNotify();
+                this.ringBufferDoneNotify();
             } else {
                 const { promise, resolve } = Promise.withResolvers<void>();
                 this.ringBufferSpaceNotify = resolve;
@@ -149,20 +182,34 @@ export default class RTCSeeker {
         }
     }
 
+    private repeatPenalty = 1;
     async copyDataToWorker(size: number, ptr: bigint, offset: number) {
-        if (offset >= await this.totalFileSize) {
+        if (!this.dataChannel || offset >= await this.totalFileSize) {
             console.warn("End of file reached");
             this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, { written: -1n });
             return;
         }
 
+        await this.currentSeek;
+        if (this.dataChannel.onmessage) {
+            const { promise, resolve } = Promise.withResolvers<void>();
+            this.ringBufferFilledNotify = resolve;
+            await promise;   
+        }
+
         const currentData = this.ringBuffer.getUsedSpace();
-        if (offset < this.ringBufferFileCursor || offset >= this.ringBufferFileCursor + currentData) {
+        const availableData = this.ringBufferFileCursor + currentData;
+        if (offset < this.ringBufferFileCursor || offset >= availableData) {
+            this.repeatPenalty *= 2;
+            console.warn("No data. Penalty at ", this.repeatPenalty);
+            await new Promise(r => setTimeout(r, this.repeatPenalty));
             this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, {
                 written: 0n,
             });
             return;
         }
+
+        this.repeatPenalty = 1;
 
         const slightOffset = offset - this.ringBufferFileCursor;
         const allowedSize = Math.min(currentData - slightOffset, size);

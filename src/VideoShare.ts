@@ -2,8 +2,8 @@ import type { RemoteFileSource } from "./player/seeker/types";
 import { Intent } from "./player/types";
 import { VideoPlayer2 } from "./player/VideoPlayer";
 import Lobby from "./shareplay/lobby";
-import type { WebSocketAnswerSDP, WebSocketICECandidates } from "./shareplay/types";
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars, no-var
 declare var self: Window;
 
 const createLobbyBtn = document.getElementById("createLobby") as HTMLButtonElement;
@@ -58,7 +58,7 @@ function swapPlayer(): void {
         const remoteFile: RemoteFileSource = {
             kind: "remote",
             port: port,
-            info: lobby.getRTCInfo()!
+            info: lobby.getRTCInfo()!,
         }
         currentPlayer = new VideoPlayer2(remoteFile);
     }

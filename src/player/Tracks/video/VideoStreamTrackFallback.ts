@@ -2,6 +2,7 @@ import type { MediaStreamTrackWrapper } from "../types";
 import type { MediaStreamTrackWritable } from "./videoTypes";
 import { WebGLCanvas } from "./WebGLCanvas";
 import { getFrameSize } from "./utils";
+import type { Intent } from "@/player/types";
 
 export class VideoStreamTrackFallback implements MediaStreamTrackWrapper<VideoFrame> {
     private writableStream: WritableStream<VideoFrame>;
@@ -17,7 +18,6 @@ export class VideoStreamTrackFallback implements MediaStreamTrackWrapper<VideoFr
     }
 
     async initialize() { }
-    async stealPlayEvent() { }
     latency(): number {
         return this.frameTimeWrite;
     }
@@ -89,7 +89,7 @@ export class VideoStreamTrackFallback implements MediaStreamTrackWrapper<VideoFr
         return this.track;
     }
 
-    seekTo(_time: number, _fastSeek: boolean): Promise<void> {
+    intent(_intent: Intent, _time: number): Promise<void> {
         return Promise.resolve();
     }
 

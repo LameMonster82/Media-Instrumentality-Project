@@ -177,7 +177,7 @@ export default class MediaControls {
 
         this.progressBarRange.addEventListener('mousedown', (e) => {
             e.stopPropagation();
-            this.callbacks.onPlayPause(false);
+            // this.callbacks.onPlayPause(false);
         });
 
         this.progressBarRange.addEventListener('input', (e) => {

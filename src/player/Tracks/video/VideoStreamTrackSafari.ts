@@ -2,6 +2,7 @@ import { promiseRes } from "@/core/utils";
 import type { MediaStreamTrackWrapper } from "../types";
 import type { MediaStreamTrackWritable } from "./videoTypes";
 import safariVideoTrackWorker from "./videoTrack.worker?worker";
+import type { Intent } from "@/player/types";
 
 export class VideoStreamTrackSafari implements MediaStreamTrackWrapper<VideoFrame> {
     private worker: Worker;
@@ -29,7 +30,6 @@ export class VideoStreamTrackSafari implements MediaStreamTrackWrapper<VideoFram
         this.writableStream = this.track.writable;
     }
 
-    async stealPlayEvent() { }
     latency(): number {
         return 0;
     }
@@ -47,7 +47,7 @@ export class VideoStreamTrackSafari implements MediaStreamTrackWrapper<VideoFram
         return this.track!;
     }
 
-    seekTo(_time: number, _fastSeek: boolean): Promise<void> {
+    intent(_intent: Intent, _time: number): Promise<void> {
         return Promise.resolve();
     }
 

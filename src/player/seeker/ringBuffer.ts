@@ -41,7 +41,7 @@ export default class RingBuffer {
     }
 
     copyTo(target: Uint8Array, targetPtr: number, size: number, sourceOffset = 0, eatTheData = true): number {
-        const offsetCursor = this.cursor + sourceOffset;
+        const offsetCursor = (this.cursor + sourceOffset) % this.buffer.length
         const readable = (this.writtenCursor - offsetCursor + this.buffer.length) % this.buffer.length;
         const toCopy = Math.min(size, readable);
         if (toCopy === 0) return 0;

@@ -1,3 +1,4 @@
+import type { Intent } from "@/player/types";
 import type { CanvasTrackWrapper } from "../types";
 import type { VideoDisplayData, VTTCueArgs } from "./types";
 
@@ -29,6 +30,10 @@ export default class SubtitleTextTrack implements CanvasTrackWrapper<VTTCueArgs,
     }
     async display(_data: VideoDisplayData) {
         // done by the video element
+    }
+
+    intent(_intent: Intent, _time: number): Promise<void> {
+        return Promise.resolve();
     }
 
     destroy(): void {

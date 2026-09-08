@@ -75,8 +75,9 @@
     }
 
     .iconLoading {
-        width: 30px;
+        width: 26px;
         cursor: wait;
+        padding: 10px;
     }
 }
 

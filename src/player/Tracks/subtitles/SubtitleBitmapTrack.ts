@@ -1,3 +1,4 @@
+import type { Intent } from "@/player/types";
 import type { CanvasTrackWrapper } from "../types";
 import type { BitmapSubArgs, VideoDisplayData } from "./types";
 
@@ -11,7 +12,7 @@ export default class SubtitleBitmapTrack implements CanvasTrackWrapper<BitmapSub
     constructor() {
 
     }
-    
+
     createCanvas(callback: () => HTMLCanvasElement): void {
         const canvas = callback();
         this.canvas = canvas;
@@ -85,6 +86,15 @@ export default class SubtitleBitmapTrack implements CanvasTrackWrapper<BitmapSub
 
         this.buffer = this.buffer.filter(s => !subtitlesToRemove.includes(s.uuid));
         this.activeSubs = this.activeSubs.filter(s => !subtitlesToRemove.includes(s));
+    }
+
+    intent(_intent: Intent, time: number): Promise<void> {
+        return this.display({
+            expectedDisplayTime: performance.now(),
+            width: 0,
+            height: 0,
+            mediaTime: time
+        });
     }
 
     destroy() {

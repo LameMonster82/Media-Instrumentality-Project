@@ -1,7 +1,7 @@
-import type { WebSocketPing, WebSocketPong, WebSocketRequestRoomCount, WebSocketRequestRoomInfo, WebSocketRoomInfo } from "@Server/types";
-import { type AllWebsocketMessages, type DictionaryWebSocketEvent, type MessageByKind, type RespondEventByKind2, type WebSocketConfirmIntent, type WebSocketIntent, type WebSocketIntentRequest, type WebSocketIntentStatus, type WebSocketNewHost, type WebSocketOfferSDP } from "./types";
+import type { WebSocketPong, WebSocketRequestRoomCount, WebSocketRequestRoomInfo } from "@Server/types";
 import { Intent } from "@/player/types";
 import RTCHost from "./RTCHost";
+import type { AllWebsocketMessages, DictionaryWebSocketEvent, WebSocketConfirmIntent, WebSocketOfferSDP, WebSocketIntentStatus, WebSocketNewHost, WebSocketIntent, WebSocketIntentRequest, MessageByKind, RespondEventByKind2 } from "./types";
 
 export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages> {
     private websocker: WebSocket;
@@ -149,6 +149,7 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
     public setupSeekerChannel() {
         this.seekerChannel = new MessageChannel();
         this.seekerChannel.port1.onmessage = (e: MessageEvent<T>) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const anyData = e.data as any;
             if (typeof anyData.userId === "string") {
                 anyData.userId = this.userID;
@@ -162,9 +163,9 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
 
     public async intent(intent: Intent, time: number) {
         let count = 0;
-        let { promise, resolve } = Promise.withResolvers<void>();
+        const { promise, resolve } = Promise.withResolvers<void>();
         this.intentCatcher = (confirmedIntent) => {
-            if (confirmedIntent == intent) {
+            if (confirmedIntent === intent) {
                 count += 1;
                 if (count >= this.userCount - 1)
                     resolve();

@@ -48,7 +48,7 @@ export class AssSubtitles implements MediaStreamTrackWrapper<string> {
         return null;
     }
 
-    public seekTo(time: number, _fastSeek: boolean) {
+    public intent(time: number, _fastSeek: boolean) {
         this.assClasss.customSeek(time);
         return Promise.resolve();
     }

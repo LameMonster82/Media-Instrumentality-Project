@@ -1,6 +1,7 @@
 import { workletName, type AllAudioWorkletMessages, type WorkerAudioDataInit } from "./audioTypes";
 
 class AudioStreamTrackWorker extends AudioWorkletProcessor implements AudioWorkletProcessorImpl {
+    // eslint-disable-next-line @typescript-eslint/naming-convention
     private static readonly MAX_PENDING = 4; // tunable; was effectively 2
     private current: WorkerAudioDataInit | null = null;
     private pending: WorkerAudioDataInit[] = [];

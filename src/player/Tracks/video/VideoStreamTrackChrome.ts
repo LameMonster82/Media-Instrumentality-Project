@@ -1,3 +1,4 @@
+import type { Intent } from "@/player/types";
 import type { MediaStreamTrackWrapper } from "../types";
 import type { MediaStreamTrackWritable } from "./videoTypes";
 
@@ -14,7 +15,6 @@ export class VideoStreamTrackChrome implements MediaStreamTrackWrapper<VideoFram
         this.writer = this.writableStream.getWriter();
     }
     async initialize() { }
-    async stealPlayEvent() { }
     latency() { return this.frameWriteTime }
 
     public async writeData(frame: VideoFrame): Promise<void> {
@@ -31,7 +31,9 @@ export class VideoStreamTrackChrome implements MediaStreamTrackWrapper<VideoFram
         return this.track;
     }
 
-    async seekTo(_time: number, _fastSeek: boolean): Promise<void> { }
+    intent(_intent: Intent, _time: number): Promise<void> {
+        return Promise.resolve();
+    }
 
     destroy() {
         this.track.stop();

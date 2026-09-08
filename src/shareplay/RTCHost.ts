@@ -1,11 +1,10 @@
-import type { RTCRequestData } from "./types";
+import type { RTCDataRequesttAnswered, RTCRequestData } from "./types";
 
 export default class RTCHost {
     private file: File;
     private connection: RTCPeerConnection;
     private channel: RTCDataChannel | undefined;
     public otherID: string;
-    private lastBuffer: Uint8Array<ArrayBuffer> | undefined;
 
 
     constructor(file: File, otherID: string, info: RTCConfiguration) {
@@ -21,6 +20,7 @@ export default class RTCHost {
         this.channel.onopen = () => { console.log("channel opened"); };
         this.channel.onclose = () => { console.log("channel close"); };
         this.channel.onmessage = this.handleMessages.bind(this);
+        this.channel.binaryType = "blob";
     }
 
     public async getOffer() {
@@ -37,27 +37,45 @@ export default class RTCHost {
         await this.connection.addIceCandidate(new RTCIceCandidate(candidate));
     }
 
+    public getMaxPacketSize() {
+        return this.connection.sctp?.maxMessageSize ?? 65565;
+    }
+
     private async handleMessages(ev: MessageEvent<string>) {
         if (typeof ev.data !== "string") return;
+        if (!this.channel) return;
         const data = JSON.parse(ev.data) as RTCRequestData;
-        if (data.kind != "requestData") return;
+        if (data.kind !== "requestData") return;
 
-        const maxMessageSize = this.connection.sctp?.maxMessageSize ?? 65565;
+        const maxMessageSize = this.getMaxPacketSize();
 
-        const maxSize = Math.min(maxMessageSize - 8, data.size, this.file.size - data.offset);
-        let targetBuffer = this.lastBuffer;
-        if (!targetBuffer || targetBuffer.byteLength !== maxSize + 8) {
-            targetBuffer = new Uint8Array(maxSize + 8);
-            this.lastBuffer = targetBuffer;
+
+        let messageSizeLeft = data.size;
+        let dataOffsetMessage = 0;
+
+        while (messageSizeLeft > 0) {
+            const readOffset = data.offset + dataOffsetMessage;
+            const maxSize = Math.min(maxMessageSize, messageSizeLeft, this.file.size - readOffset);
+            if (maxSize <= 0) break;
+            const blob = this.file.slice(readOffset, readOffset + maxSize);
+            try {
+                this.channel.send(blob);
+            } catch {
+                break;
+            }
+            messageSizeLeft -= maxSize;
+            dataOffsetMessage += maxSize;
         }
 
-        const dataView = new DataView(targetBuffer.buffer);
-        dataView.setBigUint64(0, BigInt(data.offset));
-
-        const blob = this.file.slice(data.offset, data.offset + maxSize);
-        const array = await blob.arrayBuffer();
-        targetBuffer.set(new Uint8Array(array), 8);
-
-        this.channel?.send(targetBuffer);
+        while (true) {
+            try {
+                this.channel.send(JSON.stringify({
+                    kind: "requestAnswered"
+                } as RTCDataRequesttAnswered));
+                break;
+            } catch {
+                await new Promise(r => setTimeout(r, 0));
+            }
+        }
     }
 }

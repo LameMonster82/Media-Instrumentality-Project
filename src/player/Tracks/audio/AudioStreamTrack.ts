@@ -2,6 +2,7 @@ import type { MediaStreamTrackWrapper } from "../types";
 import { workletName, type AllAudioWorkletMessages, type WorkerAudioDataInit } from "./audioTypes";
 
 import audioWorklet from "./audio.worker.js?url";
+import { Intent } from "@/player/types";
 
 export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | WorkerAudioDataInit> {
     private readonly audioContext: AudioContext;
@@ -38,12 +39,6 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
         this.workletNode.connect(this.destination);
     }
 
-    async stealPlayEvent(): Promise<void> {
-        if (this.audioContext.state !== 'running') {
-            await this.audioContext.resume();
-        }
-    }
-
     public async writeData(frame: AudioData | WorkerAudioDataInit): Promise<void> {
         if (!this.workletNode)
             return;
@@ -56,9 +51,14 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
         this.workletNode?.port.postMessage(frame, frame.transfer as Transferable[]);
     }
 
-    public seekTo(_time: number, _fastSeek: boolean): Promise<void> {
-        this.workletNode?.port.postMessage({ kind: "flush" });
-        return Promise.resolve();
+    public async intent(intent: Intent, _time: number) {
+        if (intent === Intent.Play) {
+            await this.audioContext.resume()
+        } else if (intent === Intent.Pause) {
+            await this.audioContext.suspend();
+        } else if (intent === Intent.Seek) {
+            this.workletNode?.port.postMessage({ kind: "flush" });
+        }
     }
 
     public getTrack(): MediaStreamTrack {

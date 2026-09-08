@@ -119,7 +119,6 @@ export class VideoPlayer2 {
         if (typeof videoSrc === "object" && !(videoSrc instanceof File) && videoSrc.kind === "remote") {
             this.workerEventer2.waitForEvent("initRtcSeekr").then(async data => {
                 this.rtcSeeker = new RTCSeeker(data, videoSrc.info, videoSrc.port, 32 * 1024 * 1024);
-                await this.rtcSeeker.seek();
             })
 
         }
@@ -613,9 +612,12 @@ export class VideoPlayer2 {
         if (this.seeking) return;
         this.mediaTime = time;
         this.seeking = true;
+        this.paused = true;
+        this.controls.setPlayback(false);
         this.controls.setLoadingState(true);
         const videoStream = this.videoRenderer.get(this.activeVideoStream);
         const audioStream = this.audioRenderer.get(this.activeAudioStream);
+        const subtitleStream = this.subtitleRenderer.get(this.activeSubtitleStream);
         if (this.activeVideoStream !== -1 && !force) {
             if (this.videoFrameBuffer.some(f => f
                 && f.timestamp / 1000 <= time
@@ -623,8 +625,9 @@ export class VideoPlayer2 {
 
                 console.log("Its your lucky day. You can fast seek!");
 
-                await videoStream?.seekTo(time, true);
-                await audioStream?.seekTo(time, true);
+                await videoStream?.intent(Intent.Seek, time);
+                await audioStream?.intent(Intent.Seek, time);
+                await subtitleStream?.intent(Intent.Seek, time);
                 this.seeking = false;
                 this.controls.setLoadingState(false);
                 return;
@@ -641,8 +644,9 @@ export class VideoPlayer2 {
 
                 console.log("Its your lucky day. You can fast seek!");
 
-                await videoStream?.seekTo(time, true);
-                await audioStream?.seekTo(time, true);
+                await videoStream?.intent(Intent.Seek, time);
+                await audioStream?.intent(Intent.Seek, time);
+                await subtitleStream?.intent(Intent.Seek, time);
                 this.seeking = false;
                 this.controls.setLoadingState(false);
                 return;
@@ -662,8 +666,9 @@ export class VideoPlayer2 {
         this.audioFrameBuffer.length = 0;
 
         //const subtitleStream = this.videoRenderer.get(this.activeVideoStream);
-        await videoStream?.seekTo(time, true);
-        await audioStream?.seekTo(time, true);
+        await videoStream?.intent(Intent.Seek, time);
+        await audioStream?.intent(Intent.Seek, time);
+        await subtitleStream?.intent(Intent.Seek, time);
 
         console.debug("Seeking finishing at", performance.now());
         if (status.status !== 0) {
@@ -671,9 +676,13 @@ export class VideoPlayer2 {
             return;
         }
 
-        if (this.activeVideoStream !== -1)
+        if (this.activeVideoStream !== -1) {
             while (this.videoFrameBuffer.length === 0)
                 await this.requestData();
+            const stream = this.videoRenderer.get(this.activeVideoStream);
+            if (stream)
+                await stream.writeData(this.videoFrameBuffer[0].clone());
+        }
         else if (this.activeAudioStream !== -1)
             while (this.audioFrameBuffer.length === 0)
                 await this.requestData();
@@ -759,9 +768,13 @@ export class VideoPlayer2 {
         this.controls.setPlayback(true);
         this.paused = false;
 
-        for (const [_, stream] of this.audioRenderer) {
-            stream.stealPlayEvent();
-        }
+        const videoStream = this.videoRenderer.get(this.activeVideoStream);
+        const audioStream = this.audioRenderer.get(this.activeAudioStream);
+        const subtitleStream = this.subtitleRenderer.get(this.activeSubtitleStream);
+
+        videoStream?.intent(Intent.Play, this.mediaTime);
+        audioStream?.intent(Intent.Play, this.mediaTime);
+        subtitleStream?.intent(Intent.Play, this.mediaTime);
     }
 
     public pause(hackTime?: number) {
@@ -769,6 +782,14 @@ export class VideoPlayer2 {
             this.mediaTime = hackTime;
         this.controls.setPlayback(false);
         this.paused = true;
+
+        const videoStream = this.videoRenderer.get(this.activeVideoStream);
+        const audioStream = this.audioRenderer.get(this.activeAudioStream);
+        const subtitleStream = this.subtitleRenderer.get(this.activeSubtitleStream);
+
+        videoStream?.intent(Intent.Pause, this.mediaTime)
+        audioStream?.intent(Intent.Pause, this.mediaTime)
+        subtitleStream?.intent(Intent.Pause, this.mediaTime);
     }
 
     /** External seek in milliseconds. Resolves when the seek completes. */

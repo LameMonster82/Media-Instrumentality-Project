@@ -1,8 +1,7 @@
 import type { Dictionary, WorkerPostMessage, WorkerShutdown } from "@/core/types";
 import type { ChapterInfo } from "../Tracks/subtitles old/subtitleStream";
-import type { AudioDecoderConfigStruct, AVMediaType, FileInfo, MediaType, VideoDecoderConfigStruct } from "./structReader";
-import type { AtomicEventerBuffers } from "../atomicEventer/types";
-import type { RemoteFileSource, RtcSeekableWorkerInit, WorkerRemoteSoruce } from "../seeker/types";
+import type { AVMediaType, FileInfo, MediaType } from "./structReader";
+import type { RtcSeekableWorkerInit, WorkerRemoteSoruce } from "../seeker/types";
 
 //#region Main -> FFmpeg Worker
 export interface WorkerInitFFmpeg extends WorkerPostMessage {

@@ -10,14 +10,12 @@ import { RequestDataStatus, StreamSupport, type AllVideoWorkerEvents, type AllTa
 import { AVColorPrimarieToColorPrimative, AVColorRangeToColorRange, AVColorSpaceToColorMatrixCoeff, AVColorTransferToTransferChar, AVLogLevel, AVPixelFormat } from "./advancedTypes/AVTypes";
 import getSupportedPixelFormats from "./advancedTypes/supportedPixelFormats";
 import canWasm64 from "./advancedTypes/isWasm64";
-import AtomicEventer from "../atomicEventer/atomicEventer";
-import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type FileSeekableWorkerInit, type RemoteFileSource, type RtcSeekableWorkerInit, type UrlSeekableWorkerInit, type WorkerRemoteSoruce } from "../seeker/types";
-import type { DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
-import type { Dictionary } from "@/core/types";
+import type { FileSeekableWorkerInit, RtcSeekableWorkerInit, UrlSeekableWorkerInit, WorkerRemoteSoruce } from "../seeker/types";
 import type { AllWebDecoderWorkerMessages } from "./webDecoder/types";
 import { MediaType, readFileInfo, readReturnType, ResultStatus, type VideoDecoderConfigStruct, type AudioDecoderConfigStruct, AVSubtitleType, AVMediaType, AVPixelFormatArrayToData } from "./structReader";
 import type { BitmapSubArgs, VTTCueArgs } from "../Tracks/subtitles/types";
 import QuickPostmessage from "../quickMessage/QuickMessage";
+import SharedSeekerControls from "../seeker/sharedControl";
 
 // Default type of `self` is `WorkerGlobalScope & typeof globalThis`
 // https://github.com/microsoft/TypeScript/issues/14877
@@ -56,11 +54,7 @@ class FFmpegBridge {
     private wasmMemory: WebAssembly.Memory;
 
     // Events
-    private seekerEventer: AtomicEventer<
-        SeekerRequestType,
-        SeekerResponseType,
-        typeof seekerRequestTemplates,
-        typeof seekerResponseTemplates> = new AtomicEventer(undefined, seekerRequestTemplates, seekerResponseTemplates);
+    private seekerEventer: SharedSeekerControls = new SharedSeekerControls();
 
     private videoEventer2: QuickPostmessage<AllVideoWorkerEvents>;
 
@@ -115,43 +109,42 @@ class FFmpegBridge {
 
         if (typeof dataInfo.fileSource === "string") {
             this.seekerWorker = urlSeekerWorker({ name: "I download and give data to the ffmpeg thread" });
-            this.seekerEventer.receiveEvent(this.handleSeekerEvents.bind(this));
 
             this.seekerWorker.postMessage({
                 url: dataInfo.fileSource,
-                atomicBuffers: this.seekerEventer.getBuffers(),
+                atomicBuffers: this.seekerEventer.getBuffer(),
                 fetchBufferSize: this.bufferSize,
                 targetBuffer: this.wasmMemory,
                 type: "init"
             } as UrlSeekableWorkerInit);
         } else if (dataInfo.fileSource instanceof File) {
             this.seekerWorker = fileSeekerWorker({ name: "I read the local file and give data to the ffmpeg thread" });
-            this.seekerEventer.receiveEvent(this.handleSeekerEvents.bind(this));
 
             this.seekerWorker.postMessage({
                 file: dataInfo.fileSource,
-                atomicBuffers: this.seekerEventer.getBuffers(),
+                atomicBuffers: this.seekerEventer.getBuffer(),
                 targetBuffer: this.wasmMemory,
                 type: "init"
             } as FileSeekableWorkerInit);
-        } else {
-            const source = dataInfo.fileSource;
-            this.seekerEventer.receiveEvent(this.handleSeekerEvents.bind(this));
-
+        } else if(dataInfo.fileSource.kind === "remoteSource") {
             self.postMessage({
                 kind: "initRtcSeekr",
                 fileSize: 0,
-                atomicBuffers: this.seekerEventer.getBuffers(),
+                atomicBuffers: this.seekerEventer.getBuffer(),
                 targetBuffer: this.wasmMemory,
                 bufferSize: this.bufferSize,
             } as RtcSeekableWorkerInit);
+        } else {
+            throw new Error("What? What file source do you want me to use???")
         }
 
-        const seekResults = await this.seekerEventer.waitUntilEvent(SeekerResponseType.SEEK_DONE);
-        if (seekResults === null || seekResults.data.result < 0) {
+        await new Promise(r => setTimeout(r, 1));
+
+        const seekResults = await this.seekerEventer.seekAsync(0n);
+        if (!seekResults) {
             throw Error("Seeker could not init. Ughhhh");
         }
-        this.fileSize = seekResults.data.fileSize;
+        this.fileSize = this.seekerEventer.getFileSize();
 
         // Supported Pixel formats. Limit to RGBA only for firefox
         const pixFmts = this.isFirefox ? [AVPixelFormat.AV_PIX_FMT_RGBA] : getSupportedPixelFormats();
@@ -257,14 +250,6 @@ class FFmpegBridge {
         return newModule as MainModule;
     }
 
-    private handleSeekerEvents(type: SeekerResponseType, _data: DecodeTemplate<Dictionary<SerializableStuff>>) {
-        switch (type) {
-            case SeekerResponseType.BUFFER_COPIED: {
-                console.log(" buffer copioed");
-            }
-        }
-    }
-
     private getFFmpegData(): { status: RequestDataStatus, packetType: number; } {
         try {
             while (true) {
@@ -318,10 +303,7 @@ class FFmpegBridge {
 
         let written = 0n;
         while (written === 0n) {
-            this.seekerEventer.sendEvent(SeekerRequestType.REQUEST_DATA, { offset: this.fileOffset, size, ptr });
-            const results = this.seekerEventer.lockUntilEvent(SeekerResponseType.BUFFER_COPIED);
-
-            written = results.written;
+            written = this.seekerEventer.requestData(ptr, this.fileOffset, BigInt(size));
             if (written === 0n)
                 console.warn("Seeker wrote 0 bytes. Smth may not be ok");
         }
@@ -356,11 +338,8 @@ class FFmpegBridge {
             return -1n;
         }
 
-        this.seekerEventer.sendEvent(SeekerRequestType.SEEK, { offset: Number(offset), urlChange: "" });
-        const results = this.seekerEventer.lockUntilEvent(SeekerResponseType.SEEK_DONE);
-
-        const seekerState = results.result;
-        if (seekerState !== 0) {
+        const result = this.seekerEventer.seek(offset);
+        if (!result) {
             console.error("Seeker returned bad when tried to seek. Horrors!!!!");
         }
         //console.log("done offset to", offset);

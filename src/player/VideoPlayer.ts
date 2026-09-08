@@ -51,6 +51,10 @@ export class VideoPlayer2 {
     private stepFrame: boolean = false;
     private duration: number = 0;
 
+    // Locked prevents local control while a seek is being synchronized across
+    // the lobby (remote playback commands still apply).
+    private locked: boolean = false;
+
     // Status
     private initDone = false;
     private dataRequested: boolean = false;
@@ -81,9 +85,8 @@ export class VideoPlayer2 {
         this.video.tabIndex = 0;
 
         this.video.addEventListener("click", () => {
-            if (this.controls.getLoadingState()) return;
-            if (this.paused) this.play();
-            else this.pause();
+            if (this.locked || this.controls.getLoadingState()) return;
+            this.controls.playPause();
         })
 
         this.container.classList.add(styles.videoContainer);
@@ -145,6 +148,7 @@ export class VideoPlayer2 {
     private initControls(): MediaControls {
         const controls = new MediaControls(this.video, {
             onPlayPause: async (intent?: boolean) => {
+                if (this.locked) return this.paused;
                 intent ??= this.paused;
                 if (this.endOfFile && intent && this.duration <= this.mediaTime) {
                     this.callIntent(Intent.Seek, 0);
@@ -165,6 +169,7 @@ export class VideoPlayer2 {
                 return intent;
             },
             onSeekTo: (time: number) => {
+                if (this.locked) return;
                 this.callIntent(Intent.Seek, time * 1000);
                 this.pause();
                 this.seek(time * 1000);
@@ -172,6 +177,7 @@ export class VideoPlayer2 {
             onStepFrame: () => {
                 //this.videoManager?.triggerNextFrame();
                 //this.clock.Play();
+                if (this.locked) return;
                 if (this.videoFrameBuffer[0]) {
                     this.mediaTime = this.videoFrameBuffer[0].timestamp / 1000;
                     this.stepFrame = true;
@@ -690,6 +696,7 @@ export class VideoPlayer2 {
         const newTime = await timePromise;
         this.mediaTime = Number(newTime.time) / 1000;
         this.seeking = false;
+        this.updateTime();
         this.controls.setLoadingState(false);
 
         // In share-play mode the controller holds playback until every member
@@ -811,6 +818,10 @@ export class VideoPlayer2 {
 
     public setLoadingState(loading: boolean) {
         this.controls.setLoadingState(loading);
+    }
+
+    public setLocked(locked: boolean) {
+        this.locked = locked;
     }
 
     public getVideo() {

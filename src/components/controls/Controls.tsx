@@ -169,10 +169,7 @@ export default class MediaControls {
     private initListeners() {
         // --- Playback & Seeking ---
         this.playButton.addEventListener('click', async () => {
-            if (this.isTryingToPlay) return;
-            this.isTryingToPlay = true;
-            await this.callbacks.onPlayPause();
-            this.isTryingToPlay = false;
+            this.playPause();
         });
 
         this.progressBarRange.addEventListener('mousedown', (e) => {
@@ -180,10 +177,16 @@ export default class MediaControls {
             // this.callbacks.onPlayPause(false);
         });
 
+        let hasInputted = false;
         this.progressBarRange.addEventListener('input', (e) => {
             e.stopPropagation();
-            this.updateCurrentTime(this.progressBarRange.valueAsNumber);
-            this.callbacks.onSeekTo(this.progressBarRange.valueAsNumber);
+            if (hasInputted) return;
+            hasInputted = true;
+            setTimeout(() => {
+                this.updateCurrentTime(this.progressBarRange.valueAsNumber);
+                this.callbacks.onSeekTo(this.progressBarRange.valueAsNumber);
+                hasInputted = false;
+            }, 0);
         });
 
         this.progressBarRange.addEventListener('mouseup', (e) => {
@@ -265,6 +268,13 @@ export default class MediaControls {
 
         // Set initial state
         this.hideCursorDelay();
+    }
+
+    public async playPause() {
+        if (this.isTryingToPlay) return;
+        this.isTryingToPlay = true;
+        await this.callbacks.onPlayPause();
+        this.isTryingToPlay = false;
     }
 
     public setLoadingState(loading: boolean) {

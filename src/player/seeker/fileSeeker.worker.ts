@@ -1,71 +1,47 @@
-
-
-import type { Dictionary } from "@/core/types";
-import AtomicEventer from "../atomicEventer/atomicEventer";
-import type { AtomicEventerBuffers, DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
-import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type FileSeekableWorkerInit, type UrlSeekableWorkerInit } from "./types";
-import RingBuffer from "./ringBuffer";
+import SharedSeekerControls, { Operation, type RequestEvent, type SeekEvent } from "./sharedControl";
+import type { FileSeekableWorkerInit } from "./types";
 
 class FileSeeker {
     private file: File;
 
     private sharedBuffer: WebAssembly.Memory;
     private uIntArray: Uint8Array;
-    private eventer: AtomicEventer<
-        SeekerResponseType,
-        SeekerRequestType,
-        typeof seekerResponseTemplates,
-        typeof seekerRequestTemplates>;
+    private eventer: SharedSeekerControls;
 
-    constructor(file: File, targetBuffer: WebAssembly.Memory, atomicBuffers: AtomicEventerBuffers) {
+    constructor(file: File, targetBuffer: WebAssembly.Memory, atomicBuffers: SharedArrayBuffer) {
         this.file = file;
 
         this.sharedBuffer = targetBuffer;
         this.uIntArray = new Uint8Array(targetBuffer.buffer);
 
-        this.eventer = new AtomicEventer(atomicBuffers, seekerResponseTemplates, seekerRequestTemplates);
-        this.eventer.receiveEvent(this.handleEvents.bind(this));
+        this.eventer = new SharedSeekerControls(atomicBuffers);
+        this.eventer.setFileSize(BigInt(this.file.size));
+        this.eventer.pumpEvents(this.handleEvents.bind(this))
     }
 
-    private async handleEvents(type: SeekerRequestType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
-        switch (type) {
-            case SeekerRequestType.SEEK: {
-                const dataThing = data as { offset: number, urlChange: string; };
-                this.seek(dataThing.offset);
-                return;
-            }
-            case SeekerRequestType.REQUEST_DATA: {
-                const dataThing = data as {
-                    size: number,
-                    ptr: bigint,
-                    offset: bigint;
-                };
-                return this.copyDataToWorker(dataThing.size, dataThing.ptr, Number(dataThing.offset));
-            }
-            case SeekerRequestType.DESTROY: {
-                return this.destroy();
-            }
+    private async handleEvents(data: RequestEvent | SeekEvent) {
+        if (data.type === Operation.REQUEST_DATA) {
+            await this.copyDataToWorker(Number(data.size), data.ptr, Number(data.offset));
+        } else if (data.type === Operation.SEEK) {
+            this.seek(Number(data.offset));
         }
     }
 
-    public seek(offset: number = 0): void {
-        this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, {
-            result: 0,
-            fileSize: BigInt(this.file.size)
-        });
+    public seek(_offset: number = 0): void {
+        this.eventer.seekDone();
     }
 
     async copyDataToWorker(size: number, ptr: bigint, offset: number) {
         if (offset >= this.file.size) {
             console.warn("End of file reached");
-            this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, { written: -1n });
+            this.eventer.bufferCopied(-1n);
             return;
         }
 
         if (Number(ptr) + size > this.uIntArray.byteLength) {
             const oldSize = this.uIntArray.byteLength;
             this.uIntArray = new Uint8Array(this.sharedBuffer.buffer);
-            console.log(`Uhh buffer not enough. Lets recreate it ${oldSize} -> ${this.uIntArray.byteLength}`);
+            console.debug(`Uhh buffer not enough. Lets recreate it ${oldSize} -> ${this.uIntArray.byteLength}`);
         }
 
         const fileDataBlob = this.file.slice(offset, offset + size);
@@ -73,9 +49,7 @@ class FileSeeker {
 
         this.uIntArray.set(data, Number(ptr));
 
-        this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, {
-            written: BigInt(size),
-        });
+        this.eventer.bufferCopied(BigInt(size));
     }
 
     destroy() {

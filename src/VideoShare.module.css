@@ -1,0 +1,207 @@
+.app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: #0d0d0f;
+    color: #e6e6e6;
+    font-family: Inter, system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+ * Top bar — compact watch-party controls
+ * ------------------------------------------------------------------------- */
+
+.topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 10px 18px;
+    background: #16161a;
+    border-bottom: 1px solid #26262b;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.brandIcon {
+    color: #7cb8ff;
+    font-size: 22px;
+}
+
+.lobbyControls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.lobbyControls button {
+    background: #26262c;
+    color: #e6e6e6;
+    border: 1px solid #3a3a42;
+    border-radius: 8px;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.lobbyControls button:hover {
+    background: #30303a;
+    border-color: #4a4a55;
+}
+
+.lobbyControls input {
+    background: #1a1a1e;
+    color: #e6e6e6;
+    border: 1px solid #3a3a42;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 14px;
+    min-width: 220px;
+    flex: 1;
+}
+
+.lobbyControls input::placeholder {
+    color: #6f6f78;
+}
+
+.lobbyStatus {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    color: #9a9aa2;
+    font-size: 13px;
+}
+
+.members {
+    font-size: 18px;
+    color: #7cb8ff;
+}
+
+.membersCount:empty {
+    display: none;
+}
+
+.inviteLink {
+    color: #7cb8ff;
+    text-decoration: none;
+    border-bottom: 1px dashed #7cb8ff;
+    cursor: pointer;
+    padding: 2px 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Stage — the player is the hero
+ * ------------------------------------------------------------------------- */
+
+.stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.playerContainer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+.playerContainer :global(.videoContainer) {
+    width: min(96vw, 1400px);
+    height: min(78vh, 820px);
+}
+
+/* ---------------------------------------------------------------------------
+ * Empty state / drop zone
+ * ------------------------------------------------------------------------- */
+
+.emptyState {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dropZone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: min(560px, 84vw);
+    min-height: 220px;
+    padding: 32px;
+    border: 2px dashed #33333a;
+    border-radius: 14px;
+    background: #141417;
+    color: #8b8b94;
+    font-size: 15px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.dropZone:hover {
+    border-color: #4a4a55;
+    color: #b8b8c0;
+}
+
+.dropZone.dragover {
+    border-color: #7cb8ff;
+    color: #7cb8ff;
+    background: #14171c;
+}
+
+.dropZoneIcon {
+    font-size: 40px;
+    color: #7cb8ff;
+}
+
+/* ---------------------------------------------------------------------------
+ * Notice / toast
+ * ------------------------------------------------------------------------- */
+
+.notice {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    background: #26262c;
+    color: #e6e6e6;
+    border: 1px solid #3a3a42;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    z-index: 1000;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.noticeError {
+    background: #3a1d1d;
+    border-color: #7a2f2f;
+    color: #ffb3b3;
+}
+
+.hidden {
+    display: none !important;
+}

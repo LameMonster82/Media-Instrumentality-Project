@@ -1,10 +1,10 @@
 import type { Intent } from "@/player/types";
-import type { WebSocketMessage, WebSocketPing, WebSocketPong, WebSocketRequestRoomCount, WebSocketRequestRoomInfo, WebSocketRoomCount, WebSocketRoomInfo } from "@Server/types";
+import type { WebSocketError, WebSocketHostLeft, WebSocketMessage, WebSocketPing, WebSocketPong, WebSocketRequestRoomCount, WebSocketRequestRoomInfo, WebSocketRoomCount, WebSocketRoomInfo } from "@Server/types";
 
 export interface WebSocketIntent extends WebSocketMessage {
     kind: "intent";
-    intent: Intent,
-    time: DOMHighResTimeStamp;
+    intent: Intent;
+    time: number;
 }
 
 export interface WebSocketConfirmIntent extends WebSocketMessage {
@@ -18,8 +18,8 @@ export interface WebSocketIntentRequest extends WebSocketMessage {
 
 export interface WebSocketIntentStatus extends WebSocketMessage {
     kind: "intentStatus";
-    intent: Intent,
-    time: DOMHighResTimeStamp;
+    intent: Intent;
+    time: number;
 }
 
 export interface WebSocketRequestSeeker extends WebSocketMessage {
@@ -30,28 +30,31 @@ export interface WebSocketRequestSeeker extends WebSocketMessage {
 export interface WebSocketOfferSDP extends WebSocketMessage {
     kind: "offerSDP";
     userId: string;
+    targetId: string;
     fileSize: number;
-    sdp: RTCSessionDescriptionInit
+    sdp: RTCSessionDescriptionInit;
 }
 
 export interface WebSocketAnswerSDP extends WebSocketMessage {
     kind: "answerSDP";
     userId: string;
-    sdp: RTCSessionDescriptionInit
+    targetId?: string;
+    sdp: RTCSessionDescriptionInit;
 }
 
 export interface WebSocketICECandidates extends WebSocketMessage {
     kind: "iceCandidates";
     userId: string;
-    candidate: RTCIceCandidateInit
+    targetId?: string;
+    candidate: RTCIceCandidateInit;
 }
-
 
 export interface WebSocketNewHost extends WebSocketMessage {
     kind: "newHost";
+    hostId?: string;
 }
 
-export type AllWebsocketMessages = WebSocketRequestRoomCount | WebSocketRoomCount | WebSocketRoomInfo | WebSocketPing | WebSocketPong | WebSocketRequestRoomInfo |
+export type AllWebsocketMessages = WebSocketRequestRoomCount | WebSocketRoomCount | WebSocketRoomInfo | WebSocketPing | WebSocketPong | WebSocketRequestRoomInfo | WebSocketError | WebSocketHostLeft |
     WebSocketIntent | WebSocketConfirmIntent | WebSocketIntentRequest | WebSocketIntentStatus | WebSocketRequestSeeker | WebSocketNewHost |
     WebSocketOfferSDP | WebSocketAnswerSDP | WebSocketICECandidates;
 
@@ -62,11 +65,11 @@ export type DictionaryWebSocketEvent<T extends WebSocketMessage> = {
 };
 
 export interface RTCRequestData extends WebSocketMessage {
-    kind: "requestData"
-    offset: number,
-    size: number
+    kind: "requestData";
+    offset: number;
+    size: number;
 }
 
 export interface RTCDataRequesttAnswered extends WebSocketMessage {
-    kind: "requestAnswered"
+    kind: "requestAnswered";
 }

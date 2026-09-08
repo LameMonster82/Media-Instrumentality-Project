@@ -1,209 +1,289 @@
 import type { WebSocketPong, WebSocketRequestRoomCount, WebSocketRequestRoomInfo } from "@Server/types";
 import { Intent } from "@/player/types";
 import RTCHost from "./RTCHost";
-import type { AllWebsocketMessages, DictionaryWebSocketEvent, WebSocketConfirmIntent, WebSocketOfferSDP, WebSocketIntentStatus, WebSocketNewHost, WebSocketIntent, WebSocketIntentRequest, MessageByKind, RespondEventByKind2 } from "./types";
+import type { AllWebsocketMessages, DictionaryWebSocketEvent, MessageByKind, RespondEventByKind2, WebSocketConfirmIntent, WebSocketICECandidates, WebSocketIntent, WebSocketIntentRequest, WebSocketIntentStatus, WebSocketNewHost, WebSocketOfferSDP, WebSocketRequestSeeker } from "./types";
+
+type IntentCallback = (time: number) => Promise<void>;
+type IntentStatusProvider = () => { intent: Intent; time: number };
 
 export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages> {
-    private websocker: WebSocket;
+    private websocket: WebSocket;
     private lobbyId: string | undefined;
     private rtcInfo: RTCConfiguration | undefined;
+    private userId = "";
+    private hostId: string | null = null;
 
-    private userCount: number = 0;
+    private userCount = 0;
 
     private callbacks: DictionaryWebSocketEvent<T> = {};
 
-    private onPlayCB: ((time: number) => Promise<void>)[] = [];
-    private onPauseCB: ((time: number) => Promise<void>)[] = [];
-    private onSeekCB: ((time: number) => Promise<void>)[] = [];
-    private onUserCountUpdate: ((count: number) => void)[] = [];
-    private onIntentTime: (() => { intent: Intent, time: DOMHighResTimeStamp; }) | undefined;
+    private onPlayCallbacks: IntentCallback[] = [];
+    private onPauseCallbacks: IntentCallback[] = [];
+    private onSeekCallbacks: IntentCallback[] = [];
+    private onUserCountCallbacks: ((count: number) => void)[] = [];
+    private intentStatusProvider: IntentStatusProvider | undefined;
 
-    private intentCatcher: ((intent: Intent) => void) | undefined = () => { };
+    private intentConfirmer: ((intent: Intent) => void) | undefined;
 
-    private userID = crypto.randomUUID();
     private hostingFile: File | null = null;
     private rtcHosts: RTCHost[] = [];
-    private firstPing: Promise<void>;
     private seekerChannel: MessageChannel | undefined;
+    private seekOfferReceived = false;
 
-    constructor(ws: string) {
-        this.websocker = new WebSocket(ws);
-        this.websocker.addEventListener("message", this.handleMessages.bind(this));
+    private seeking = false;
+    private onSeekStateCallbacks: ((seeking: boolean) => void)[] = [];
+    private onHostLeftCallbacks: (() => void)[] = [];
+    private onErrorCallbacks: ((message: string) => void)[] = [];
 
+    constructor(wsUrl: string) {
+        this.websocket = new WebSocket(wsUrl);
+        this.websocket.addEventListener("message", this.handleMessages.bind(this));
+        this.registerHandlers();
+    }
+
+    private registerHandlers(): void {
         const pong = JSON.stringify({ kind: "pong" } as WebSocketPong);
-        this.onEvent("ping", () => {
-            this.websocker.send(pong);
-        })
+        this.onEvent("ping", () => this.websocket.send(pong));
 
-        const firstPing = Promise.withResolvers<void>();
-        this.firstPing = firstPing.promise;
-        this.waitForEvent("ping").then(() => firstPing.resolve());
         this.onEvent("roomCount", (data) => {
             this.userCount = data.count;
-            for (const callback of this.onUserCountUpdate)
-                callback(data.count);
+            for (const callback of this.onUserCountCallbacks) callback(data.count);
         });
 
         this.onEvent("intent", async (data) => {
-            let whatToDo: ((time: number) => Promise<void>)[] | undefined;
-            if (data.intent === Intent.Play)
-                whatToDo = this.onPlayCB;
-            else if (data.intent === Intent.Pause)
-                whatToDo = this.onPauseCB;
-            else if (data.intent === Intent.Seek)
-                whatToDo = this.onSeekCB;
+            if (data.intent === Intent.Seek) {
+                this.setSeeking(true);
+            } else if (this.seeking) {
+                // A seek is being synchronized; ignore playback intents until it
+                // completes. Confirm anyway so the sender does not hang.
+                this.send({ kind: "intentConfirm", intent: data.intent } as WebSocketConfirmIntent);
+                return;
+            }
 
-            await Promise.all(whatToDo?.map(p => p(data.time)) ?? []);
+            const callbacks = this.intentCallbacksFor(data.intent);
+            await Promise.all(callbacks.map((callback) => callback(data.time)));
+            this.send({ kind: "intentConfirm", intent: data.intent } as WebSocketConfirmIntent);
 
-
-            this.websocker.send(JSON.stringify({
-                kind: "intentConfirm",
-                intent: data.intent,
-            } as WebSocketConfirmIntent));
-        })
+            if (data.intent === Intent.Seek) {
+                this.setSeeking(false);
+            }
+        });
 
         this.onEvent("intentConfirm", (data) => {
-            if(this.intentCatcher)
-                this.intentCatcher(data.intent);
-        })
-
-        this.onEvent("newHost", () => {
-            this.hostingFile = null;
+            this.intentConfirmer?.(data.intent);
         });
+
+        this.onEvent("hostLeft", () => {
+            for (const callback of this.onHostLeftCallbacks) callback();
+        });
+
+        this.onEvent("error", (data) => {
+            for (const callback of this.onErrorCallbacks) callback(data.message);
+        });
+
+        this.onEvent("newHost", (data) => this.handleNewHost(data));
 
         this.onEvent("requestSeeker", async (data) => {
-            if (!this.hostingFile) return;
-
-            const otherPeer = data.userId;
-
-            const host = new RTCHost(this.hostingFile, otherPeer, this.rtcInfo!);
-            this.rtcHosts.push(host);
-            host.createChannel();
-            const sdp = await host.getOffer();
-
-            this.websocker.send(JSON.stringify({
-                kind: "offerSDP",
-                userId: otherPeer,
-                fileSize: this.hostingFile.size,
-                sdp
-            } as WebSocketOfferSDP));
+            await this.handleSeekerRequest(data.userId);
         });
+
         this.onEvent("offerSDP", (data) => {
+            this.seekOfferReceived = true;
             this.seekerChannel?.port1.postMessage(data);
-        })
+        });
+
         this.onEvent("answerSDP", async (data) => {
-            this.seekerChannel?.port1.postMessage(data);
             if (!this.hostingFile) return;
-            const host = this.rtcHosts.find(h => h.otherID === data.userId);
-
-            await host?.setSDP(data.sdp);
+            await this.rtcHosts.find((host) => host.otherID === data.userId)?.setSDP(data.sdp);
         });
+
         this.onEvent("iceCandidates", async (data) => {
-            this.seekerChannel?.port1.postMessage(data);
-            if (!this.hostingFile) return;
-            const host = this.rtcHosts.find(h => h.otherID === data.userId);
-
-            await host?.addICECandidates(data.candidate);
+            if (this.hostingFile) {
+                await this.rtcHosts.find((host) => host.otherID === data.userId)?.addICECandidates(data.candidate);
+            } else {
+                this.seekerChannel?.port1.postMessage(data);
+            }
         });
 
-        this.onEvent("intentRequest", () => {
-            if (!this.hostingFile) return;
+        this.onEvent("intentRequest", () => this.handleIntentRequest());
+    }
 
-            const intentTime = this.onIntentTime ? this.onIntentTime() : { intent: Intent.Play, time: 0 };
+    private handleNewHost(data: WebSocketNewHost): void {
+        if (data.hostId) this.hostId = data.hostId;
+        this.hostingFile = null;
 
-            this.websocker.send(JSON.stringify({
-                kind: "intentStatus",
-                intent: intentTime.intent,
-                time: intentTime.time
-            } as WebSocketIntentStatus))
-        })
+        // If we joined before the host had a file, our first data request was
+        // dropped. Once the host is ready, ask again.
+        if (this.seekerChannel && !this.seekOfferReceived) {
+            this.send({ kind: "requestSeeker", userId: this.userId } as WebSocketRequestSeeker);
+        }
+    }
 
+    private async handleSeekerRequest(seekerId: string): Promise<void> {
+        if (!this.hostingFile || !this.rtcInfo) return;
 
+        const host = new RTCHost(this.hostingFile, seekerId, this.rtcInfo, (candidate) => {
+            this.send({
+                kind: "iceCandidates",
+                userId: this.userId,
+                targetId: seekerId,
+                candidate,
+            } as WebSocketICECandidates);
+        });
+
+        this.rtcHosts.push(host);
+        host.createChannel();
+        const sdp = await host.getOffer();
+
+        this.send({
+            kind: "offerSDP",
+            userId: this.userId,
+            targetId: seekerId,
+            fileSize: this.hostingFile.size,
+            sdp,
+        } as WebSocketOfferSDP);
+    }
+
+    private handleIntentRequest(): void {
+        if (!this.hostingFile) return;
+
+        const status = this.intentStatusProvider?.() ?? { intent: Intent.Play, time: 0 };
+        this.send({ kind: "intentStatus", intent: status.intent, time: status.time } as WebSocketIntentStatus);
+    }
+
+    private intentCallbacksFor(intent: Intent): IntentCallback[] {
+        switch (intent) {
+            case Intent.Play: return this.onPlayCallbacks;
+            case Intent.Pause: return this.onPauseCallbacks;
+            case Intent.Seek: return this.onSeekCallbacks;
+            default: return [];
+        }
+    }
+
+    private setSeeking(seeking: boolean): void {
+        if (this.seeking === seeking) return;
+        this.seeking = seeking;
+        for (const callback of this.onSeekStateCallbacks) callback(seeking);
     }
 
     async connect(): Promise<string> {
         if (this.lobbyId) return this.lobbyId;
-        await this.firstPing;
-        this.websocker.send(JSON.stringify({ kind: "requestRoomCount" } as WebSocketRequestRoomCount));
-        this.websocker.send(JSON.stringify({ kind: "requestRoomInfo" } as WebSocketRequestRoomInfo));
-        const roomId = await this.waitForEvent("roomInfo");
-        this.lobbyId = roomId.id;
-        this.rtcInfo = roomId.rtcInfo;
 
-        return roomId.id;
+        const error = this.waitForEvent("error").then((data) => {
+            throw new Error(data.message);
+        });
+
+        // The server sends an immediate ping on a successful join; an error (and
+        // close) is sent instead when the lobby does not exist.
+        await Promise.race([this.waitForEvent("ping"), error]);
+
+        this.send({ kind: "requestRoomCount" } as WebSocketRequestRoomCount);
+        this.send({ kind: "requestRoomInfo" } as WebSocketRequestRoomInfo);
+
+        const info = await Promise.race([this.waitForEvent("roomInfo"), error]);
+
+        this.lobbyId = info.id;
+        this.userId = info.userId;
+        this.hostId = info.hostId;
+        this.rtcInfo = info.rtcInfo;
+
+        return info.id;
     }
 
-    public setAsHost(file: File) {
+    public setAsHost(file: File): void {
         this.hostingFile = file;
-        this.websocker.send(JSON.stringify({ kind: "newHost" } as WebSocketNewHost));
+        this.send({ kind: "newHost" } as WebSocketNewHost);
     }
 
-    public hostFile() {
+    public hostFile(): File | null {
         return this.hostingFile;
     }
 
-    public getRTCInfo() {
-        return this.rtcInfo ?? null
+    public getRTCInfo(): RTCConfiguration | null {
+        return this.rtcInfo ?? null;
     }
 
-    public setupSeekerChannel() {
+    public setupSeekerChannel(): MessagePort {
         this.seekerChannel = new MessageChannel();
-        this.seekerChannel.port1.onmessage = (e: MessageEvent<T>) => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const anyData = e.data as any;
-            if (typeof anyData.userId === "string") {
-                anyData.userId = this.userID;
-            }
-            this.websocker.send(JSON.stringify(anyData));
-        }
 
+        this.seekerChannel.port1.onmessage = (event: MessageEvent) => {
+            const message = event.data as { kind: string; userId?: string; targetId?: string };
+            message.userId = this.userId;
+
+            if (message.kind === "answerSDP" || message.kind === "iceCandidates") {
+                message.targetId = this.hostId ?? undefined;
+            }
+
+            this.websocket.send(JSON.stringify(message));
+        };
 
         return this.seekerChannel.port2;
     }
 
-    public async intent(intent: Intent, time: number) {
-        let count = 0;
-        const { promise, resolve } = Promise.withResolvers<void>();
-        this.intentCatcher = (confirmedIntent) => {
-            if (confirmedIntent === intent) {
-                count += 1;
-                if (count >= this.userCount - 1)
-                    resolve();
-            }
-        }
-        
-        this.websocker.send(JSON.stringify({
-            kind: "intent",
-            intent: intent,
-            time,
-        } as WebSocketIntent));
+    public async intent(intent: Intent, time: number): Promise<void> {
+        if (this.seeking) return;
 
-        if(this.userCount - 1 > 0)
+        if (intent === Intent.Seek) this.setSeeking(true);
+
+        this.send({ kind: "intent", intent, time } as WebSocketIntent);
+
+        const others = this.userCount - 1;
+        if (others > 0) {
+            let confirmed = 0;
+            const { promise, resolve } = Promise.withResolvers<void>();
+            this.intentConfirmer = (confirmedIntent) => {
+                if (confirmedIntent !== intent) return;
+                confirmed += 1;
+                if (confirmed >= others) resolve();
+            };
+
             await promise;
-        this.intentCatcher = undefined;
+            this.intentConfirmer = undefined;
+        }
+
+        if (intent === Intent.Seek) this.setSeeking(false);
     }
 
-    public onPlay(callback: (time: number) => Promise<void>) {
-        this.onPlayCB.push(callback);
-    }
-    public onPause(callback: (time: number) => Promise<void>) {
-        this.onPauseCB.push(callback);
-    }
-    public onSeek(callback: (time: number) => Promise<void>) {
-        this.onSeekCB.push(callback);
-    }
-    public onUserCount(callback: (count: number) => void) {
-        this.onUserCountUpdate.push(callback);
+    public onPlay(callback: IntentCallback): void {
+        this.onPlayCallbacks.push(callback);
     }
 
-    public onIntentStatus(callback: () => { intent: Intent, time: DOMHighResTimeStamp; }) {
-        this.onIntentTime = callback;
+    public onPause(callback: IntentCallback): void {
+        this.onPauseCallbacks.push(callback);
     }
 
-    public getStatus() {
-        const promise = this.waitForEvent('intentStatus');
-        this.websocker.send(JSON.stringify({ kind: "intentRequest"} as WebSocketIntentRequest))
+    public onSeek(callback: IntentCallback): void {
+        this.onSeekCallbacks.push(callback);
+    }
+
+    public onUserCount(callback: (count: number) => void): void {
+        this.onUserCountCallbacks.push(callback);
+    }
+
+    public onIntentStatus(provider: IntentStatusProvider): void {
+        this.intentStatusProvider = provider;
+    }
+
+    public onSeekStateChange(callback: (seeking: boolean) => void): void {
+        this.onSeekStateCallbacks.push(callback);
+    }
+
+    public onHostLeft(callback: () => void): void {
+        this.onHostLeftCallbacks.push(callback);
+    }
+
+    public onError(callback: (message: string) => void): void {
+        this.onErrorCallbacks.push(callback);
+    }
+
+    public getStatus(): Promise<WebSocketIntentStatus> {
+        const promise = this.waitForEvent("intentStatus");
+        this.send({ kind: "intentRequest" } as WebSocketIntentRequest);
         return promise;
+    }
+
+    private send(message: AllWebsocketMessages): void {
+        this.websocket.send(JSON.stringify(message));
     }
 
     private waitForEvent<E extends MessageByKind<T>>(event: E): Promise<RespondEventByKind2<T, E>> {
@@ -215,8 +295,8 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
     private onEvent<E extends MessageByKind<T>>(
         event: E,
         callback: (data: RespondEventByKind2<T, E>) => void,
-        once = false
-    ) {
+        once = false,
+    ): void {
         let callbacks = this.callbacks[event];
         if (!callbacks) {
             callbacks = [];
@@ -226,16 +306,15 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
         callbacks.push({ callback, once });
     }
 
-    private handleMessages(ev: MessageEvent<string>) {
-        const data = JSON.parse(ev.data);
+    private handleMessages(event: MessageEvent<string>): void {
+        const data = JSON.parse(event.data);
         const kind = data.kind as MessageByKind<T>;
-        const event = this.callbacks[kind] ?? [];
+        const listeners = this.callbacks[kind] ?? [];
 
-        for (const c of event) {
-            c.callback(data as RespondEventByKind2<T, MessageByKind<T>>);
+        for (const listener of listeners) {
+            listener.callback(data as RespondEventByKind2<T, MessageByKind<T>>);
         }
 
-        const filtered = event.filter(e => !e.once);
-        this.callbacks[kind] = filtered;
+        this.callbacks[kind] = listeners.filter((listener) => !listener.once);
     }
 }

@@ -23,7 +23,7 @@ export class AudioStreamTrackNative implements MediaStreamTrackWrapper<AudioData
 
     async initialize() { }
     latency(): number {
-        return this.track.stats.averageLatency / 1000;
+        return 0;
     }
 
     enable(enable: boolean): void {

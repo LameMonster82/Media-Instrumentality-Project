@@ -25,7 +25,18 @@ export interface WebSocketRequestRoomInfo extends WebSocketMessage {
 
 export interface WebSocketRoomInfo extends WebSocketMessage {
     kind: "roomInfo"
-    id: string,
-    pingTime: number,
+    id: string
+    userId: string
+    hostId: string | null
+    pingTime: number
     rtcInfo: RTCConfiguration
+}
+
+export interface WebSocketHostLeft extends WebSocketMessage {
+    kind: "hostLeft"
+}
+
+export interface WebSocketError extends WebSocketMessage {
+    kind: "error"
+    message: string
 }

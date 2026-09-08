@@ -7,11 +7,19 @@ export default class RTCHost {
     public otherID: string;
 
 
-    constructor(file: File, otherID: string, info: RTCConfiguration) {
+    constructor(
+        file: File,
+        otherID: string,
+        info: RTCConfiguration,
+        onIceCandidate: (candidate: RTCIceCandidateInit) => void,
+    ) {
         this.file = file;
         this.otherID = otherID;
 
         this.connection = new RTCPeerConnection(info);
+        this.connection.onicecandidate = (event) => {
+            if (event.candidate) onIceCandidate(event.candidate.toJSON());
+        };
     }
 
     public createChannel() {
@@ -20,7 +28,7 @@ export default class RTCHost {
         this.channel.onopen = () => { console.log("channel opened"); };
         this.channel.onclose = () => { console.log("channel close"); };
         this.channel.onmessage = this.handleMessages.bind(this);
-        this.channel.binaryType = "blob";
+        this.channel.binaryType = "arraybuffer";
     }
 
     public async getOffer() {
@@ -47,35 +55,37 @@ export default class RTCHost {
         const data = JSON.parse(ev.data) as RTCRequestData;
         if (data.kind !== "requestData") return;
 
-        const maxMessageSize = this.getMaxPacketSize();
+        // Stay well under the negotiated max message size. A message of
+        // exactly maxMessageSize is rejected by some browsers because of SCTP
+        // framing overhead, and huge chunks overflow the send buffer with no
+        // backpressure.
+        const maxChunk = this.getMaxPacketSize();
 
+        let remaining = data.size;
+        let readOffset = data.offset;
 
-        let messageSizeLeft = data.size;
-        let dataOffsetMessage = 0;
+        while (remaining > 0) {
+            const size = Math.min(maxChunk, remaining, this.file.size - readOffset);
+            if (size <= 0) break;
 
-        while (messageSizeLeft > 0) {
-            const readOffset = data.offset + dataOffsetMessage;
-            const maxSize = Math.min(maxMessageSize, messageSizeLeft, this.file.size - readOffset);
-            if (maxSize <= 0) break;
-            const blob = this.file.slice(readOffset, readOffset + maxSize);
-            try {
-                this.channel.send(blob);
-            } catch {
-                break;
-            }
-            messageSizeLeft -= maxSize;
-            dataOffsetMessage += maxSize;
-        }
-
-        while (true) {
-            try {
-                this.channel.send(JSON.stringify({
-                    kind: "requestAnswered"
-                } as RTCDataRequesttAnswered));
-                break;
-            } catch {
+            // Backpressure: let the send buffer drain before sending more.
+            while (this.channel.bufferedAmount > 8 * 1024 * 1024) {
                 await new Promise(r => setTimeout(r, 0));
             }
+
+            const blob = this.file.slice(readOffset, readOffset + size);
+            try {
+                this.channel.send(await blob.arrayBuffer());
+            } catch {
+                break;
+            }
+
+            readOffset += size;
+            remaining -= size;
         }
+
+        this.channel.send(JSON.stringify({
+            kind: "requestAnswered"
+        } as RTCDataRequesttAnswered));
     }
 }

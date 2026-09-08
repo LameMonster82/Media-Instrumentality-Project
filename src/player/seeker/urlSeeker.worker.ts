@@ -1,10 +1,8 @@
 
 
-import type { Dictionary } from "@/core/types";
-import AtomicEventer from "../atomicEventer/atomicEventer";
-import type { AtomicEventerBuffers, DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
-import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type UrlSeekableWorkerInit } from "./types";
+import type { UrlSeekableWorkerInit } from "./types";
 import RingBuffer from "./ringBuffer";
+import SharedSeekerControls, { Operation, type RequestEvent, type SeekEvent } from "./sharedControl";
 
 class UrlSeeker {
     private url: string;
@@ -22,47 +20,27 @@ class UrlSeeker {
 
     private sharedBuffer: WebAssembly.Memory;
     private uIntArray: Uint8Array;
-    private eventer: AtomicEventer<
-        SeekerResponseType,
-        SeekerRequestType,
-        typeof seekerResponseTemplates,
-        typeof seekerRequestTemplates>;
+    private eventer: SharedSeekerControls;
 
     private destroyed = false;
     private lastSeek: Promise<void> = Promise.resolve();
 
-    constructor(url: string, targetBuffer: WebAssembly.Memory, atomicBuffers: AtomicEventerBuffers, bufferSize: number = 32 * 1024 * 1024) {
+    constructor(url: string, targetBuffer: WebAssembly.Memory, atomicBuffers: SharedArrayBuffer, bufferSize: number = 32 * 1024 * 1024) {
         this.url = url;
         this.ringBuffer = new RingBuffer(bufferSize);
 
         this.sharedBuffer = targetBuffer;
         this.uIntArray = new Uint8Array(targetBuffer.buffer);
 
-        this.eventer = new AtomicEventer(atomicBuffers, seekerResponseTemplates, seekerRequestTemplates);
-        this.eventer.receiveEvent(this.handleEvents.bind(this));
+        this.eventer = new SharedSeekerControls(atomicBuffers);
+        this.eventer.pumpEvents(this.handleEvents.bind(this));
     }
 
-    private async handleEvents(type: SeekerRequestType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
-        switch (type) {
-            case SeekerRequestType.SEEK: {
-                const dataThing = data as { offset: number, urlChange: string; };
-                let url: string | undefined = dataThing.urlChange;
-                if (url === "")
-                    url = undefined;
-                this.lastSeek = this.seek(dataThing.offset, url);
-                return;
-            }
-            case SeekerRequestType.REQUEST_DATA: {
-                const dataThing = data as {
-                    size: number,
-                    ptr: bigint,
-                    offset: bigint;
-                };
-                return this.copyDataToWorker(dataThing.size, dataThing.ptr, Number(dataThing.offset));
-            }
-            case SeekerRequestType.DESTROY: {
-                return this.destroy();
-            }
+    private async handleEvents(data: RequestEvent | SeekEvent) {
+        if (data.type === Operation.REQUEST_DATA) {
+            this.copyDataToWorker(Number(data.size), data.ptr, Number(data.offset));
+        } else if (data.type === Operation.SEEK) {
+            this.lastSeek = this.seek(Number(data.offset));
         }
     }
 
@@ -74,17 +52,14 @@ class UrlSeeker {
             this.fetchOffsetLimit > offset) {
 
             // We seeked in already available data. We will be ok
-            this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, {
-                result: 0,
-                fileSize: BigInt(this.totalFileSize),
-            });
+            this.eventer.seekDone();
             return;
         }
 
         try {
-            this.fetchAbortController.abort()
+            this.fetchAbortController.abort();
         } catch {
-            
+
         }
 
         await this.lastSeek;
@@ -92,6 +67,8 @@ class UrlSeeker {
         this.url = url;
         if (emptyBuffer)
             this.ringBuffer.emptyBuffer();
+
+        this.eventer.setFileSize(0n);
 
         const headers = {
             'Range': `bytes=${offset}-`
@@ -102,10 +79,7 @@ class UrlSeeker {
             response = await fetch(this.url, { headers });
             if (!response.ok || !response.body) {
                 console.error(`Failed to fetch requested resouce: ${headers.Range} on url ${url}`);
-                this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, {
-                    result: -1,
-                    fileSize: 0n
-                });
+                this.eventer.seekDone();
                 return;
             }
 
@@ -133,12 +107,11 @@ class UrlSeeker {
             }
         } catch (e) {
             console.error(`Failed to fetch your asset ${this.url}. The reason being is that`, e);
-            this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, {
-                result: -1,
-                fileSize: 0n
-            });
+            this.eventer.seekDone();
             return;
         }
+
+        this.eventer.setFileSize(BigInt(this.totalFileSize));
 
         if (this.destroyed) return;
 
@@ -150,10 +123,7 @@ class UrlSeeker {
 
         this.fetchStream = new WritableStream<Uint8Array>({
             start: () => {
-                this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, {
-                    result: 0,
-                    fileSize: BigInt(this.totalFileSize)
-                });
+                this.eventer.seekDone();
             },
             write: async (chunk) => {
                 if (this.destroyed) return;
@@ -198,15 +168,13 @@ class UrlSeeker {
     copyDataToWorker(size: number, ptr: bigint, offset: number) {
         if (offset >= this.totalFileSize) {
             console.warn("End of file reached");
-            this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, { written: -1n });
+            this.eventer.bufferCopied(-1n);
             return;
         }
 
         const currentData = this.ringBuffer.getUsedSpace();
         if (offset < this.ringBufferFileCursor || offset >= this.ringBufferFileCursor + currentData) {
-            this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, {
-                written: 0n,
-            });
+            this.eventer.bufferCopied(0n);
             return;
         }
 
@@ -216,13 +184,11 @@ class UrlSeeker {
         if (Number(ptr) + allowedSize > this.uIntArray.byteLength) {
             const oldSize = this.uIntArray.byteLength;
             this.uIntArray = new Uint8Array(this.sharedBuffer.buffer);
-            console.log(`Uhh buffer not enough. Lets recreate it ${oldSize} -> ${this.uIntArray.byteLength}`);
+            console.debug(`Uhh buffer not enough. Lets recreate it ${oldSize} -> ${this.uIntArray.byteLength}`);
         }
 
         const writtenData = this.ringBuffer.copyTo(this.uIntArray, Number(ptr), allowedSize, slightOffset);
-        this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, {
-            written: BigInt(writtenData),
-        });
+        this.eventer.bufferCopied(BigInt(writtenData));
 
         this.ringBufferSpaceNotify();
         this.ringBufferFileCursor = offset + writtenData;

@@ -2,114 +2,81 @@ import type { RemoteFileSource } from "./player/seeker/types";
 import { Intent } from "./player/types";
 import { VideoPlayer2 } from "./player/VideoPlayer";
 import Lobby from "./shareplay/lobby";
+import styles from "./VideoShare.module.css";
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars, no-var
-declare var self: Window;
+const signalingPort = 8080;
 
-const createLobbyBtn = document.getElementById("createLobby") as HTMLButtonElement;
-const joinInput = document.getElementById("joinInput") as HTMLInputElement;
-const joinBtn = document.getElementById("joinLobby") as HTMLButtonElement;
-const urlInput = document.getElementById("urlInput") as HTMLInputElement;
-const hostUrlBtn = document.getElementById("hostUrl") as HTMLButtonElement;
-const inviteRow = document.getElementById("inviteRow") as HTMLDivElement;
-const inviteLink = document.getElementById("inviteLink") as HTMLAnchorElement;
-const membersEl = document.getElementById("members") as HTMLDivElement;
-const dropZone = document.getElementById("dropZone") as HTMLDivElement;
-const playerContainer = document.getElementById("playerContainer") as HTMLDivElement;
+// ---------------------------------------------------------------------------
+// DOM
+// ---------------------------------------------------------------------------
+
+function el<T extends HTMLElement>(id: string): T {
+    return document.getElementById(id) as T;
+}
+
+const app = el<HTMLDivElement>("app");
+const topbar = el<HTMLElement>("topbar");
+const brand = el<HTMLDivElement>("brand");
+const brandIcon = el<HTMLElement>("brandIcon");
+const lobbyControls = el<HTMLDivElement>("lobbyControls");
+const createLobbyBtn = el<HTMLButtonElement>("createLobby");
+const joinInput = el<HTMLInputElement>("joinInput");
+const joinBtn = el<HTMLButtonElement>("joinLobby");
+const lobbyStatus = el<HTMLDivElement>("lobbyStatus");
+const membersIcon = el<HTMLElement>("members");
+const membersCount = el<HTMLSpanElement>("membersCount");
+const inviteLink = el<HTMLAnchorElement>("inviteLink");
+const stage = el<HTMLElement>("stage");
+const playerContainer = el<HTMLDivElement>("playerContainer");
+const emptyState = el<HTMLDivElement>("emptyState");
+const dropZone = el<HTMLButtonElement>("dropZone");
+const dropZoneIcon = el<HTMLElement>("dropZoneIcon");
+const notice = el<HTMLDivElement>("notice");
+
+app.classList.add(styles.app);
+topbar.classList.add(styles.topbar);
+brand.classList.add(styles.brand);
+brandIcon.classList.add(styles.brandIcon);
+lobbyControls.classList.add(styles.lobbyControls);
+lobbyStatus.classList.add(styles.lobbyStatus);
+membersIcon.classList.add(styles.members);
+membersCount.classList.add(styles.membersCount);
+inviteLink.classList.add(styles.inviteLink);
+stage.classList.add(styles.stage);
+playerContainer.classList.add(styles.playerContainer);
+emptyState.classList.add(styles.emptyState);
+dropZone.classList.add(styles.dropZone);
+dropZoneIcon.classList.add(styles.dropZoneIcon);
+notice.classList.add(styles.notice, styles.hidden);
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
 
 let lobby: Lobby | undefined;
-let currentPlayer: VideoPlayer2 | undefined;
+let player: VideoPlayer2 | undefined;
+let hostedFile: File | undefined;
 
-function inviteUrl(lobbyId: string): string {
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function signalingUrl(): string {
+    return `ws://${location.hostname}:${signalingPort}`;
+}
+
+function buildInviteUrl(lobbyId: string): string {
     const url = new URL(location.href);
     url.search = "";
     url.hash = "";
     url.searchParams.set("lobby", lobbyId);
-    const ws = url.searchParams.get("ws");
-    if (ws) url.searchParams.set("ws", ws);
     return url.toString();
-}
-
-async function startLobby(wsUrl: string, lobbyId?: string): Promise<void> {
-    let more = "";
-    if (lobbyId)
-        more = `?lobby=${encodeURIComponent(lobbyId)}`
-    lobby = new Lobby(`${wsUrl}${more}`);
-
-    lobbyId = await lobby.connect();
-
-    inviteRow.style.display = "flex";
-    inviteLink.href = inviteUrl(lobbyId);
-    inviteLink.textContent = inviteUrl(lobbyId);
-
-    lobby.onUserCount((members) => {
-        membersEl.textContent = `Members: ${members} other${members === 1 ? "" : "s"}`;
-    });
-}
-
-function swapPlayer(): void {
-    if (!lobby) return;
-
-    const file = lobby.hostFile();
-    if (file) {
-        currentPlayer = new VideoPlayer2(file);
-    } else {
-        const port = lobby.setupSeekerChannel();
-        const remoteFile: RemoteFileSource = {
-            kind: "remote",
-            port: port,
-            info: lobby.getRTCInfo()!,
-        }
-        currentPlayer = new VideoPlayer2(remoteFile);
-    }
-
-    const inetntEvent = async (intent: Intent, time: number) => {
-        currentPlayer!.setLoadingState(true);
-        await lobby!.intent(intent, time);
-        currentPlayer!.setLoadingState(false);
-    }
-
-    lobby.onIntentStatus(() => {
-        let intent = Intent.Play;
-        if (currentPlayer!.isPaused())
-            intent = Intent.Pause;
-        if (currentPlayer!.isSeek())
-            intent = Intent.Seek;
-        return {
-            intent,
-            time: currentPlayer!.getTime()
-        }
-    })
-
-    currentPlayer.onPlay((time) => lobby!.intent(Intent.Play, time));
-    currentPlayer.onPause((time) => lobby!.intent(Intent.Pause, time));
-    currentPlayer.onSeek((time) => lobby!.intent(Intent.Seek, time));
-
-    lobby.onPlay((time) => { currentPlayer!.play(time); return Promise.resolve(); });
-    lobby.onPause((time) => { currentPlayer!.pause(time); return Promise.resolve(); })
-    lobby.onSeek((time) => currentPlayer!.seekTo(time))
-
-    playerContainer.replaceChildren(currentPlayer.getVideo());
-
-    currentPlayer.init().then(async () => {
-        if (lobby!.hostFile() !== null) return;
-        const status = await lobby!.getStatus();
-        const currTime = currentPlayer!.getTime();
-        if (status.time - 1 > currTime || status.time + 1 < currTime) {
-            await currentPlayer!.seekTo(status.time);
-        }
-
-        if (status.intent === Intent.Play) {
-            currentPlayer!.play(status.time);
-        } else {
-            currentPlayer!.pause(status.time);
-        }
-    })
 }
 
 function parseInvite(raw: string): string | undefined {
     const trimmed = raw.trim();
     if (!trimmed) return undefined;
+
     try {
         const url = new URL(trimmed);
         return url.searchParams.get("lobby") ?? url.hash.replace(/^#/, "");
@@ -118,60 +85,225 @@ function parseInvite(raw: string): string | undefined {
     }
 }
 
-createLobbyBtn.addEventListener("click", () => {
-    startLobby("ws://localhost:8080");
-});
+function showPlayer(): void {
+    emptyState.classList.add(styles.hidden);
+    playerContainer.classList.remove(styles.hidden);
+}
 
-joinBtn.addEventListener("click", () => {
-    const lobbyId = parseInvite(joinInput.value);
-    if (lobbyId) {
-        startLobby("ws://localhost:8080", lobbyId);
+let noticeTimer: number | undefined;
+
+function showNotice(message: string, isError = false): void {
+    notice.textContent = message;
+    notice.classList.toggle(styles.noticeError, isError);
+    notice.classList.remove(styles.hidden);
+
+    if (noticeTimer) clearTimeout(noticeTimer);
+    noticeTimer = window.setTimeout(() => {
+        notice.classList.add(styles.hidden);
+    }, 5000);
+}
+
+// ---------------------------------------------------------------------------
+// Lobby lifecycle
+// ---------------------------------------------------------------------------
+
+async function startLobby(lobbyId?: string): Promise<Lobby> {
+    if (lobby) return lobby;
+
+    const query = lobbyId ? `?lobby=${encodeURIComponent(lobbyId)}` : "";
+    const instance = new Lobby(`${signalingUrl()}${query}`);
+    lobby = instance;
+
+    instance.onUserCount((count) => {
+        membersCount.textContent = `${count} in room`;
+    });
+
+    instance.onHostLeft(() => {
+        showNotice("The host has left the lobby.", true);
+        player?.pause();
+    });
+
+    try {
+        const id = await instance.connect();
+        inviteLink.href = buildInviteUrl(id);
+        inviteLink.dataset.url = buildInviteUrl(id);
+
+        // If a file was already playing locally before this lobby was created,
+        // announce ourselves as the host and wire up sync right away.
+        if (!lobbyId && hostedFile && player) {
+            instance.setAsHost(hostedFile);
+            wireSync(instance, player);
+        }
+
+        return instance;
+    } catch (error) {
+        lobby = undefined;
+        throw error;
     }
-});
+}
 
-hostUrlBtn.addEventListener("click", () => {
-    const url = urlInput.value.trim();
-    //if (url && lobby) lobby.hostUrl(url);
-});
+async function joinLobby(lobbyId: string): Promise<void> {
+    try {
+        const instance = await startLobby(lobbyId);
+        mountSeekerPlayer(instance);
+    } catch {
+        showNotice("That lobby doesn't exist.", true);
+    }
+}
 
-dropZone.addEventListener("click", () => {
+// ---------------------------------------------------------------------------
+// Player mounting + sync
+// ---------------------------------------------------------------------------
+
+function wireSync(instance: Lobby, current: VideoPlayer2): void {
+    current.onPlay((time) => instance.intent(Intent.Play, time));
+    current.onPause((time) => instance.intent(Intent.Pause, time));
+    current.onSeek((time) => instance.intent(Intent.Seek, time));
+
+    instance.onPlay((time) => {
+        current.play(time);
+        return Promise.resolve();
+    });
+    instance.onPause((time) => {
+        current.pause(time);
+        return Promise.resolve();
+    });
+    instance.onSeek((time) => current.seekTo(time));
+
+    instance.onSeekStateChange((seeking) => current.setLocked(seeking));
+
+    instance.onIntentStatus(() => {
+        let intent = Intent.Play;
+        if (current.isSeek()) intent = Intent.Seek;
+        else if (current.isPaused()) intent = Intent.Pause;
+        return { intent, time: current.getTime() };
+    });
+}
+
+async function syncInitialState(instance: Lobby, current: VideoPlayer2): Promise<void> {
+    await current.init();
+    if (instance.hostFile() !== null) return;
+
+    const status = await instance.getStatus();
+    const currentTime = current.getTime();
+
+    if (Math.abs(status.time - currentTime) > 1000) {
+        await current.seekTo(status.time);
+    }
+
+    if (status.intent === Intent.Play) {
+        current.play(status.time);
+    } else {
+        current.pause(status.time);
+    }
+}
+
+function mountLocalPlayer(file: File): void {
+    const current = new VideoPlayer2(file);
+    player = current;
+    playerContainer.replaceChildren(current.getVideo());
+    showPlayer();
+}
+
+function mountHostPlayer(instance: Lobby, file: File): void {
+    const current = new VideoPlayer2(file);
+    player = current;
+    wireSync(instance, current);
+    playerContainer.replaceChildren(current.getVideo());
+    showPlayer();
+}
+
+function mountSeekerPlayer(instance: Lobby): void {
+    const port = instance.setupSeekerChannel();
+    const remoteFile: RemoteFileSource = {
+        kind: "remote",
+        port,
+        info: instance.getRTCInfo()!,
+    };
+
+    const current = new VideoPlayer2(remoteFile);
+    player = current;
+    wireSync(instance, current);
+    playerContainer.replaceChildren(current.getVideo());
+    showPlayer();
+
+    void syncInitialState(instance, current);
+}
+
+// ---------------------------------------------------------------------------
+// Hosting a file
+// ---------------------------------------------------------------------------
+
+function hostFile(file: File): void {
+    hostedFile = file;
+    if (lobby) {
+        lobby.setAsHost(file);
+        mountHostPlayer(lobby, file);
+    } else {
+        mountLocalPlayer(file);
+    }
+}
+
+function pickFile(): void {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "video/*";
     input.onchange = () => {
         const file = input.files?.[0];
-        if (file && lobby) {
-            lobby.setAsHost(file);
-            swapPlayer();
-        }
+        if (file) hostFile(file);
     };
     input.click();
+}
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+createLobbyBtn.addEventListener("click", () => {
+    void startLobby();
 });
 
-dropZone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dropZone.classList.add("dragover");
+joinBtn.addEventListener("click", () => {
+    const lobbyId = parseInvite(joinInput.value);
+    if (!lobbyId) return;
+    void joinLobby(lobbyId);
+});
+
+inviteLink.addEventListener("click", (event) => {
+    event.preventDefault();
+    const url = inviteLink.dataset.url;
+    if (!url) return;
+
+    void navigator.clipboard.writeText(url).then(() => {
+        inviteLink.textContent = "Copied!";
+        setTimeout(() => (inviteLink.textContent = "Copy invite link"), 1500);
+    });
+});
+
+dropZone.addEventListener("click", pickFile);
+
+dropZone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropZone.classList.add(styles.dragover);
 });
 
 dropZone.addEventListener("dragleave", () => {
-    dropZone.classList.remove("dragover");
+    dropZone.classList.remove(styles.dragover);
 });
 
-dropZone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropZone.classList.remove("dragover");
-    const file = e.dataTransfer?.files?.[0];
-    if (file && lobby) {
-        lobby.setAsHost(file);
-        swapPlayer();
-    }
+dropZone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropZone.classList.remove(styles.dragover);
+    const file = event.dataTransfer?.files?.[0];
+    if (file) hostFile(file);
 });
 
+// ---------------------------------------------------------------------------
 // Auto-join from ?lobby=<id>
-const initial = new URLSearchParams(location.search);
-const initialLobby = initial.get("lobby");
+// ---------------------------------------------------------------------------
+
+const initialLobby = new URLSearchParams(location.search).get("lobby");
 if (initialLobby) {
     joinInput.value = initialLobby;
-    await startLobby("ws://localhost:8080", initialLobby);
-    swapPlayer();
+    void joinLobby(initialLobby);
 }

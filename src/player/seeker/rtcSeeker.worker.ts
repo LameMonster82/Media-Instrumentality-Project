@@ -1,11 +1,9 @@
 
 
-import type { Dictionary } from "@/core/types";
-import AtomicEventer from "../atomicEventer/atomicEventer";
-import type { DecodeTemplate, SerializableStuff } from "../atomicEventer/types";
-import { seekerRequestTemplates, SeekerRequestType, seekerResponseTemplates, SeekerResponseType, type RtcSeekableWorkerInit, type UrlSeekableWorkerInit } from "./types";
+import type { RtcSeekableWorkerInit } from "./types";
 import RingBuffer from "./ringBuffer";
 import type { WebSocketOfferSDP, WebSocketAnswerSDP, WebSocketICECandidates, RTCRequestData, WebSocketRequestSeeker, RTCDataRequesttAnswered } from "@/shareplay/types";
+import SharedSeekerControls, { Operation, type RequestEvent, type SeekEvent } from "./sharedControl";
 
 export default class RTCSeeker {
     private connection: RTCPeerConnection;
@@ -23,15 +21,12 @@ export default class RTCSeeker {
 
     private sharedBuffer: WebAssembly.Memory;
     private uIntArray: Uint8Array;
-    private eventer: AtomicEventer<
-        SeekerResponseType,
-        SeekerRequestType,
-        typeof seekerResponseTemplates,
-        typeof seekerRequestTemplates>;
+    private eventer: SharedSeekerControls;
 
     private destroyed = false;
     private currentDataResolver: ((data: null) => void) | undefined;
     private currentSeek: Promise<void> | undefined;
+    private channelPromise: Promise<void>;
 
 
     constructor(data: RtcSeekableWorkerInit, info: RTCConfiguration, port: MessagePort, bufferSize: number = 32 * 1024 * 1024) {
@@ -48,29 +43,30 @@ export default class RTCSeeker {
         this.sharedBuffer = data.targetBuffer;
         this.uIntArray = new Uint8Array(data.targetBuffer.buffer);
 
-        this.eventer = new AtomicEventer(data.atomicBuffers, seekerResponseTemplates, seekerRequestTemplates);
-        this.eventer.receiveEvent(this.handleEvents.bind(this));
-
+        this.eventer = new SharedSeekerControls(data.atomicBuffers);
+        const { promise: promiseChannel, resolve: resolveChannel } = Promise.withResolvers<void>();
+        this.channelPromise = promiseChannel;
+        
         this.connection.onicecandidate = this.handleICECandidates.bind(this);
         this.connection.ondatachannel = async (data) => {
             if (this.dataChannel) return;
             data.channel.binaryType = "arraybuffer";
             this.dataChannel = data.channel;
-
+            
             this.dataLoop();
-
-            this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, {
-                result: 0,
-                fileSize: BigInt(await this.totalFileSize)
-            });
+            resolveChannel();
         };
-
+        
         port.postMessage({ kind: "requestSeeker", userId: "" } as WebSocketRequestSeeker);
+
+        // It might immediately pump an event
+        this.eventer.pumpEvents(this.handleEvents.bind(this));
     }
 
     private async handlePortMessages(ev: MessageEvent<WebSocketOfferSDP | WebSocketAnswerSDP | WebSocketICECandidates>) {
         if (ev.data.kind === "offerSDP") {
             this.fileSizeResolve(ev.data.fileSize);
+            this.eventer.setFileSize(BigInt(ev.data.fileSize));
             await this.connection.setRemoteDescription(new RTCSessionDescription(ev.data.sdp));
 
             const answer = await this.connection.createAnswer();
@@ -97,30 +93,20 @@ export default class RTCSeeker {
         } as WebSocketICECandidates);
     }
 
-    private async handleEvents(type: SeekerRequestType, data: DecodeTemplate<Dictionary<SerializableStuff>>) {
-        switch (type) {
-            case SeekerRequestType.SEEK: {
-                await this.currentSeek;
-                const dataThing = data as { offset: number, urlChange: string; };
-                this.currentSeek = this.seek(dataThing.offset);
-                return;
-            }
-            case SeekerRequestType.REQUEST_DATA: {
-                const dataThing = data as {
-                    size: number,
-                    ptr: bigint,
-                    offset: bigint;
-                };
-                return this.copyDataToWorker(dataThing.size, dataThing.ptr, Number(dataThing.offset));
-            }
-            case SeekerRequestType.DESTROY: {
-                return this.destroy();
-            }
+    private async handleEvents(data: RequestEvent | SeekEvent) {
+        await this.channelPromise;
+        if (data.type === Operation.REQUEST_DATA) {
+            await this.copyDataToWorker(Number(data.size), data.ptr, Number(data.offset));
+        } else if (data.type === Operation.SEEK) {
+            await this.currentSeek;
+            this.currentSeek = this.seek(Number(data.offset));
         }
     }
 
     public async seek(offset: number = 0) {
         if (this.destroyed) return;
+
+        console.debug("seeking to", offset);
 
         const fileSize = await this.totalFileSize;
         if (offset >= fileSize)
@@ -136,10 +122,9 @@ export default class RTCSeeker {
         this.ringBufferFileCursor = offset;
         this.ringBufferSpaceNotify();
 
-        this.eventer.sendEvent(SeekerResponseType.SEEK_DONE, {
-            result: 0,
-            fileSize: BigInt(fileSize)
-        });
+        console.debug("seek done");
+
+        this.eventer.seekDone();
     }
 
     private async dataLoop() {
@@ -156,9 +141,10 @@ export default class RTCSeeker {
             if (size > 0) {
                 const { promise, resolve } = Promise.withResolvers<void>();
                 this.dataChannel!.onmessage = (data: MessageEvent<ArrayBuffer | RTCDataRequesttAnswered>) => {
-                    if (data.data instanceof ArrayBuffer)
+                    if (data.data instanceof ArrayBuffer) {
                         this.ringBuffer.append(new Uint8Array(data.data));
-                    else {
+                    } else {
+                        // "requestAnswered" arrives as a JSON string.
                         resolve();
                     }
                 };
@@ -174,6 +160,8 @@ export default class RTCSeeker {
                 this.dataChannel!.onmessage = null;
                 this.ringBufferFilledNotify();
                 this.ringBufferDoneNotify();
+
+                await new Promise(r => setTimeout(r, 16));
             } else {
                 const { promise, resolve } = Promise.withResolvers<void>();
                 this.ringBufferSpaceNotify = resolve;
@@ -186,16 +174,16 @@ export default class RTCSeeker {
     async copyDataToWorker(size: number, ptr: bigint, offset: number) {
         if (!this.dataChannel || offset >= await this.totalFileSize) {
             console.warn("End of file reached");
-            this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, { written: -1n });
+            this.eventer.bufferCopied(-1n);
             return;
         }
 
         await this.currentSeek;
-        if (this.dataChannel.onmessage) {
-            const { promise, resolve } = Promise.withResolvers<void>();
-            this.ringBufferFilledNotify = resolve;
-            await promise;   
-        }
+        //if (this.dataChannel.onmessage) {
+        //    const { promise, resolve } = Promise.withResolvers<void>();
+        //    this.ringBufferFilledNotify = resolve;
+        //    await promise;
+        //}
 
         const currentData = this.ringBuffer.getUsedSpace();
         const availableData = this.ringBufferFileCursor + currentData;
@@ -203,9 +191,7 @@ export default class RTCSeeker {
             this.repeatPenalty *= 2;
             console.warn("No data. Penalty at ", this.repeatPenalty);
             await new Promise(r => setTimeout(r, this.repeatPenalty));
-            this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, {
-                written: 0n,
-            });
+            this.eventer.bufferCopied(0n);
             return;
         }
 
@@ -217,13 +203,11 @@ export default class RTCSeeker {
         if (Number(ptr) + allowedSize > this.uIntArray.byteLength) {
             const oldSize = this.uIntArray.byteLength;
             this.uIntArray = new Uint8Array(this.sharedBuffer.buffer);
-            console.log(`Uhh buffer not enough. Lets recreate it ${oldSize} -> ${this.uIntArray.byteLength}`);
+            console.debug(`Uhh buffer not enough. Lets recreate it ${oldSize} -> ${this.uIntArray.byteLength}`);
         }
 
         const writtenData = this.ringBuffer.copyTo(this.uIntArray, Number(ptr), allowedSize, slightOffset);
-        this.eventer.sendEvent(SeekerResponseType.BUFFER_COPIED, {
-            written: BigInt(writtenData),
-        });
+        this.eventer.bufferCopied(BigInt(writtenData));
 
         this.ringBufferSpaceNotify();
         this.ringBufferFileCursor = offset + writtenData;

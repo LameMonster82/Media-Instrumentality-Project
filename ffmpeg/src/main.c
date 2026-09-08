@@ -2,6 +2,7 @@
 #include <emscripten.h>
 #include <libavcodec/avcodec.h>
 #include <libavcodec/packet.h>
+#include "libavcodec/ass.h"
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
 #include <libavutil/imgutils.h>
@@ -218,8 +219,6 @@ FileInfo *open_file() {
       info->streams[i].audio_config = audio_stream_to_config(stream->codecpar);
     } else if (type == AVMEDIA_TYPE_SUBTITLE) {
       SubtitleConfig *config = calloc(1, sizeof(SubtitleConfig));
-      config->subtitle_header_size = ctx->subtitle_header_size;
-      config->subtitle_header = ctx->subtitle_header;
       config->type = SUBTITLE_ASS;
 
       const AVCodecDescriptor *desc = avcodec_descriptor_get(codec->id);
@@ -228,7 +227,23 @@ FileInfo *open_file() {
         config->type = SUBTITLE_BITMAP;
       } else if (desc->props & AV_CODEC_PROP_TEXT_SUB) {
         config->type = SUBTITLE_ASS;
+
+        if (codec->id != AV_CODEC_ID_ASS && codec->id != AV_CODEC_ID_SSA) {
+          // The default config is fine but defines an absurdly low
+          // screen res, making the subtitles very small
+          // hacky but still
+          av_freep(&ctx->subtitle_header);
+          ff_ass_subtitle_header_full(ctx,
+            1920, 1080,               // Screen res
+            "Arial", 128,              // font, font_size
+            0xffffff, 0xffffff, 0, 0, // primary, secondary, outline, back (ABGR)
+            0, 0, 0,                  // bold, italic, underline
+            1, 2);                    // border_style, alignment
+        }
       }
+
+      config->subtitle_header_size = ctx->subtitle_header_size;
+      config->subtitle_header = ctx->subtitle_header;
 
       info->streams[i].subtitle_config = config;
     } else {

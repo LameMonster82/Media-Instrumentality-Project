@@ -37,6 +37,15 @@
            | [sizeof=8, align=8]
 
 *** Dumping AST Record Layout
+         0 | struct ff_pad_helper_AVBPrint
+         0 |   char * str
+         4 |   unsigned int len
+         8 |   unsigned int size
+        12 |   unsigned int size_max
+        16 |   char[1] reserved_internal_buffer
+           | [sizeof=20, align=4]
+
+*** Dumping AST Record Layout
          0 | struct AVIOContext
          0 |   const AVClass * av_class
          4 |   unsigned char * buffer

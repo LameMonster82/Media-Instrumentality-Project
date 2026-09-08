@@ -14,6 +14,7 @@ ARGS=(
     $RELEASE_CFLAGS -msimd128 -pthread
     -I"$INSTALL_DIR/include"
     -Iinclude
+    -I.
     -L"$INSTALL_DIR/lib"
     $MEM64
     -sMALLOC=mimalloc

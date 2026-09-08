@@ -652,5 +652,12 @@ function makeDraggable(element: HTMLElement, container?: HTMLElement) { // Added
 }
 
 function optionText(stream: ControlStream) {
-    return stream.metadata["title"] ?? stream.metadata["TITLE"] ?? stream.metadata["language"] ?? stream.metadata["LANGUAGE"] ?? `Untitled: ${stream.index}`;
+    return stream.metadata["title"] ??
+        stream.metadata["TITLE"] ??
+        stream.metadata["name"] ??
+        stream.metadata["NAME"] ??
+        stream.metadata["handler_name"] ??
+        stream.metadata["language"] ??
+        stream.metadata["LANGUAGE"] ??
+        `Untitled: ${stream.index}`;
 }

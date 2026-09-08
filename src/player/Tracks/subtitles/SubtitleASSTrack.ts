@@ -39,7 +39,11 @@ export default class SubtitleASSTrack implements CanvasTrackWrapper<VTTCueArgs, 
                 canvas,
                 debug: false,
                 subContent: this.header,
-                fonts: this.fonts
+                fonts: this.fonts,
+                availableFonts: {
+                    "Noto Sans": new URL('@Resources/NotoSans.woff2', import.meta.url).href
+                },
+                defaultFont: "Noto Sans",
             });
 
             canvas.style.display = "";

@@ -9,46 +9,38 @@
  */
 
 // Skipped (foreign 'struct '-prefixed records, held only as pointers):
-//   struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct ff_pad_helper_AVBPrint, struct AVIOContext, struct AVComponentDescriptor, struct AVInputFormat, struct AVIOInterruptCB, struct AVFormatContext, struct AVDictionaryEntry, struct AVCodec, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVCodecContext, struct AVCodecParameters, struct AVFrame, struct SwsContext, struct AVPacket, struct AVSubtitle, struct AVSubtitleRect, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct SwsContext, struct SwsFilter, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVFrame, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVComponentDescriptor, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext
+//   struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct ff_pad_helper_AVBPrint, struct AVIOContext, struct AVComponentDescriptor, struct AVInputFormat, struct AVIOInterruptCB, struct AVFormatContext, struct AVDictionaryEntry, struct AVCodec, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVCodecContext, struct AVCodecParameters, struct AVFrame, struct AVPacket, struct AVSubtitle, struct AVSubtitleRect, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext, struct AVComponentDescriptor, struct SwsContext, struct SwsFilter, union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5), struct AVChannelLayout, struct AVFrame, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVComponentDescriptor, struct __wasi_event_fd_readwrite_t, struct __wasi_subscription_clock_t, struct __wasi_prestat_dir_t, struct AVRational, union av_intfloat32, union av_intfloat64, struct AVIOContext
 
 export interface BridgeContext {
   supported_pix_fmts: number; // @0 const enum AVPixelFormat * pointer / handle;
   thread_count:       number; // @4 int
   fmt_ctx:            number; // @8 AVFormatContext * pointer / handle;
   codecs:             number; // @12 AVCodecContext ** pointer / handle;
-  sws_ctx:            number; // @16 SwsContext ** pointer / handle;
-  sws_in_fmt:         number; // @20 int * pointer / handle;
-  swr_ctx:            number; // @24 SwrContext ** pointer / handle;
-  swr_in_fmt:         number; // @28 int * pointer / handle;
-  swr_in_rate:        number; // @32 int * pointer / handle;
-  swr_in_layout:      number; // @36 AVChannelLayout * pointer / handle;
-  nb_streams:         number; // @40 uint32_t
-  stream_support:     number; // @44 int32_t * pointer / handle;
-  report_timestamp:   number; // @48 uint32_t
-  last_ts_js:         number; // @52 int64_t * pointer / handle;
-  last_dur_js:        number; // @56 int64_t * pointer / handle;
-  data_return:        number; // @60 ReturnType * pointer / handle;
+  sws_info:           number; // @16 SwsInfo ** pointer / handle;
+  swr_info:           number; // @20 SwrInfo ** pointer / handle;
+  nb_streams:         number; // @24 uint32_t
+  stream_support:     number; // @28 int32_t * pointer / handle;
+  report_timestamp:   number; // @32 uint32_t
+  last_ts_js:         number; // @36 int64_t * pointer / handle;
+  last_dur_js:        number; // @40 int64_t * pointer / handle;
+  data_return:        number; // @44 ReturnType * pointer / handle;
 }
 
-export const SIZEOF_BridgeContext = 64;
+export const SIZEOF_BridgeContext = 48;
 export const ALIGNOF_BridgeContext = 4;
 export const OFFSETS_BridgeContext = {
   supported_pix_fmts: 0,
   thread_count: 4,
   fmt_ctx: 8,
   codecs: 12,
-  sws_ctx: 16,
-  sws_in_fmt: 20,
-  swr_ctx: 24,
-  swr_in_fmt: 28,
-  swr_in_rate: 32,
-  swr_in_layout: 36,
-  nb_streams: 40,
-  stream_support: 44,
-  report_timestamp: 48,
-  last_ts_js: 52,
-  last_dur_js: 56,
-  data_return: 60,
+  sws_info: 16,
+  swr_info: 20,
+  nb_streams: 24,
+  stream_support: 28,
+  report_timestamp: 32,
+  last_ts_js: 36,
+  last_dur_js: 40,
+  data_return: 44,
 } as const;
 
 export function readBridgeContext(buffer: ArrayBufferLike, offset = 0): BridgeContext {
@@ -58,18 +50,14 @@ export function readBridgeContext(buffer: ArrayBufferLike, offset = 0): BridgeCo
     thread_count: view.getInt32(4, true),
     fmt_ctx: view.getUint32(8, true),
     codecs: view.getUint32(12, true),
-    sws_ctx: view.getUint32(16, true),
-    sws_in_fmt: view.getUint32(20, true),
-    swr_ctx: view.getUint32(24, true),
-    swr_in_fmt: view.getUint32(28, true),
-    swr_in_rate: view.getUint32(32, true),
-    swr_in_layout: view.getUint32(36, true),
-    nb_streams: view.getUint32(40, true),
-    stream_support: view.getUint32(44, true),
-    report_timestamp: view.getUint32(48, true),
-    last_ts_js: view.getUint32(52, true),
-    last_dur_js: view.getUint32(56, true),
-    data_return: view.getUint32(60, true),
+    sws_info: view.getUint32(16, true),
+    swr_info: view.getUint32(20, true),
+    nb_streams: view.getUint32(24, true),
+    stream_support: view.getUint32(28, true),
+    report_timestamp: view.getUint32(32, true),
+    last_ts_js: view.getUint32(36, true),
+    last_dur_js: view.getUint32(40, true),
+    data_return: view.getUint32(44, true),
   };
 }
 
@@ -286,6 +274,38 @@ export function readSubtitleConfig(buffer: ArrayBufferLike, offset = 0): Subtitl
   };
 }
 
+export interface SwsInfo {
+  pool:      number; // @0 AVBufferPool * pointer / handle;
+  ctx:       number; // @4 SwsContext * pointer / handle;
+  in_fmt:    number; // @8 int
+  in_width:  number; // @12 int
+  in_height: number; // @16 int
+  out_fmt:   number; // @20 int
+}
+
+export const SIZEOF_SwsInfo = 24;
+export const ALIGNOF_SwsInfo = 4;
+export const OFFSETS_SwsInfo = {
+  pool: 0,
+  ctx: 4,
+  in_fmt: 8,
+  in_width: 12,
+  in_height: 16,
+  out_fmt: 20,
+} as const;
+
+export function readSwsInfo(buffer: ArrayBufferLike, offset = 0): SwsInfo {
+  const view = new DataView(buffer, offset, SIZEOF_SwsInfo);
+  return {
+    pool: view.getUint32(0, true),
+    ctx: view.getUint32(4, true),
+    in_fmt: view.getInt32(8, true),
+    in_width: view.getInt32(12, true),
+    in_height: view.getInt32(16, true),
+    out_fmt: view.getInt32(20, true),
+  };
+}
+
 export interface VideoFrame {
   width:           number; // @0 int32_t
   height:          number; // @4 int32_t
@@ -369,6 +389,41 @@ export function readVideoFrame(buffer: ArrayBufferLike, offset = 0): VideoFrame 
     stream_index: view.getInt32(160, true),
     buffer_size: view.getInt32(164, true),
     frame: view.getUint32(168, true),
+  };
+}
+
+export interface SwrInfo {
+  pool:       number; // @0 AVBufferPool * pointer / handle;
+  ctx:        number; // @4 SwrContext * pointer / handle;
+  in_layout:  number; // @8 struct AVChannelLayout assumed enum/int-sized (struct AVChannelLayout);
+  in_fmt:     number; // @32 int
+  in_rate:    number; // @36 int
+  in_samples: number; // @40 int
+  out_fmt:    number; // @44 int
+}
+
+export const SIZEOF_SwrInfo = 48;
+export const ALIGNOF_SwrInfo = 8;
+export const OFFSETS_SwrInfo = {
+  pool: 0,
+  ctx: 4,
+  in_layout: 8,
+  in_fmt: 32,
+  in_rate: 36,
+  in_samples: 40,
+  out_fmt: 44,
+} as const;
+
+export function readSwrInfo(buffer: ArrayBufferLike, offset = 0): SwrInfo {
+  const view = new DataView(buffer, offset, SIZEOF_SwrInfo);
+  return {
+    pool: view.getUint32(0, true),
+    ctx: view.getUint32(4, true),
+    in_layout: view.getInt32(8, true),
+    in_fmt: view.getInt32(32, true),
+    in_rate: view.getInt32(36, true),
+    in_samples: view.getInt32(40, true),
+    out_fmt: view.getInt32(44, true),
   };
 }
 

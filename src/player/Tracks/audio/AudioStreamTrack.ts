@@ -11,6 +11,7 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
     private workletNode?: AudioWorkletNode;
     private enabled = true;
     private volume = 1;
+    private technicalLatency = 0;
 
     public startTime: number = 0;
 
@@ -19,10 +20,11 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
         this.audioContext = new AudioContext({ sampleRate });
         this.gain = this.audioContext.createGain();
         this.gain.connect(this.audioContext.destination);
+        this.audioContext.suspend();
     }
 
-    latency(): number {
-        return 0;
+    latency(currentTime: number): number {
+        return currentTime - (this.technicalLatency + this.audioContext.currentTime)
     }
 
     /** Must be awaited before the first WriteData call. */
@@ -37,7 +39,7 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
         this.workletNode.connect(this.gain);
     }
 
-    public async writeData(frame: AudioData | WorkerAudioDataInit): Promise<void> {
+    public async writeData(frame: AudioData | WorkerAudioDataInit, time: number): Promise<void> {
         if (!this.workletNode)
             return;
 
@@ -49,11 +51,13 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
         this.workletNode?.port.postMessage(frame, frame.transfer as Transferable[]);
     }
 
-    public async intent(intent: Intent, _time: number) {
+    public async intent(intent: Intent, time: number) {
+        this.technicalLatency = time - this.audioContext.currentTime;
         if (intent === Intent.Play) {
             await this.audioContext.resume();
             this.workletNode?.port.postMessage({ kind: "play" });
         } else if (intent === Intent.Pause) {
+            await this.audioContext.suspend();
             this.workletNode?.port.postMessage({ kind: "pause" });
         } else if (intent === Intent.Seek) {
             this.workletNode?.port.postMessage({ kind: "flush" });

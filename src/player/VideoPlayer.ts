@@ -19,7 +19,7 @@ import SubtitleTextTrack from "./Tracks/subtitles/SubtitleTextTrack";
 import SubtitleASSTrack from "./Tracks/subtitles/SubtitleASSTrack";
 import SubtitleBitmapTrack from "./Tracks/subtitles/SubtitleBitmapTrack";
 import QuickPostmessage from "./quickMessage/QuickMessage";
-import { Intent } from "./types";
+import { HasData, Intent } from "./types";
 import RTCSeeker from "./seeker/rtcSeeker.worker";
 
 export class VideoPlayer2 {
@@ -58,7 +58,6 @@ export class VideoPlayer2 {
 
     // Status
     private initDone = false;
-    private dataRequested: boolean = false;
     private endOfFile = false;
 
     // Events    
@@ -155,6 +154,10 @@ export class VideoPlayer2 {
                 if (this.endOfFile && intent && this.duration <= this.mediaTime) {
                     this.callIntent(Intent.Seek, 0);
                     await this.seek(0);
+                    this.callIntent(Intent.Play, this.mediaTime);
+                    this.play();
+                    try { this.video.play(); } catch { }
+                    this.controls.setPlayback(intent);
                     return intent;
                 }
                 if (intent) {
@@ -425,10 +428,10 @@ export class VideoPlayer2 {
     }
 
     private async requestData() {
-        if (this.dataRequested) return;
-        this.dataRequested = true;
+        const lastTime = performance.now();
         const data = await this.workerEventer2.postMessageAndWait({ kind: "requestData" }, "dataAnswer");
 
+        console.timeStamp("Request Data", lastTime, performance.now(), "Request Data", "Video Player", "secondary-dark");
         if (data.status === RequestDataStatus.ERR) {
             console.error("Handle random error from ffmpeg");
             return;
@@ -443,31 +446,49 @@ export class VideoPlayer2 {
             //     // TODO but probably wont be seperately decoded
             // }
         }
-
-        this.dataRequested = false;
     }
 
     private async timeLoop() {
-        const stub = () => new Promise(resolve => setTimeout(resolve, 0));
+        const stub = () => new Promise<void>(resolve => {
+            if (!this.paused)
+                console.timeStamp("Time Stump", performance.now(), undefined, "Time Stump", "Video Player", "secondary-light");
+            setTimeout(resolve, 0);
+        });
         let lastTime = performance.now();
+        let feedBufferPromise: Promise<void> | null = null;
+        let isFeedingDone = true;
         while (true) {
             const diff = performance.now() - lastTime;
+            console.timeStamp("Time Loop", lastTime, lastTime + diff, "Time Loop", "Video Player", "primary-light");
             lastTime = performance.now();
 
-            if (this.initDone && !this.endOfFile && !this.seeking)
-                this.feedBuffers();
-
+            if (this.initDone && !this.endOfFile && !this.seeking && isFeedingDone) {
+                feedBufferPromise = this.feedBuffers()?.then(() => { isFeedingDone = true; }) ?? null;
+                isFeedingDone = !!!feedBufferPromise;
+            }
 
             if ((this.paused && !this.stepFrame) || this.seeking) {
                 await stub();
                 continue;
             }
 
-            if (!this.hasDataToWrite()) {
-                await stub();
+            const hasData = this.hasDataToWrite();
+            if (hasData === HasData.False && (!this.endOfFile && !isFeedingDone)) {
+                await (feedBufferPromise ?? stub());
+                continue;
             }
 
             this.mediaTime = Math.max(0, Math.min(this.mediaTime + diff, this.duration));
+
+            // Allow time to flow first
+            if (hasData === HasData.TrueButNeedToForwardTimeFirst) {
+                // We cant use Promise.resolve() here since this doesnt
+                // let the JS loop execute much and we end up just spinning
+                // the main thread for nothing
+                await stub();
+                // await (feedBufferPromise ?? stub());
+                continue;
+            }
 
             while (await this.renderData() && !this.stepFrame) { };
             this.updateTime();
@@ -481,32 +502,39 @@ export class VideoPlayer2 {
 
     private feedBuffers() {
         if (this.activeVideoStream >= 0 && this.videoFrameBuffer.length < 16) {
-            this.requestData();
-        } else if(this.activeAudioStream >= 0 && this.audioFrameBuffer.length < 16) {
-            this.requestData();
+            return this.requestData();
+        } else if (this.activeAudioStream >= 0 && this.audioFrameBuffer.length < 16) {
+            return this.requestData();
         }
+        return null;
     }
 
-    private hasDataToWrite() {
+    private hasDataToWrite(): HasData {
         const videoStream = this.videoRenderer.get(this.activeVideoStream);
         const audioStream = this.audioRenderer.get(this.activeAudioStream);
 
+        let timeBy1000 = this.mediaTime / 1000;
+
         if (this.videoFrameBuffer[0] instanceof VideoFrame && videoStream) {
             const frame = this.videoFrameBuffer[0];
-            if (frame.timestamp / 1000 <= this.mediaTime - (videoStream.latency?.() ?? 0) + videoStream.startTime) {
-                return true;
+            if (frame.timestamp / 1000 <= this.mediaTime - (videoStream.latency?.(timeBy1000) ?? 0) + videoStream.startTime) {
+                return HasData.True;
+            } else {
+                return HasData.TrueButNeedToForwardTimeFirst;
             }
         }
 
         if (this.audioFrameBuffer[0] && audioStream) {
             const frame = this.audioFrameBuffer[0];
             const { timestamp } = audioTime(frame);
-            if (timestamp / 1000 <= this.mediaTime - (audioStream.latency?.() ?? 0) + audioStream.startTime) {
-                return true;
+            if (timestamp / 1000 <= this.mediaTime - (audioStream.latency?.(timeBy1000) ?? 0) + audioStream.startTime) {
+                return HasData.True;
+            } else {
+                return HasData.TrueButNeedToForwardTimeFirst;
             }
         }
 
-        return false;
+        return HasData.False;
     }
 
 
@@ -516,10 +544,11 @@ export class VideoPlayer2 {
         const audioStream = this.audioRenderer.get(this.activeAudioStream);
         const subtitleStream = this.subtitleRenderer.get(this.activeSubtitleStream);
         let renderedAFrame = false;
+        let timeBy1000 = this.mediaTime / 1000;
 
         if (this.videoFrameBuffer[0] instanceof VideoFrame && videoStream) {
             let frame = this.videoFrameBuffer[0];
-            if (frame.timestamp / 1000 <= this.mediaTime - (videoStream.latency?.() ?? 0) + videoStream.startTime) {
+            if (frame.timestamp / 1000 <= this.mediaTime - (videoStream.latency?.(timeBy1000) ?? 0) + videoStream.startTime) {
                 frame = this.videoFrameBuffer.shift()!;
                 if ((subtitleStream as SubtitleASSTrack | undefined)?.setColorSpace && frame.colorSpace.matrix) {
                     await (subtitleStream as SubtitleASSTrack).setColorSpace(webYCbCrMap[frame.colorSpace.matrix]);
@@ -543,7 +572,7 @@ export class VideoPlayer2 {
         if (this.audioFrameBuffer[0] && audioStream) {
             let frame = this.audioFrameBuffer[0];
             const { timestamp } = audioTime(frame);
-            if (timestamp / 1000 <= this.mediaTime - (audioStream.latency?.() ?? 0) + audioStream.startTime) {
+            if (timestamp / 1000 <= this.mediaTime - (audioStream.latency?.(timeBy1000) ?? 0) + audioStream.startTime) {
                 frame = this.audioFrameBuffer.shift()!;
                 const promise = audioStream.writeData(frame, this.mediaTime);
                 promise.then(() => {
@@ -615,12 +644,13 @@ export class VideoPlayer2 {
         this.controls.setDuration(duration);
         this.controls.updateCurrentTime(currentTime);
 
-        this.video.currentTime = duration;
+        this.video.currentTime = currentTime;
     }
 
     private async seek(time: number, force: boolean = false) {
         if (this.seeking) return;
         this.mediaTime = time;
+        let timeBy1000 = time / 1000;
         this.seeking = true;
         this.paused = true;
         this.controls.setPlayback(false);
@@ -630,14 +660,14 @@ export class VideoPlayer2 {
         const subtitleStream = this.subtitleRenderer.get(this.activeSubtitleStream);
         if (this.activeVideoStream !== -1 && !force) {
             if (this.videoFrameBuffer.some(f => f
-                && f.timestamp / 1000 <= time
-                && (f.timestamp + f.duration!) / 1000 > time)) {
+                && f.timestamp <= timeBy1000
+                && f.timestamp + f.duration! > timeBy1000)) {
 
                 console.log("Its your lucky day. You can fast seek!");
 
-                await videoStream?.intent(Intent.Seek, time);
-                await audioStream?.intent(Intent.Seek, time);
-                await subtitleStream?.intent(Intent.Seek, time);
+                await videoStream?.intent(Intent.Seek, timeBy1000);
+                await audioStream?.intent(Intent.Seek, timeBy1000);
+                await subtitleStream?.intent(Intent.Seek, timeBy1000);
                 this.seeking = false;
                 this.controls.setLoadingState(false);
                 return;
@@ -648,15 +678,15 @@ export class VideoPlayer2 {
             if (this.audioFrameBuffer.some(f => {
                 if (f === null) return false;
                 const { timestamp, duration } = audioTime(f);
-                return timestamp / 1000 <= time
-                    && (timestamp + duration!) / 1000 > time;
+                return timestamp <= timeBy1000
+                    && timestamp + duration! > timeBy1000;
             })) {
 
                 console.log("Its your lucky day. You can fast seek!");
 
-                await videoStream?.intent(Intent.Seek, time);
-                await audioStream?.intent(Intent.Seek, time);
-                await subtitleStream?.intent(Intent.Seek, time);
+                await videoStream?.intent(Intent.Seek, timeBy1000);
+                await audioStream?.intent(Intent.Seek, timeBy1000);
+                await subtitleStream?.intent(Intent.Seek, timeBy1000);
                 this.seeking = false;
                 this.controls.setLoadingState(false);
                 return;
@@ -676,9 +706,9 @@ export class VideoPlayer2 {
         this.audioFrameBuffer.length = 0;
 
         //const subtitleStream = this.videoRenderer.get(this.activeVideoStream);
-        await videoStream?.intent(Intent.Seek, time);
-        await audioStream?.intent(Intent.Seek, time);
-        await subtitleStream?.intent(Intent.Seek, time);
+        await videoStream?.intent(Intent.Seek, timeBy1000);
+        await audioStream?.intent(Intent.Seek, timeBy1000);
+        await subtitleStream?.intent(Intent.Seek, timeBy1000);
 
         console.debug("Seeking finishing at", performance.now());
         if (status.status !== 0) {
@@ -688,18 +718,21 @@ export class VideoPlayer2 {
 
         let seekedTime: number | undefined = undefined;
         if (this.activeVideoStream !== -1) {
-            while (this.videoFrameBuffer.length === 0)
+            while (this.videoFrameBuffer.length === 0 && !this.endOfFile)
                 await this.requestData();
-            seekedTime = this.videoFrameBuffer[0].timestamp / 1000;
-            const stream = this.videoRenderer.get(this.activeVideoStream);
-            if (stream)
-                await stream.writeData(this.videoFrameBuffer[0].clone());
+            if (!this.endOfFile) {                
+                seekedTime = this.videoFrameBuffer[0].timestamp / 1000;
+                const stream = this.videoRenderer.get(this.activeVideoStream);
+                if (stream)
+                    await stream.writeData(this.videoFrameBuffer[0].clone());
+            }
         }
         else if (this.activeAudioStream !== -1) {
-            while (this.audioFrameBuffer.length === 0)
+            while (this.audioFrameBuffer.length === 0 && !this.endOfFile)
                 await this.requestData();
 
-            seekedTime = this.audioFrameBuffer[0].timestamp / 1000;
+            if(!this.endOfFile)
+                seekedTime = this.audioFrameBuffer[0].timestamp / 1000;
         }
 
         const newTime = await timePromise;
@@ -788,9 +821,10 @@ export class VideoPlayer2 {
         const audioStream = this.audioRenderer.get(this.activeAudioStream);
         const subtitleStream = this.subtitleRenderer.get(this.activeSubtitleStream);
 
-        videoStream?.intent(Intent.Play, this.mediaTime);
-        audioStream?.intent(Intent.Play, this.mediaTime);
-        subtitleStream?.intent(Intent.Play, this.mediaTime);
+        let timeBy1000 = this.mediaTime / 1000;
+        videoStream?.intent(Intent.Play, timeBy1000);
+        audioStream?.intent(Intent.Play, timeBy1000);
+        subtitleStream?.intent(Intent.Play, timeBy1000);
     }
 
     public pause(hackTime?: number) {
@@ -803,9 +837,10 @@ export class VideoPlayer2 {
         const audioStream = this.audioRenderer.get(this.activeAudioStream);
         const subtitleStream = this.subtitleRenderer.get(this.activeSubtitleStream);
 
-        videoStream?.intent(Intent.Pause, this.mediaTime);
-        audioStream?.intent(Intent.Pause, this.mediaTime);
-        subtitleStream?.intent(Intent.Pause, this.mediaTime);
+        let timeBy1000 = this.mediaTime / 1000;
+        videoStream?.intent(Intent.Pause, timeBy1000);
+        audioStream?.intent(Intent.Pause, timeBy1000);
+        subtitleStream?.intent(Intent.Pause, timeBy1000);
     }
 
     /** External seek in milliseconds. Resolves when the seek completes. */

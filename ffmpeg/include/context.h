@@ -145,16 +145,32 @@ typedef struct {
 } ReturnType;
 
 typedef struct {
+  AVBufferPool *pool;
+  SwsContext *ctx;
+  int in_fmt;
+  int in_width;
+  int in_height;
+  int out_fmt;
+} SwsInfo;
+
+typedef struct {
+  AVBufferPool *pool;
+  SwrContext *ctx;
+  AVChannelLayout in_layout;
+  int in_fmt;
+  int in_rate;
+  int in_samples;
+  int out_fmt;
+} SwrInfo;
+
+typedef struct {
   const enum AVPixelFormat *supported_pix_fmts;
   int thread_count;
   AVFormatContext *fmt_ctx;
   AVCodecContext **codecs;
-  SwsContext **sws_ctx;
-  int *sws_in_fmt;
-  SwrContext **swr_ctx;
-  int *swr_in_fmt;
-  int *swr_in_rate;
-  AVChannelLayout *swr_in_layout;
+  SwsInfo **sws_info;
+  SwrInfo **swr_info;
+  
   uint32_t nb_streams;
   /* An array of nb_streams signaling if a stream is supported or not */
   int32_t *stream_support;

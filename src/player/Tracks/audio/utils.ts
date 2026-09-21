@@ -15,3 +15,6 @@ export function GetAudioTrackCtor(): new () => MediaStreamTrackWrapper<AudioData
     //else
         return AudioStreamTrack;
 }
+
+// i KEEP FORGETTING
+// https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API/Basic_concepts_behind_Web_Audio_API#planar_versus_interleaved_buffers

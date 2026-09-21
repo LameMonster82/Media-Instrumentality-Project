@@ -93,19 +93,15 @@
          4 |   int thread_count
          8 |   AVFormatContext * fmt_ctx
         12 |   AVCodecContext ** codecs
-        16 |   SwsContext ** sws_ctx
-        20 |   int * sws_in_fmt
-        24 |   SwrContext ** swr_ctx
-        28 |   int * swr_in_fmt
-        32 |   int * swr_in_rate
-        36 |   AVChannelLayout * swr_in_layout
-        40 |   uint32_t nb_streams
-        44 |   int32_t * stream_support
-        48 |   uint32_t report_timestamp
-        52 |   int64_t * last_ts_js
-        56 |   int64_t * last_dur_js
-        60 |   ReturnType * data_return
-           | [sizeof=64, align=4]
+        16 |   SwsInfo ** sws_info
+        20 |   SwrInfo ** swr_info
+        24 |   uint32_t nb_streams
+        28 |   int32_t * stream_support
+        32 |   uint32_t report_timestamp
+        36 |   int64_t * last_ts_js
+        40 |   int64_t * last_dur_js
+        44 |   ReturnType * data_return
+           | [sizeof=48, align=4]
 
 *** Dumping AST Record Layout
          0 | ReturnType
@@ -523,6 +519,16 @@
            | [sizeof=12, align=4]
 
 *** Dumping AST Record Layout
+         0 | SwsInfo
+         0 |   AVBufferPool * pool
+         4 |   SwsContext * ctx
+         8 |   int in_fmt
+        12 |   int in_width
+        16 |   int in_height
+        20 |   int out_fmt
+           | [sizeof=24, align=4]
+
+*** Dumping AST Record Layout
          0 | struct AVFrame
          0 |   uint8_t *[8] data
         32 |   int[8] linesize
@@ -577,34 +583,6 @@
            | [sizeof=296, align=8]
 
 *** Dumping AST Record Layout
-         0 | struct SwsContext
-         0 |   const AVClass * av_class
-         4 |   void * opaque
-         8 |   unsigned int flags
-        16 |   double[2] scaler_params
-        32 |   int threads
-        36 |   SwsDither dither
-        40 |   SwsAlphaBlend alpha_blend
-        44 |   int gamma_flag
-        48 |   int src_w
-        52 |   int src_h
-        56 |   int dst_w
-        60 |   int dst_h
-        64 |   int src_format
-        68 |   int dst_format
-        72 |   int src_range
-        76 |   int dst_range
-        80 |   int src_v_chr_pos
-        84 |   int src_h_chr_pos
-        88 |   int dst_v_chr_pos
-        92 |   int dst_h_chr_pos
-        96 |   int intent
-       100 |   SwsScaler scaler
-       104 |   SwsScaler scaler_sub
-       108 |   SwsBackend backends
-           | [sizeof=112, align=8]
-
-*** Dumping AST Record Layout
          0 | VideoFrame
          0 |   int32_t width
          4 |   int32_t height
@@ -631,6 +609,23 @@
        164 |   int buffer_size
        168 |   AVFrame * frame
            | [sizeof=176, align=8]
+
+*** Dumping AST Record Layout
+         0 | SwrInfo
+         0 |   AVBufferPool * pool
+         4 |   SwrContext * ctx
+         8 |   struct AVChannelLayout in_layout
+         8 |     enum AVChannelOrder order
+        12 |     int nb_channels
+        16 |     union AVChannelLayout::(unnamed at /opt/include/libavutil/channel_layout.h:336:5) u
+        16 |       uint64_t mask
+        16 |       AVChannelCustom * map
+        24 |     void * opaque
+        32 |   int in_fmt
+        36 |   int in_rate
+        40 |   int in_samples
+        44 |   int out_fmt
+           | [sizeof=48, align=8]
 
 *** Dumping AST Record Layout
          0 | AudioFrame
@@ -814,6 +809,48 @@
          0 |   uint64_t i
          0 |   double f
            | [sizeof=8, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVIOContext
+         0 |   const AVClass * av_class
+         4 |   unsigned char * buffer
+         8 |   int buffer_size
+        12 |   unsigned char * buf_ptr
+        16 |   unsigned char * buf_end
+        20 |   void * opaque
+        24 |   int (*)(void *, uint8_t *, int) read_packet
+        28 |   int (*)(void *, const uint8_t *, int) write_packet
+        32 |   int64_t (*)(void *, int64_t, int) seek
+        40 |   int64_t pos
+        48 |   int eof_reached
+        52 |   int error
+        56 |   int write_flag
+        60 |   int max_packet_size
+        64 |   int min_packet_size
+        68 |   unsigned long checksum
+        72 |   unsigned char * checksum_ptr
+        76 |   unsigned long (*)(unsigned long, const uint8_t *, unsigned int) update_checksum
+        80 |   int (*)(void *, int) read_pause
+        84 |   int64_t (*)(void *, int, int64_t, int) read_seek
+        88 |   int seekable
+        92 |   int direct
+        96 |   const char * protocol_whitelist
+       100 |   const char * protocol_blacklist
+       104 |   int (*)(void *, const uint8_t *, int, enum AVIODataMarkerType, int64_t) write_data_type
+       108 |   int ignore_boundary_point
+       112 |   unsigned char * buf_ptr_max
+       120 |   int64_t bytes_read
+       128 |   int64_t bytes_written
+           | [sizeof=136, align=8]
+
+*** Dumping AST Record Layout
+         0 | struct AVComponentDescriptor
+         0 |   int plane
+         4 |   int step
+         8 |   int offset
+        12 |   int shift
+        16 |   int depth
+           | [sizeof=20, align=4]
 
 *** Dumping AST Record Layout
          0 | struct SwsContext

@@ -32,16 +32,7 @@ export class AudioStreamTrackNative implements MediaStreamTrackWrapper<AudioData
         if (audioData instanceof AudioData) {
             audio = audioData;
         } else {
-            audioData.transfer = audioData.transferable as ArrayBuffer[];
-            audio = new AudioData({
-                format: audioData.format,
-                numberOfChannels: audioData.numberOfChannels,
-                numberOfFrames: audioData.numberOfFrames,
-                sampleRate: audioData.sampleRate,
-                timestamp: audioData.timestamp,
-                data: audioData.data[0],
-                transfer: audioData.data.map(d => d.buffer)
-            });
+            audio = this.audioDataInitToAudioData(audioData);
         }
 
         await this.writer.write(audio);
@@ -60,4 +51,29 @@ export class AudioStreamTrackNative implements MediaStreamTrackWrapper<AudioData
         this.writer.close();
     }
 
+    audioDataInitToAudioData(data: WorkerAudioDataInit) {
+        const outData = new Float32Array(data.data.map(d => d.length).reduce((a, b) => a + b));
+        let format = data.format;
+
+        if (data.format.endsWith("-planar")) {
+            debugger
+        } else {
+            let offset = 0;
+            for (const buffer of data.data) {
+                outData.set(buffer, offset);
+                offset += buffer.length;
+            }
+            format = format + "-planar" as AudioSampleFormat;
+        }
+
+        return new AudioData({
+            format: format,
+            numberOfChannels: data.numberOfChannels,
+            numberOfFrames: data.numberOfFrames,
+            sampleRate: data.sampleRate,
+            timestamp: data.timestamp,
+            data: outData,
+            transfer: [outData.buffer]
+        });
+    }
 }

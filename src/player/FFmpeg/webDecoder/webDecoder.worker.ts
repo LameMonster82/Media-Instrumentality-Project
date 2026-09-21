@@ -17,6 +17,7 @@ class WebDecoder {
     private eventer: QuickPostmessage<AllWebDecoderWorkerMessages>;
     private outputChannel: MessagePort;
     private isVideo: boolean;
+    private hasVideoKeyFrame: boolean = false;
     private decoder?: VideoDecoder | AudioDecoder;
     private decoderConfig?: VideoDecoderConfig | AudioDecoderConfig;
 
@@ -176,6 +177,11 @@ class WebDecoder {
     }
 
     submitVideoPacket(info: WorkerDecodePacket) {
+        if (!info.isKey && !this.hasVideoKeyFrame)
+            return this.eventer.postMessage({ kind: "freePtr", type: MediaType.RESULT_PACKET, ptr: info.ptr });
+        else
+            this.hasVideoKeyFrame = true;
+
         const data = this.isMemoryOver2Gib() ? this.sliceMemory(Number(info.ptr), Number(info.ptr) + info.size) : this.viewMemory(Number(info.ptr), info.size);
         const encodedChunk = new EncodedVideoChunk({
             data: data,
@@ -206,6 +212,7 @@ class WebDecoder {
     initializeVideo(config: VideoDecoderConfig): VideoDecoder {
         const decoder = new VideoDecoder({ error: this.error.bind(this), output: this.output.bind(this) });
         decoder.configure(config);
+        this.hasVideoKeyFrame = false;
 
         return decoder;
     }

@@ -20,8 +20,8 @@ export class AudioStreamTrack2 implements MediaStreamTrackWrapper<AudioData | Wo
         this.track.contentHint = "music";
     }
 
-    latency(): number {
-        return this.audioContext.outputLatency * 100;
+    latency(currentTime: number): number {
+        return 0;
     }
 
     public async writeData(frame: AudioData | WorkerAudioDataInit): Promise<void> {

@@ -3,3 +3,9 @@ export enum Intent {
   Pause,
   Seek
 }
+
+export enum HasData {
+  False,
+  True,
+  TrueButNeedToForwardTimeFirst
+}

@@ -5,7 +5,7 @@ export interface MediaStreamTrackWrapper<T> {
     startTime: number;
     initialize?(): Promise<void>;
     enable(enable: boolean): void;
-    latency?(): number;
+    latency?(currentTime: number): number;
     getTrack?(): MediaStreamTrack | null;
     setVolume?(volume: number): void;
     writeData(data: T, currentTime?: number): Promise<void>;

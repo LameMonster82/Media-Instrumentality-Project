@@ -2,7 +2,7 @@ import { workletName, type AllAudioWorkletMessages, type WorkerAudioDataInit } f
 
 class AudioStreamTrackWorker extends AudioWorkletProcessor implements AudioWorkletProcessorImpl {
     // eslint-disable-next-line @typescript-eslint/naming-convention
-    private static readonly MAX_PENDING = 4; // tunable; was effectively 2
+    private static readonly MAX_PENDING = 4096;
     private current: WorkerAudioDataInit | null = null;
     private pending: WorkerAudioDataInit[] = [];
     private offset = 0;
@@ -16,8 +16,20 @@ class AudioStreamTrackWorker extends AudioWorkletProcessor implements AudioWorkl
         this.port.onmessage = (e: MessageEvent<AllAudioWorkletMessages>) => {
             if (e.data.kind === "audioDataInit") {
                 this.pending.push(e.data);
-                if (this.pending.length > AudioStreamTrackWorker.MAX_PENDING)
-                    this.pending.splice(0, this.pending.length - AudioStreamTrackWorker.MAX_PENDING);
+
+                if (this.pending.length < 2)
+                    return;
+
+                let samples = 0;
+                for (let i = 0; i < this.pending.length; i++) {
+                    const data = this.pending[i];
+                    samples += data.data[0].length;
+                    if (samples >= AudioStreamTrackWorker.MAX_PENDING) {
+                        const count = this.pending.length - i + 1;
+                        this.pending.splice(0, count);
+                        break;
+                    }
+                }
             } else {
                 switch (e.data.kind) {
                     case "flush": this.current = null; this.pending.length = 0; this.offset = 0; break;

@@ -14,6 +14,7 @@
 #include "context.h"
 #include "io.h"
 #include "libavcodec/codec_id.h"
+#include "libavutil/buffer.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/dict.h"
 #include "libavutil/error.h"
@@ -105,12 +106,8 @@ FileInfo *open_file() {
   g_ctx.nb_streams = g_ctx.fmt_ctx->nb_streams;
   g_ctx.stream_support =  calloc(g_ctx.nb_streams, sizeof(int32_t));
   g_ctx.codecs =          calloc(g_ctx.nb_streams, sizeof(AVCodecContext *));
-  g_ctx.sws_ctx =         calloc(g_ctx.nb_streams, sizeof(SwsContext *));
-  g_ctx.sws_in_fmt =      calloc(g_ctx.nb_streams, sizeof(int));
-  g_ctx.swr_ctx =         calloc(g_ctx.nb_streams, sizeof(SwrContext *));
-  g_ctx.swr_in_fmt =      calloc(g_ctx.nb_streams, sizeof(int));
-  g_ctx.swr_in_rate =     calloc(g_ctx.nb_streams, sizeof(int));
-  g_ctx.swr_in_layout =   calloc(g_ctx.nb_streams, sizeof(AVChannelLayout));
+  g_ctx.sws_info =        calloc(g_ctx.nb_streams, sizeof(SwsInfo *));
+  g_ctx.swr_info =        calloc(g_ctx.nb_streams, sizeof(SwrInfo *));
   g_ctx.last_ts_js =      calloc(g_ctx.nb_streams, sizeof(int64_t));
   g_ctx.last_dur_js =     calloc(g_ctx.nb_streams, sizeof(int64_t));
 
@@ -274,17 +271,28 @@ VideoFrame *decode_frame(AVFrame *frame, int stream_index,
 
   AVFrame *out_frame = frame;
   if (best_fmt != out_frame->format) {
-    if (g_ctx.sws_ctx[stream_index] &&
-        g_ctx.sws_in_fmt[stream_index] != frame->format) {
-      sws_free_context(&g_ctx.sws_ctx[stream_index]);
+    SwsInfo *info = g_ctx.sws_info[stream_index];
+
+    if (info &&
+        (info->in_fmt != frame->format ||
+        info->in_width != frame->width ||
+        info->in_height != frame->height)) {
+          
+      sws_free_context(&info->ctx);
+      av_buffer_pool_uninit(&info->pool);
     }
-    if (!g_ctx.sws_ctx[stream_index]) {
-      ret = init_sws(&g_ctx.sws_ctx[stream_index], frame, best_fmt);
-      g_ctx.sws_in_fmt[stream_index] = frame->format;
+
+    if (!info) {
+      info = calloc(1, sizeof(SwsInfo));
+      g_ctx.sws_info[stream_index] = info;
+    }
+
+    if (!info->ctx) {
+      ret = init_sws(info, frame, best_fmt);
     }
 
     // Create a new frame
-    out_frame = sws_frame(g_ctx.sws_ctx[stream_index], frame, best_fmt);
+    out_frame = sws_frame(info, frame, best_fmt);
     av_frame_free(&frame);
   }
 
@@ -357,22 +365,27 @@ AudioFrame *decode_audio(AVFrame *frame, int stream_index, double ts_js) {
   enum AVSampleFormat out_format = AV_SAMPLE_FMT_FLTP;
   AVFrame *out_frame = frame;
   if (frame->format != out_format) {
-    if (g_ctx.swr_ctx[stream_index] &&
-        (g_ctx.swr_in_fmt[stream_index] != frame->format ||
-         g_ctx.swr_in_rate[stream_index] != frame->sample_rate ||
-         av_channel_layout_compare(&g_ctx.swr_in_layout[stream_index],
+    SwrInfo *info = g_ctx.swr_info[stream_index];
+
+    if (info &&
+        (info->in_fmt != frame->format || info->in_rate != frame->sample_rate ||
+         info->in_samples < frame->nb_samples ||
+         av_channel_layout_compare(&info->in_layout,
                                    &frame->ch_layout))) {
-      swr_free(&g_ctx.swr_ctx[stream_index]);
-    }
-    if (!g_ctx.swr_ctx[stream_index]) {
-      init_swr(&g_ctx.swr_ctx[stream_index], frame, out_format);
-      g_ctx.swr_in_fmt[stream_index] = frame->format;
-      g_ctx.swr_in_rate[stream_index] = frame->sample_rate;
-      av_channel_layout_copy(&g_ctx.swr_in_layout[stream_index],
-                             &frame->ch_layout);
+      swr_free(&info->ctx);
+      av_buffer_pool_uninit(&info->pool);
     }
 
-    out_frame = swr_frame(g_ctx.swr_ctx[stream_index], frame, out_format);
+    if (!info) {
+      info = calloc(1, sizeof(SwrInfo));
+      g_ctx.swr_info[stream_index] = info;
+    }
+
+    if (!info->ctx) {
+      init_swr(info, frame, out_format);
+    }
+
+    out_frame = swr_frame(info, frame, out_format);
     av_frame_free(&frame);
   }
 
@@ -499,9 +512,12 @@ int seek_to(double time) {
   return 0;
 }
 
+static AVPacket *packet = NULL;
 EMSCRIPTEN_KEEPALIVE
 ReturnType *poke_for_data() {
-  AVPacket *packet = av_packet_alloc();
+  if (packet == NULL)
+    packet = av_packet_alloc();
+
   int ret = av_read_frame(g_ctx.fmt_ctx, packet);
 
   g_ctx.data_return->video_frame = 0;
@@ -514,7 +530,7 @@ ReturnType *poke_for_data() {
 
   if (ret < 0) {
     fprintf(stderr, "Error reading frame: %s\n", av_err2str(ret));
-    av_packet_free(&packet);
+    av_packet_unref(packet);
     if (ret == AVERROR_EOF) {
       g_ctx.data_return->status = RESULT_EOF;
     }
@@ -560,17 +576,18 @@ ReturnType *poke_for_data() {
     g_ctx.data_return->status = RESULT_RAW_PACKET;
     g_ctx.data_return->type = RESULT_PACKET;
     g_ctx.data_return->packet = packet;
+    packet = NULL;
     return g_ctx.data_return;
   } else if (g_ctx.stream_support[stream_index] == STREAM_NO_SUPPORT ||
              g_ctx.stream_support[stream_index] ==
                  STREAM_UNUSED) { // Dont care about this stream rn
     g_ctx.data_return->status = RESULT_ERR_SKIP;
-    av_packet_free(&packet);
+    av_packet_unref(packet);
     return g_ctx.data_return;
   }
 
   if (g_ctx.codecs[stream_index] == NULL) {
-    av_packet_free(&packet);
+    av_packet_unref(packet);
     g_ctx.data_return->status = RESULT_ERR_SKIP;
     return g_ctx.data_return;
   }
@@ -584,14 +601,14 @@ ReturnType *poke_for_data() {
     ret = avcodec_decode_subtitle2(ctx, &sub, &got_sub, packet);
     if (ret < 0) {
       fprintf(stderr, "Error decoding subtitle: %s\n", av_err2str(ret));
-      av_packet_free(&packet);
+      av_packet_unref(packet);
       g_ctx.data_return->status = RESULT_ERR_GENERIC;
       return g_ctx.data_return;
     }
 
     if (got_sub == 0) {
       fprintf(stdout, "Got no subtitle. hmmm: %s\n", av_err2str(ret));
-      av_packet_free(&packet);
+      av_packet_unref(packet);
       g_ctx.data_return->status = RESULT_NEED_MORE;
       return g_ctx.data_return;
     }
@@ -641,7 +658,7 @@ ReturnType *poke_for_data() {
     }
 
     avsubtitle_free(&sub);
-    av_packet_free(&packet);
+    av_packet_unref(packet);
     return g_ctx.data_return;
   }
 
@@ -651,7 +668,7 @@ ReturnType *poke_for_data() {
   ret = avcodec_send_packet(ctx, packet);
   if (ret < 0) {
     fprintf(stderr, "Error sending packet to decoder: %s\n", av_err2str(ret));
-    av_packet_free(&packet);
+    av_packet_unref(packet);
     g_ctx.data_return->status = RESULT_ERR_GENERIC;
     return g_ctx.data_return;
   }
@@ -701,11 +718,11 @@ ReturnType *poke_for_data() {
     }
 
     sent_sw_frame = 1;
-    av_packet_free(&packet);
+    av_packet_unref(packet);
     send_sw_frame(g_ctx.data_return);
   }
 
-  av_packet_free(&packet);
+  av_packet_unref(packet);
 
   // g_ctx.data_return->status = RESULT_UNREACHABLE;
 

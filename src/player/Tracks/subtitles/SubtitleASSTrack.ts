@@ -84,7 +84,7 @@ export default class SubtitleASSTrack implements CanvasTrackWrapper<VTTCueArgs, 
             expectedDisplayTime: performance.now(),
             width: this.jassub._videoWidth,
             height: this.jassub._videoHeight,
-            mediaTime: time
+            mediaTime: time * 1000
         })
     }
 

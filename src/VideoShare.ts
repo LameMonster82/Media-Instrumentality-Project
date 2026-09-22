@@ -38,6 +38,7 @@ export class VideoShare {
     private readonly lobbyStatus = el<HTMLDivElement>("lobbyStatus");
     private readonly membersIcon = el<HTMLElement>("members");
     private readonly membersCount = el<HTMLSpanElement>("membersCount");
+    private readonly bandwithDisplay = el<HTMLSpanElement>("bandwithDisplay");
     private readonly inviteLink = el<HTMLAnchorElement>("inviteLink");
     private readonly stage = el<HTMLElement>("stage");
     private readonly playerContainer = el<HTMLDivElement>("playerContainer");
@@ -71,6 +72,7 @@ export class VideoShare {
         this.lobbyStatus.classList.add(styles.lobbyStatus);
         this.membersIcon.classList.add(styles.members);
         this.membersCount.classList.add(styles.membersCount);
+        this.bandwithDisplay.classList.add(styles.membersCount);
         this.inviteLink.classList.add(styles.inviteLink);
         this.stage.classList.add(styles.stage);
         this.playerContainer.classList.add(styles.playerContainer);
@@ -220,6 +222,7 @@ export class VideoShare {
         this.playerContainer.replaceChildren(current.getVideo());
         this.showPlayer();
 
+        this.readBandswith(current);
         void this.syncInitialState(instance, current);
     }
 
@@ -263,6 +266,13 @@ export class VideoShare {
             current.play(status.time);
         } else {
             current.pause(status.time);
+        }
+    }
+
+    private async readBandswith(current: VideoPlayer2) {
+        while (true) {
+            this.bandwithDisplay.textContent = `${current.getBandwith()} MB/s`;
+            await new Promise(r => setTimeout(r, 100));
         }
     }
 

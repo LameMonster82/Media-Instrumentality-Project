@@ -136,6 +136,10 @@ export class VideoPlayer2 {
         this.initMedia().then(this.timeLoop.bind(this));
     }
 
+    public getBandwith(): number {
+        return this.rtcSeeker?.bandwidth ?? -1;
+    }
+
     private callIntent(intent: Intent, time: number, selfPromise: Promise<unknown>) {
         let whatToDo: ((time: number, selfPromise: Promise<unknown>) => void)[] | undefined;
         if (intent === Intent.Play)

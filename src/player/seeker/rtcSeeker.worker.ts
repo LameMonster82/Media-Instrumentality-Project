@@ -32,6 +32,8 @@ export default class RTCSeeker {
     private currentSeek: Promise<void> | undefined;
     private channelPromise: Promise<void>;
 
+    public bandwidth: number = 0;
+
 
     constructor(data: RtcSeekableWorkerInit, info: RTCConfiguration, port: MessagePort, bufferSize: number = 32 * 1024 * 1024) {
         this.connection = new RTCPeerConnection(info);
@@ -148,13 +150,18 @@ export default class RTCSeeker {
 
             if (size > 0 && !this.aboutToSeek) {
                 const { promise, resolve } = Promise.withResolvers<void>();
+                const now = performance.now();
+                let amountGot = 0;
                 this.dataChannel!.onmessage = (data: MessageEvent<ArrayBuffer | RTCDataRequesttAnswered>) => {
                     if (data.data instanceof ArrayBuffer) {
+                        amountGot += data.data.byteLength;
                         this.ringBuffer.append(new Uint8Array(data.data));
                     } else {
                         // "requestAnswered" arrives as a JSON string.
                         resolve();
                     }
+
+                    this.bandwidth = (amountGot / 1048576) / ((performance.now() - now) / 1000)
                 };
 
                 this.dataChannel!.send(JSON.stringify({
@@ -163,7 +170,6 @@ export default class RTCSeeker {
                     size: size
                 } as RTCRequestData));
 
-                const now = performance.now();
                 await promise;
                 if(DEBUG)
                     console.timeStamp("RTC Download", now, performance.now(), "Seeker", "Video Player", "tertiary-dark");
@@ -181,7 +187,6 @@ export default class RTCSeeker {
         }
     }
 
-    private repeatPenalty = 1;
     async copyDataToWorker(size: number, ptr: bigint, offset: number) {
         const now = performance.now();
         if (!this.dataChannel || offset >= await this.totalFileSize) {
@@ -190,7 +195,7 @@ export default class RTCSeeker {
             return;
         }
 
-        await this.currentSeek;
+        //await this.currentSeek;
         //if (this.dataChannel.onmessage) {
         //    const { promise, resolve } = Promise.withResolvers<void>();
         //    this.ringBufferFilledNotify = resolve;
@@ -200,14 +205,11 @@ export default class RTCSeeker {
         const currentData = this.ringBuffer.getUsedSpace();
         const availableData = this.ringBufferFileCursor + currentData;
         if (offset < this.ringBufferFileCursor || offset >= availableData) {
-            this.repeatPenalty *= 2;
-            console.warn("No data. Penalty at ", this.repeatPenalty, "with ", size, ptr, offset);
-            await new Promise(r => setTimeout(r, this.repeatPenalty));
+            console.warn("No data from RTC to copy :/");
+            await new Promise(r => setTimeout(r, 0));
             this.eventer.bufferCopied(0n);
             return;
         }
-
-        this.repeatPenalty = 1;
 
         const slightOffset = offset - this.ringBufferFileCursor;
         const allowedSize = Math.min(currentData - slightOffset, size);

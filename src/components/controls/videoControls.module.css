@@ -70,8 +70,6 @@
         border-radius: 12px;
         background: rgb(24, 24, 24);
         position: relative;
-
-
     }
 
     .iconLoading {
@@ -122,7 +120,8 @@
     -moz-appearance: none;
     text-align: unset;
 
-    &::-webkit-slider-thumb {
+    &::-webkit-slider-thumb, 
+    &::-moz-range-thumb {
         border-radius: 3px;
         width: 8px;
         height: 24px;
@@ -184,7 +183,8 @@
     width: 0px;
     opacity: 0;
 
-    &::-webkit-slider-thumb {
+    &::-webkit-slider-thumb,
+    &::-moz-range-thumb {
         border-radius: 3px;
         width: 8px;
         height: 24px;

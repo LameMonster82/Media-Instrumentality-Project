@@ -18,6 +18,7 @@ export interface CanvasTrackWrapper<T, U> {
     enable(enable: boolean): Promise<void>;
     createCanvas(callback: () => HTMLCanvasElement): void;
     getCanvas(): HTMLCanvasElement | null;
+    setColorSpace?(colorSpace: "RGB" | "BT709" | "BT601"): Promise<void>;
     writeData(data: T): Promise<void>;
     display(data: U): Promise<void>;
     intent(intent: Intent, time: number): Promise<void>;

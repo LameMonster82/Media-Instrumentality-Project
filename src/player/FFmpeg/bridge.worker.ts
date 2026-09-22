@@ -21,6 +21,8 @@ import SharedSeekerControls from "../seeker/sharedControl";
 // https://github.com/microsoft/TypeScript/issues/14877
 // eslint-disable-next-line no-var
 declare var self: FFmpegWorker;
+// eslint-disable-next-line @typescript-eslint/naming-convention
+const DEBUG = import.meta.env.DEV;
 
 type MainModule = MainModule32 | MainModule64;
 type Stream = {
@@ -84,18 +86,21 @@ class FFmpegBridge {
         });
 
         this.videoEventer2.addEventListener("seekTo", async (data) => {
-            console.debug("FFmpeg got the seeker at", performance.now());
+            const now = performance.now();
             const promises = [];
             for (const index in this.streams) {
                 const stream = this.streams[index];
                 const promise = stream?.eventer?.postMessageAndWait({ kind: "reinit" }, "initStatus");
                 promises.push(promise);
             }
-            console.debug("Starting ffmpeg seek", performance.now());
+            const promise = Promise.all(promises).then(() => {
+                if (DEBUG)
+                    console.timeStamp("Decoder Reinit", now, performance.now(), "FFmpeg", "Video Player", "tertiary-light");
+            })
             const ret = this.module!._seek_to(data.time / 1000);
-            console.debug("Seek finished with status:", ret, "at", performance.now(), "Now waiting for web decoders");
-            await Promise.all(promises);
-            console.debug("Web decoders flushed. We good!", performance.now());
+            if (DEBUG)
+                console.timeStamp("Seek", now, performance.now(), "FFmpeg", "Video Player", "tertiary-light");
+            await promise;
             this.videoEventer2.postMessage({ kind: "seekStatus", status: ret });
         });
     }
@@ -302,20 +307,23 @@ class FFmpegBridge {
     }
 
     public readPacket(ptr: bigint, size: number) {
+        const now = performance.now();
         ptr = BigInt(ptr);
         if (ptr <= 0n) return 0;
 
         let written = 0n;
         while (written === 0n) {
             written = this.seekerEventer.requestData(ptr, this.fileOffset, BigInt(size));
-            if (written === 0n)
+            if (written === 0n && DEBUG)
                 console.warn("Seeker wrote 0 bytes. Smth may not be ok");
         }
         //console.log("done read", ptr);
+        if(DEBUG)
+            console.timeStamp("Read", now, performance.now(), "FFmpeg", "Video Player", "tertiary-light");
 
         if (written === -1n) {
-            console.error("EOF :/");
-            this.videoEventer2.postEvent("endOfFile");
+            console.debug("EOF :/");
+            //this.videoEventer2.postEvent("endOfFile");
             return 0;
         }
 
@@ -324,6 +332,7 @@ class FFmpegBridge {
     };
 
     public seekPacket(offset: bigint, whence: number): bigint {
+        const now = performance.now();
         offset = BigInt(offset);
         if (whence === 1) { // SEEK_CUR
             if (offset > 0x7fffffffffffffffn - this.fileOffset)
@@ -343,8 +352,12 @@ class FFmpegBridge {
         }
 
         const result = this.seekerEventer.seek(offset);
+        if(DEBUG)
+            console.timeStamp("Seek", now, performance.now(), "FFmpeg", "Video Player", "tertiary-light");
+
         if (!result) {
             console.error("Seeker returned bad when tried to seek. Horrors!!!!");
+            return -1n;
         }
         //console.log("done offset to", offset);
         this.fileOffset = offset;

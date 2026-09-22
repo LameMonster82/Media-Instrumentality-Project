@@ -86,7 +86,7 @@ RUN emmake make -j$(nproc) && emmake make install
 # ---- Stage: libdav1d (AV1, meson build) ---------------------------
 FROM base AS libdav1d-wasm32
 ENV DAV1D_VERSION=1.5.4
-ADD https://code.videolan.org/videolan/dav1d/-/archive/${DAV1D_VERSION}/dav1d-${DAV1D_VERSION}.tar.gz /tmp/dav1d.tar.gz
+ADD https://github.com/videolan/dav1d/archive/refs/tags/${DAV1D_VERSION}.tar.gz /tmp/dav1d.tar.gz
 RUN mkdir -p /src && tar -xzf /tmp/dav1d.tar.gz -C /src --strip-components=1 && rm /tmp/dav1d.tar.gz
 WORKDIR /src
 # meson cross file for Emscripten

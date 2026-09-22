@@ -1,9 +1,10 @@
-import type { RTCDataRequesttAnswered, RTCRequestData } from "./types";
+import type { RTCDataRequestCancel, RTCDataRequesttAnswered, RTCRequestData } from "./types";
 
 export default class RTCHost {
     private file: File;
     private connection: RTCPeerConnection;
     private channel: RTCDataChannel | undefined;
+    private requestCancel: boolean = false;
     public otherID: string;
 
 
@@ -52,8 +53,15 @@ export default class RTCHost {
     private async handleMessages(ev: MessageEvent<string>) {
         if (typeof ev.data !== "string") return;
         if (!this.channel) return;
-        const data = JSON.parse(ev.data) as RTCRequestData;
+        const data = JSON.parse(ev.data) as RTCRequestData | RTCDataRequestCancel;
+
+        if (data.kind === "requestCancel") {
+            this.requestCancel = true;
+            return;
+        }
         if (data.kind !== "requestData") return;
+        
+        this.requestCancel = false;
 
         // Stay well under the negotiated max message size. A message of
         // exactly maxMessageSize is rejected by some browsers because of SCTP
@@ -64,14 +72,19 @@ export default class RTCHost {
         let remaining = data.size;
         let readOffset = data.offset;
 
-        while (remaining > 0) {
+        while (remaining > 0 && !this.requestCancel) {
             const size = Math.min(maxChunk, remaining, this.file.size - readOffset);
             if (size <= 0) break;
 
             // Backpressure: let the send buffer drain before sending more.
             while (this.channel.bufferedAmount > 8 * 1024 * 1024) {
+                if (this.requestCancel)
+                    break;
+
                 await new Promise(r => setTimeout(r, 0));
             }
+            if (this.requestCancel)
+                break;
 
             const blob = this.file.slice(readOffset, readOffset + size);
             try {

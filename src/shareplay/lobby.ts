@@ -22,6 +22,10 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
     private onSeekCallbacks: IntentCallback[] = [];
     private onUserCountCallbacks: ((count: number) => void)[] = [];
     private intentStatusProvider: IntentStatusProvider | undefined;
+    private queueOfIncomingIntents: WebSocketIntent[] = [];
+    private handlingIncomingIntent: boolean = false;
+    private queueOfOutgoingIntents: { intent: Intent; time: number; selfPromise: Promise<unknown>}[] = [];
+    private handlingOutgoingIntent: boolean = false;
 
     private intentConfirmer: ((intent: Intent) => void) | undefined;
 
@@ -30,8 +34,8 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
     private seekerChannel: MessageChannel | undefined;
     private seekOfferReceived = false;
 
-    private seeking = false;
-    private onSeekStateCallbacks: ((seeking: boolean) => void)[] = [];
+    private loadingState = false;
+    private onLoadingStateCallback: ((seeking: boolean) => void)[] = [];
     private onHostLeftCallbacks: (() => void)[] = [];
     private onErrorCallbacks: ((message: string) => void)[] = [];
 
@@ -51,22 +55,9 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
         });
 
         this.onEvent("intent", async (data) => {
-            if (data.intent === Intent.Seek) {
-                this.setSeeking(true);
-            } else if (this.seeking) {
-                // A seek is being synchronized; ignore playback intents until it
-                // completes. Confirm anyway so the sender does not hang.
-                this.send({ kind: "intentConfirm", intent: data.intent } as WebSocketConfirmIntent);
-                return;
-            }
-
-            const callbacks = this.intentCallbacksFor(data.intent);
-            await Promise.all(callbacks.map((callback) => callback(data.time)));
-            this.send({ kind: "intentConfirm", intent: data.intent } as WebSocketConfirmIntent);
-
-            if (data.intent === Intent.Seek) {
-                this.setSeeking(false);
-            }
+            if (!this.handlingIncomingIntent)
+                this.handleIntentResponse(data);
+            else this.queueOfIncomingIntents.push(data);
         });
 
         this.onEvent("intentConfirm", (data) => {
@@ -151,6 +142,23 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
         this.send({ kind: "intentStatus", intent: status.intent, time: status.time } as WebSocketIntentStatus);
     }
 
+    private async handleIntentResponse(data: WebSocketIntent) {
+        this.handlingIncomingIntent = true;
+        this.setLoadingState(true);
+
+        const callbacks = this.intentCallbacksFor(data.intent);
+        await Promise.all(callbacks.map((callback) => callback(data.time)));
+        this.send({ kind: "intentConfirm", intent: data.intent } as WebSocketConfirmIntent);
+
+        await this.waitForEvent("intentConfirmGlobal");
+        this.setLoadingState(false);
+
+        this.handlingIncomingIntent = false;
+        const nextEvent = this.queueOfIncomingIntents.shift();
+        if (nextEvent)
+            this.handleIntentResponse(nextEvent);
+    }
+
     private intentCallbacksFor(intent: Intent): IntentCallback[] {
         switch (intent) {
             case Intent.Play: return this.onPlayCallbacks;
@@ -160,10 +168,10 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
         }
     }
 
-    private setSeeking(seeking: boolean): void {
-        if (this.seeking === seeking) return;
-        this.seeking = seeking;
-        for (const callback of this.onSeekStateCallbacks) callback(seeking);
+    private setLoadingState(loading: boolean): void {
+        if (this.loadingState === loading) return;
+        this.loadingState = loading;
+        for (const callback of this.onLoadingStateCallback) callback(loading);
     }
 
     async connect(): Promise<string> {
@@ -220,12 +228,15 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
         return this.seekerChannel.port2;
     }
 
-    public async intent(intent: Intent, time: number): Promise<void> {
-        if (this.seeking) return;
+    public async intent(intent: Intent, time: number, selfPromise: Promise<unknown>): Promise<void> {
+        if (this.handlingOutgoingIntent) {
+            this.queueOfOutgoingIntents.push({ intent, time, selfPromise });
+            return;
+        }
+        this.handlingOutgoingIntent = true;
+        this.setLoadingState(true);
 
-        if (intent === Intent.Seek) this.setSeeking(true);
-
-        this.send({ kind: "intent", intent, time } as WebSocketIntent);
+        this.send({ kind: "intent", intent, time });
 
         const others = this.userCount - 1;
         if (others > 0) {
@@ -241,7 +252,15 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
             this.intentConfirmer = undefined;
         }
 
-        if (intent === Intent.Seek) this.setSeeking(false);
+        await selfPromise;
+        this.send({ kind: "intentConfirmGlobal" });
+
+        this.setLoadingState(false);
+
+        this.handlingOutgoingIntent = false;
+        const nextEvent = this.queueOfOutgoingIntents.shift();
+        if (nextEvent)
+            this.intent(nextEvent.intent, nextEvent.time, nextEvent.selfPromise);
     }
 
     public onPlay(callback: IntentCallback): void {
@@ -264,8 +283,8 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
         this.intentStatusProvider = provider;
     }
 
-    public onSeekStateChange(callback: (seeking: boolean) => void): void {
-        this.onSeekStateCallbacks.push(callback);
+    public onLoadingStateChange(callback: (loading: boolean) => void): void {
+        this.onLoadingStateCallback.push(callback);
     }
 
     public onHostLeft(callback: () => void): void {

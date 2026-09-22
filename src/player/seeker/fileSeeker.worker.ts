@@ -33,7 +33,7 @@ class FileSeeker {
 
     async copyDataToWorker(size: number, ptr: bigint, offset: number) {
         if (offset >= this.file.size) {
-            console.warn("End of file reached");
+            console.debug("End of file reached");
             this.eventer.bufferCopied(-1n);
             return;
         }
@@ -49,7 +49,7 @@ class FileSeeker {
 
         this.uIntArray.set(data, Number(ptr));
 
-        this.eventer.bufferCopied(BigInt(size));
+        this.eventer.bufferCopied(BigInt(data.byteLength));
     }
 
     destroy() {

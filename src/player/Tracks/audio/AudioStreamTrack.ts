@@ -39,7 +39,7 @@ export class AudioStreamTrack implements MediaStreamTrackWrapper<AudioData | Wor
         this.workletNode.connect(this.gain);
     }
 
-    public async writeData(frame: AudioData | WorkerAudioDataInit, time: number): Promise<void> {
+    public async writeData(frame: AudioData | WorkerAudioDataInit): Promise<void> {
         if (!this.workletNode)
             return;
 

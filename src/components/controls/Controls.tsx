@@ -64,6 +64,7 @@ export default class MediaControls {
     // a double seek where firefox may (with the not dropped input)
     // trigger a second input and do an unintentional seek.
     private itIsToBeSeeked: boolean = false;
+    private isProgressRanged: boolean = false;
 
     constructor(
         videoElement: HTMLVideoElement, // Passed so controls handle fullscreen/cursor
@@ -183,8 +184,12 @@ export default class MediaControls {
             // this.callbacks.onPlayPause(false);
         });
 
+        this.progressBarRange.addEventListener('input', (e) => { 
+            this.isProgressRanged = true;
+        });
 
-        this.progressBarRange.addEventListener('input', (e) => {
+
+        this.progressBarRange.addEventListener('change', (e) => {
             e.stopPropagation();
             if (this.itIsToBeSeeked) return;
             this.itIsToBeSeeked = true;
@@ -192,11 +197,13 @@ export default class MediaControls {
                 this.updateCurrentTime(this.progressBarRange.valueAsNumber);
                 this.callbacks.onSeekTo(this.progressBarRange.valueAsNumber);
                 this.itIsToBeSeeked = false;
+                this.isProgressRanged = false;
             }, 0);
         });
 
         this.progressBarRange.addEventListener('mouseup', (e) => {
             e.stopPropagation();
+            this.isProgressRanged = false;
             //this.callbacks.onSeekTo(this.progressBarRange.valueAsNumber);
         });
 
@@ -290,6 +297,8 @@ export default class MediaControls {
         this.playButton.style.display = loading ? "none" : '';
 
         this.progressBarRange.disabled = loading;
+        if (loading)
+            this.isProgressRanged = false;
 
         this.videoSelect.disabled = loading || this.videoStreams.length <= 1;
         this.audioSelect.disabled = loading || this.audioStreams.length <= 1;
@@ -389,7 +398,7 @@ export default class MediaControls {
                 <div title={ chapter.title ?? chapter.id.toString() }
                     onclick={ () => this.callbacks.onSeekTo(time) }
                     class={ styles.chapter }
-                    style={ { left: `calc(${time} / var(--video-duration) * 100% - 1px)` } }
+                    style={ { left: `min(calc(${time} / var(--video-duration) * 100% - 1px), 100%)` } }
                 />);
         }
     }
@@ -402,8 +411,8 @@ export default class MediaControls {
         }
 
         if (this.lastProgress !== progressTime) {
-            if(!this.itIsToBeSeeked)
-                this.progressBarRange.value = progressTime === 0 ? '--:--' : time.toString();
+            if(!this.itIsToBeSeeked && !this.isProgressRanged)
+                this.progressBarRange.value = time.toString();
             this.lastProgress = progressTime;
 
             const progress = progressTime.toPrecision(4);

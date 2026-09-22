@@ -6,6 +6,7 @@ export enum Intent {
 
 export enum HasData {
   False,
-  True,
-  TrueButNeedToForwardTimeFirst
+  OldBuffers,
+  TrueWithingBuffer,
+  TrueButFirstFrameInFuture,
 }

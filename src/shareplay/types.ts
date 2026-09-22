@@ -11,6 +11,9 @@ export interface WebSocketConfirmIntent extends WebSocketMessage {
     kind: "intentConfirm";
     intent: Intent;
 }
+export interface WebSocketConfirmGlobalIntent extends WebSocketMessage {
+    kind: "intentConfirmGlobal";
+}
 
 export interface WebSocketIntentRequest extends WebSocketMessage {
     kind: "intentRequest";
@@ -55,7 +58,7 @@ export interface WebSocketNewHost extends WebSocketMessage {
 }
 
 export type AllWebsocketMessages = WebSocketRequestRoomCount | WebSocketRoomCount | WebSocketRoomInfo | WebSocketPing | WebSocketPong | WebSocketRequestRoomInfo | WebSocketError | WebSocketHostLeft |
-    WebSocketIntent | WebSocketConfirmIntent | WebSocketIntentRequest | WebSocketIntentStatus | WebSocketRequestSeeker | WebSocketNewHost |
+    WebSocketIntent | WebSocketConfirmIntent | WebSocketConfirmGlobalIntent  | WebSocketIntentRequest | WebSocketIntentStatus | WebSocketRequestSeeker | WebSocketNewHost |
     WebSocketOfferSDP | WebSocketAnswerSDP | WebSocketICECandidates;
 
 export type MessageByKind<T extends WebSocketMessage> = T["kind"];
@@ -68,6 +71,10 @@ export interface RTCRequestData extends WebSocketMessage {
     kind: "requestData";
     offset: number;
     size: number;
+}
+
+export interface RTCDataRequestCancel extends WebSocketMessage {
+    kind: "requestCancel";
 }
 
 export interface RTCDataRequesttAnswered extends WebSocketMessage {

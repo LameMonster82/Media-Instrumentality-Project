@@ -45,31 +45,15 @@ class WebDecoder {
         this.isVideo = config.isVideo;
 
         if (!config.justToCombineStuff) {
-            try {
-                if (this.isVideo) {
-                    if (!config.videoConfig)
-                        throw Error("Trying to init Video decoder without a video config");
+            this.decoderConfig = config.isVideo ? config.videoConfig : config.audioConfig;
+            this.reinit();
+        } else {
+            this.eventer.postMessage({ kind: "initStatus", status: 0 });
 
-                    this.decoder = this.initializeVideo(config.videoConfig);
-                    this.decoderConfig = config.videoConfig;
-                } else {
-                    if (!config.audioConfig)
-                        throw Error("Trying to init Audio decoder without an audio config");
-
-                    this.decoder = this.initializeAudio(config.audioConfig);
-                    this.decoderConfig = config.audioConfig;
-                }
-            } catch (_e) {
-                this.eventer.postMessage({ kind: "initStatus", status: -1 });
-                throw Error("Error while initing decoders");
-            }
         }
-
-        this.eventer.postMessage({ kind: "initStatus", status: 0 });
     }
 
     private reinit() {
-        console.debug("Web decoder reinit at", performance.now());
         if (!this.decoderConfig) {
             return this.eventer.postMessage({ kind: "initStatus", status: 0 });
         }
@@ -82,7 +66,7 @@ class WebDecoder {
             }
             this.eventer.postMessage({ kind: "initStatus", status: 0 });
         } catch {
-            this.eventer.postMessage({ kind: "initStatus", status: 0 });
+            this.eventer.postMessage({ kind: "initStatus", status: -1 });
         }
     }
 
@@ -266,9 +250,8 @@ class WebDecoder {
     }
 
     private error(error: DOMException) {
-        console.error(`Decoder reported an error:`, error);
-        if (this.decoder?.state !== "configured")
-            this.eventer.postEvent("fatalError");
+        console.error(`Decoder reported an error: "${error}" We will try to reinit.`);
+        this.reinit();
     }
 
     private sliceMemory(start: number, end: number): Uint8Array<ArrayBuffer> {

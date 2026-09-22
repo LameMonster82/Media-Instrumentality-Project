@@ -54,7 +54,6 @@ void main(){ o = texture(t, uv); }`;
         const { format, type } = frameToGLEnumFormat(videoFrame.format!, this.gl);
         this.gl.texImage2D(this.gl.TEXTURE_2D, 0, format, videoFrame.codedWidth, videoFrame.codedHeight,0, format, type, videoFrame);
         this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4);
-        videoFrame.close();
     }
 
     public updateViewport() {

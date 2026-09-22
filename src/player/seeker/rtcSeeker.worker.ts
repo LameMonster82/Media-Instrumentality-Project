@@ -2,8 +2,11 @@
 
 import type { RtcSeekableWorkerInit } from "./types";
 import RingBuffer from "./ringBuffer";
-import type { WebSocketOfferSDP, WebSocketAnswerSDP, WebSocketICECandidates, RTCRequestData, WebSocketRequestSeeker, RTCDataRequesttAnswered } from "@/shareplay/types";
+import type { WebSocketOfferSDP, WebSocketAnswerSDP, WebSocketICECandidates, RTCRequestData, WebSocketRequestSeeker, RTCDataRequesttAnswered, RTCDataRequestCancel } from "@/shareplay/types";
 import SharedSeekerControls, { Operation, type RequestEvent, type SeekEvent } from "./sharedControl";
+
+// eslint-disable-next-line @typescript-eslint/naming-convention
+const DEBUG = import.meta.env.DEV;
 
 export default class RTCSeeker {
     private connection: RTCPeerConnection;
@@ -24,6 +27,7 @@ export default class RTCSeeker {
     private eventer: SharedSeekerControls;
 
     private destroyed = false;
+    private aboutToSeek = false;
     private currentDataResolver: ((data: null) => void) | undefined;
     private currentSeek: Promise<void> | undefined;
     private channelPromise: Promise<void>;
@@ -98,21 +102,24 @@ export default class RTCSeeker {
         if (data.type === Operation.REQUEST_DATA) {
             await this.copyDataToWorker(Number(data.size), data.ptr, Number(data.offset));
         } else if (data.type === Operation.SEEK) {
+            this.aboutToSeek = true;
             await this.currentSeek;
             this.currentSeek = this.seek(Number(data.offset));
+            this.aboutToSeek = false;
+            await this.currentSeek;
         }
     }
 
     public async seek(offset: number = 0) {
         if (this.destroyed) return;
 
-        console.debug("seeking to", offset);
-
-        const fileSize = await this.totalFileSize;
-        if (offset >= fileSize)
-            debugger;
+        const now = performance.now();
 
         if (this.dataChannel?.onmessage) {
+            this.dataChannel!.send(JSON.stringify({
+                kind: "requestCancel",
+            } as RTCDataRequestCancel));
+
             const { promise, resolve } = Promise.withResolvers<void>();
             this.ringBufferDoneNotify = resolve;
             await promise;
@@ -122,7 +129,8 @@ export default class RTCSeeker {
         this.ringBufferFileCursor = offset;
         this.ringBufferSpaceNotify();
 
-        console.debug("seek done");
+        if(DEBUG)
+            console.timeStamp("RTC Seek", now, performance.now(), "Seeker", "Video Player", "tertiary-dark");
 
         this.eventer.seekDone();
     }
@@ -138,7 +146,7 @@ export default class RTCSeeker {
 
             const size = Math.min(totalUnreadSpace, freeSpace);
 
-            if (size > 0) {
+            if (size > 0 && !this.aboutToSeek) {
                 const { promise, resolve } = Promise.withResolvers<void>();
                 this.dataChannel!.onmessage = (data: MessageEvent<ArrayBuffer | RTCDataRequesttAnswered>) => {
                     if (data.data instanceof ArrayBuffer) {
@@ -155,13 +163,16 @@ export default class RTCSeeker {
                     size: size
                 } as RTCRequestData));
 
+                const now = performance.now();
                 await promise;
+                if(DEBUG)
+                    console.timeStamp("RTC Download", now, performance.now(), "Seeker", "Video Player", "tertiary-dark");
 
                 this.dataChannel!.onmessage = null;
                 this.ringBufferFilledNotify();
                 this.ringBufferDoneNotify();
 
-                await new Promise(r => setTimeout(r, 16));
+                await new Promise(r => setTimeout(r, 0));
             } else {
                 const { promise, resolve } = Promise.withResolvers<void>();
                 this.ringBufferSpaceNotify = resolve;
@@ -172,8 +183,9 @@ export default class RTCSeeker {
 
     private repeatPenalty = 1;
     async copyDataToWorker(size: number, ptr: bigint, offset: number) {
+        const now = performance.now();
         if (!this.dataChannel || offset >= await this.totalFileSize) {
-            console.warn("End of file reached");
+            console.debug("End of file reached");
             this.eventer.bufferCopied(-1n);
             return;
         }
@@ -189,7 +201,7 @@ export default class RTCSeeker {
         const availableData = this.ringBufferFileCursor + currentData;
         if (offset < this.ringBufferFileCursor || offset >= availableData) {
             this.repeatPenalty *= 2;
-            console.warn("No data. Penalty at ", this.repeatPenalty);
+            console.warn("No data. Penalty at ", this.repeatPenalty, "with ", size, ptr, offset);
             await new Promise(r => setTimeout(r, this.repeatPenalty));
             this.eventer.bufferCopied(0n);
             return;
@@ -208,6 +220,9 @@ export default class RTCSeeker {
 
         const writtenData = this.ringBuffer.copyTo(this.uIntArray, Number(ptr), allowedSize, slightOffset);
         this.eventer.bufferCopied(BigInt(writtenData));
+
+        if(DEBUG)
+            console.timeStamp("RTC Copy out", now, performance.now(), "Seeker", "Video Player", "tertiary-dark");
 
         this.ringBufferSpaceNotify();
         this.ringBufferFileCursor = offset + writtenData;

@@ -13,6 +13,8 @@ declare var RuntimeExports: {
      * @param {Object=} opts
      */
     cwrap: (ident: any, returnType?: string | undefined, argTypes?: any[] | undefined, opts?: Object | undefined) => any;
+    /** @type {any} */
+    wasmMemory: any;
     /**
      * @param {number} ptr
      * @param {string} type

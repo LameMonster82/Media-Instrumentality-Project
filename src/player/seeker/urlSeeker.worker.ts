@@ -40,11 +40,13 @@ class UrlSeeker {
         if (data.type === Operation.REQUEST_DATA) {
             this.copyDataToWorker(Number(data.size), data.ptr, Number(data.offset));
         } else if (data.type === Operation.SEEK) {
-            this.lastSeek = this.seek(Number(data.offset));
+            const { promise, resolve } = Promise.withResolvers<void>();
+            this.lastSeek = this.seek(Number(data.offset), this.url, false, resolve);
+            await promise;
         }
     }
 
-    public async seek(offset: number = 0, url: string = this.url, emptyBuffer: boolean = true): Promise<void> {
+    public async seek(offset: number = 0, url: string = this.url, emptyBuffer: boolean = true, resolveDone?: () => void): Promise<void> {
         if (this.destroyed) return;
 
         if (this.url === url &&
@@ -53,6 +55,7 @@ class UrlSeeker {
 
             // We seeked in already available data. We will be ok
             this.eventer.seekDone();
+            resolveDone?.();
             return;
         }
 
@@ -80,6 +83,7 @@ class UrlSeeker {
             if (!response.ok || !response.body) {
                 console.error(`Failed to fetch requested resouce: ${headers.Range} on url ${url}`);
                 this.eventer.seekDone();
+                resolveDone?.();
                 return;
             }
 
@@ -108,12 +112,16 @@ class UrlSeeker {
         } catch (e) {
             console.error(`Failed to fetch your asset ${this.url}. The reason being is that`, e);
             this.eventer.seekDone();
+            resolveDone?.();
             return;
         }
 
         this.eventer.setFileSize(BigInt(this.totalFileSize));
 
-        if (this.destroyed) return;
+        if (this.destroyed) {
+            resolveDone?.();
+            return;
+        }
 
         this.ringBufferFileCursor = this.fetchOffset;
 
@@ -158,6 +166,7 @@ class UrlSeeker {
 
         this.fetchAbortController = new AbortController();
         const reader = response.body.pipeTo(this.fetchStream, { signal: this.fetchAbortController.signal });
+        resolveDone?.();
         await reader;
         if (this.destroyed) return;
 
@@ -167,7 +176,7 @@ class UrlSeeker {
 
     copyDataToWorker(size: number, ptr: bigint, offset: number) {
         if (offset >= this.totalFileSize) {
-            console.warn("End of file reached");
+            console.debug("End of file reached");
             this.eventer.bufferCopied(-1n);
             return;
         }

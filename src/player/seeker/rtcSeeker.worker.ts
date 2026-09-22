@@ -2,24 +2,18 @@
 
 import type { RtcSeekableWorkerInit } from "./types";
 import RingBuffer from "./ringBuffer";
-import type { WebSocketOfferSDP, WebSocketAnswerSDP, WebSocketICECandidates, RTCRequestData, WebSocketRequestSeeker, RTCDataRequesttAnswered, RTCDataRequestCancel } from "@/shareplay/types";
+import { type RTCSeekTo, type RTCSeekAnswer, type RTCAnnounceSpace, HIGH_BUFFER } from "@/shareplay/types";
 import SharedSeekerControls, { Operation, type RequestEvent, type SeekEvent } from "./sharedControl";
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
 const DEBUG = import.meta.env.DEV;
 
 export default class RTCSeeker {
-    private connection: RTCPeerConnection;
-    private port: MessagePort;
-    private dataChannel: RTCDataChannel | undefined;
+    private dataChannel: RTCDataChannel;
 
-    private totalFileSize: Promise<number>;
-    private fileSizeResolve: (fileSize: number) => void;
+    private totalFileSize: number;
 
     private ringBuffer: RingBuffer;
-    private ringBufferSpaceNotify: () => void = () => { };
-    private ringBufferFilledNotify: () => void = () => { };
-    private ringBufferDoneNotify: () => void = () => { };
     private ringBufferFileCursor = 0;
 
     private sharedBuffer: WebAssembly.Memory;
@@ -27,169 +21,84 @@ export default class RTCSeeker {
     private eventer: SharedSeekerControls;
 
     private destroyed = false;
-    private aboutToSeek = false;
-    private currentDataResolver: ((data: null) => void) | undefined;
     private currentSeek: Promise<void> | undefined;
-    private channelPromise: Promise<void>;
-
-    public bandwidth: number = 0;
 
 
-    constructor(data: RtcSeekableWorkerInit, info: RTCConfiguration, port: MessagePort, bufferSize: number = 32 * 1024 * 1024) {
-        this.connection = new RTCPeerConnection(info);
+    private seekResolve: () => void = () => { };
+
+
+    constructor(data: RtcSeekableWorkerInit, bufferSize: number = 32 * 1024 * 1024) {
         this.ringBuffer = new RingBuffer(bufferSize);
 
-        const { promise, resolve } = Promise.withResolvers<number>();
+        this.totalFileSize = data.fileSize;
 
-        this.totalFileSize = promise;
-        this.fileSizeResolve = resolve;
-
-        port.onmessage = this.handlePortMessages.bind(this);
-        this.port = port;
         this.sharedBuffer = data.targetBuffer;
         this.uIntArray = new Uint8Array(data.targetBuffer.buffer);
 
         this.eventer = new SharedSeekerControls(data.atomicBuffers);
-        const { promise: promiseChannel, resolve: resolveChannel } = Promise.withResolvers<void>();
-        this.channelPromise = promiseChannel;
         
-        this.connection.onicecandidate = this.handleICECandidates.bind(this);
-        this.connection.ondatachannel = async (data) => {
-            if (this.dataChannel) return;
-            data.channel.binaryType = "arraybuffer";
-            this.dataChannel = data.channel;
-            
-            this.dataLoop();
-            resolveChannel();
-        };
+        this.dataChannel = data.channel;
+        this.dataChannel.binaryType = "arraybuffer";
+        this.eventer.setFileSize(BigInt(data.fileSize));
         
-        port.postMessage({ kind: "requestSeeker", userId: "" } as WebSocketRequestSeeker);
-
         // It might immediately pump an event
         this.eventer.pumpEvents(this.handleEvents.bind(this));
-    }
 
-    private async handlePortMessages(ev: MessageEvent<WebSocketOfferSDP | WebSocketAnswerSDP | WebSocketICECandidates>) {
-        if (ev.data.kind === "offerSDP") {
-            this.fileSizeResolve(ev.data.fileSize);
-            this.eventer.setFileSize(BigInt(ev.data.fileSize));
-            await this.connection.setRemoteDescription(new RTCSessionDescription(ev.data.sdp));
-
-            const answer = await this.connection.createAnswer();
-            await this.connection.setLocalDescription(answer);
-
-            this.port.postMessage({
-                kind: 'answerSDP',
-                userId: "",
-                sdp: this.connection.localDescription?.toJSON()
-            } as WebSocketAnswerSDP);
-        } else if (ev.data.kind === "answerSDP") {
-            await this.connection.setRemoteDescription(new RTCSessionDescription(ev.data.sdp));
-        } else if (ev.data.kind === "iceCandidates") {
-            await this.connection.addIceCandidate(new RTCIceCandidate(ev.data.candidate));
-        }
-    }
-
-    private handleICECandidates(data: RTCPeerConnectionIceEvent) {
-        if (!data.candidate) return;
-        this.port.postMessage({
-            kind: "iceCandidates",
-            userId: "",
-            candidate: data.candidate.toJSON()
-        } as WebSocketICECandidates);
+        this.dataChannel.onmessage = (data: MessageEvent<ArrayBuffer | string>) => {
+            if (data.data instanceof ArrayBuffer) {
+                this.ringBuffer.append(new Uint8Array(data.data));
+            } else {
+                const msg = JSON.parse(data.data) as RTCSeekAnswer;
+                if (msg.kind === "seekAnswer") this.seekResolve();
+            }
+        };
     }
 
     private async handleEvents(data: RequestEvent | SeekEvent) {
-        await this.channelPromise;
         if (data.type === Operation.REQUEST_DATA) {
             await this.copyDataToWorker(Number(data.size), data.ptr, Number(data.offset));
         } else if (data.type === Operation.SEEK) {
-            this.aboutToSeek = true;
             await this.currentSeek;
             this.currentSeek = this.seek(Number(data.offset));
-            this.aboutToSeek = false;
             await this.currentSeek;
         }
     }
 
     public async seek(offset: number = 0) {
         if (this.destroyed) return;
-
         const now = performance.now();
-
-        if (this.dataChannel?.onmessage) {
-            this.dataChannel!.send(JSON.stringify({
-                kind: "requestCancel",
-            } as RTCDataRequestCancel));
-
-            const { promise, resolve } = Promise.withResolvers<void>();
-            this.ringBufferDoneNotify = resolve;
-            await promise;
+        
+        if (this.dataChannel.readyState !== "open") {
+            const { promise: connectPromise, resolve: connectResolve } = Promise.withResolvers<void>();
+            this.dataChannel.onopen = () => {
+                this.dataChannel.onopen = null;
+                connectResolve();
+            };
+            await connectPromise;
         }
-
+        
+        const { promise, resolve } = Promise.withResolvers<void>();
+        this.seekResolve = resolve;
+        this.dataChannel.send(JSON.stringify({
+            kind: "seekTo",
+            offset,
+            freeSpace: this.ringBuffer.totalSpace
+        } as RTCSeekTo));
+        
+        await promise;
+        
         this.ringBuffer.emptyBuffer();
         this.ringBufferFileCursor = offset;
-        this.ringBufferSpaceNotify();
-
+        
         if(DEBUG)
             console.timeStamp("RTC Seek", now, performance.now(), "Seeker", "Video Player", "tertiary-dark");
-
+        
         this.eventer.seekDone();
     }
-
-    private async dataLoop() {
-        const fileSize = await this.totalFileSize;
-        while (!this.destroyed) {
-            await this.currentSeek;
-            const freeSpace = this.ringBuffer.getFreeSpace();
-            const usedSpace = this.ringBuffer.getUsedSpace();
-            const fileOffset = this.ringBufferFileCursor + usedSpace;
-            const totalUnreadSpace = Math.max(fileSize - fileOffset, 0);
-
-            const size = Math.min(totalUnreadSpace, freeSpace);
-
-            if (size > 0 && !this.aboutToSeek) {
-                const { promise, resolve } = Promise.withResolvers<void>();
-                const now = performance.now();
-                let amountGot = 0;
-                this.dataChannel!.onmessage = (data: MessageEvent<ArrayBuffer | RTCDataRequesttAnswered>) => {
-                    if (data.data instanceof ArrayBuffer) {
-                        amountGot += data.data.byteLength;
-                        this.ringBuffer.append(new Uint8Array(data.data));
-                    } else {
-                        // "requestAnswered" arrives as a JSON string.
-                        resolve();
-                    }
-
-                    this.bandwidth = (amountGot / 1048576) / ((performance.now() - now) / 1000)
-                };
-
-                this.dataChannel!.send(JSON.stringify({
-                    kind: "requestData",
-                    offset: fileOffset,
-                    size: size
-                } as RTCRequestData));
-
-                await promise;
-                if(DEBUG)
-                    console.timeStamp("RTC Download", now, performance.now(), "Seeker", "Video Player", "tertiary-dark");
-
-                this.dataChannel!.onmessage = null;
-                this.ringBufferFilledNotify();
-                this.ringBufferDoneNotify();
-
-                await new Promise(r => setTimeout(r, 0));
-            } else {
-                const { promise, resolve } = Promise.withResolvers<void>();
-                this.ringBufferSpaceNotify = resolve;
-                await promise;
-            }
-        }
-    }
-
+    
     async copyDataToWorker(size: number, ptr: bigint, offset: number) {
         const now = performance.now();
-        if (!this.dataChannel || offset >= await this.totalFileSize) {
+        if (offset >= this.totalFileSize) {
             console.debug("End of file reached");
             this.eventer.bufferCopied(-1n);
             return;
@@ -206,7 +115,7 @@ export default class RTCSeeker {
         const availableData = this.ringBufferFileCursor + currentData;
         if (offset < this.ringBufferFileCursor || offset >= availableData) {
             console.warn("No data from RTC to copy :/");
-            await new Promise(r => setTimeout(r, 0));
+            await new Promise(r => setTimeout(r, 16));
             this.eventer.bufferCopied(0n);
             return;
         }
@@ -226,15 +135,27 @@ export default class RTCSeeker {
         if(DEBUG)
             console.timeStamp("RTC Copy out", now, performance.now(), "Seeker", "Video Player", "tertiary-dark");
 
-        this.ringBufferSpaceNotify();
         this.ringBufferFileCursor = offset + writtenData;
+        this.announceFreeSpace();
+    }
+
+    announceFreeSpace() {
+        this.dataChannel.send(JSON.stringify({
+            kind: "updateFreeSpace",
+            freeSpace: Math.max(this.ringBuffer.getFreeSpace() - HIGH_BUFFER, 0),
+        } as RTCAnnounceSpace))
     }
 
     destroy() {
         this.destroyed = true;
-
-        // If the writer is full, this will force it free
-        // and return when it sees that its destroyed
-        this.ringBufferSpaceNotify();
     }
 }
+
+let seekableStream: RTCSeeker;
+self.onmessage = async (e: MessageEvent<RtcSeekableWorkerInit>) => {
+    switch (e.data.kind) {
+        case "initSeeker": {
+            seekableStream = new RTCSeeker(e.data, e.data.bufferSize);
+        }
+    }
+};

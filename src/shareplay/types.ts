@@ -67,16 +67,34 @@ export type DictionaryWebSocketEvent<T extends WebSocketMessage> = {
     [K in MessageByKind<T>]?: { callback: (data: RespondEventByKind2<T, K>) => void; once: boolean; }[];
 };
 
-export interface RTCRequestData extends WebSocketMessage {
-    kind: "requestData";
+export interface RTCSeekTo extends WebSocketMessage {
+    kind: "seekTo";
     offset: number;
-    size: number;
+    freeSpace: number
 }
 
-export interface RTCDataRequestCancel extends WebSocketMessage {
-    kind: "requestCancel";
+export interface RTCSeekAnswer extends WebSocketMessage {
+    kind: "seekAnswer";
 }
 
-export interface RTCDataRequesttAnswered extends WebSocketMessage {
-    kind: "requestAnswered";
+export interface RTCAnnounceSpace extends WebSocketMessage {
+    kind: "updateFreeSpace";
+    freeSpace: number;
 }
+
+export interface RTCHosterWorkerInit {
+    kind: "init",
+    file: File,
+    channel: RTCDataChannel,
+    maxSize: number,
+}
+
+export interface RTCUpdateMaxMsgSize {
+    kind: "updateMsgSize",
+    maxSize: number,
+}
+
+// eslint-disable-next-line @typescript-eslint/naming-convention
+export const HIGH_BUFFER = 8 * 1024 * 1024;
+// eslint-disable-next-line @typescript-eslint/naming-convention
+export const LOW_BUFFER = 2 * 1024 * 1024;

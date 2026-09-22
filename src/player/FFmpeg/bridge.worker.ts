@@ -10,7 +10,7 @@ import { RequestDataStatus, StreamSupport, type AllVideoWorkerEvents, type AllTa
 import { AVColorPrimarieToColorPrimative, AVColorRangeToColorRange, AVColorSpaceToColorMatrixCoeff, AVColorTransferToTransferChar, AVLogLevel, AVPixelFormat } from "./advancedTypes/AVTypes";
 import getSupportedPixelFormats from "./advancedTypes/supportedPixelFormats";
 import canWasm64 from "./advancedTypes/isWasm64";
-import type { FileSeekableWorkerInit, RtcSeekableWorkerInit, UrlSeekableWorkerInit, WorkerRemoteSoruce } from "../seeker/types";
+import type { FileSeekableWorkerInit, OutsideSource, SeekerWorkerInit, UrlSeekableWorkerInit } from "../seeker/types";
 import type { AllWebDecoderWorkerMessages } from "./webDecoder/types";
 import { MediaType, readFileInfo, readReturnType, ResultStatus, type VideoDecoderConfigStruct, type AudioDecoderConfigStruct, AVSubtitleType, AVMediaType, AVPixelFormatArrayToData } from "./structReader";
 import type { BitmapSubArgs, VTTCueArgs } from "../Tracks/subtitles/types";
@@ -47,7 +47,7 @@ class FFmpegBridge {
     private fileOffset: bigint = 0n;
 
     // File
-    private fileUrl: string | File | WorkerRemoteSoruce = "";
+    private fileUrl: string | File | OutsideSource = "";
 
     // Streams
     private streams: Record<number, Stream> = {};
@@ -118,27 +118,27 @@ class FFmpegBridge {
             this.seekerWorker.postMessage({
                 url: dataInfo.fileSource,
                 atomicBuffers: this.seekerEventer.getBuffer(),
-                fetchBufferSize: this.bufferSize,
+                bufferSize: this.bufferSize,
                 targetBuffer: this.wasmMemory,
-                type: "init"
+                kind: "initSeeker"
             } as UrlSeekableWorkerInit);
         } else if (dataInfo.fileSource instanceof File) {
             this.seekerWorker = fileSeekerWorker({ name: "I read the local file and give data to the ffmpeg thread" });
 
             this.seekerWorker.postMessage({
+                bufferSize: this.bufferSize,
                 file: dataInfo.fileSource,
                 atomicBuffers: this.seekerEventer.getBuffer(),
                 targetBuffer: this.wasmMemory,
-                type: "init"
+                kind: "initSeeker"
             } as FileSeekableWorkerInit);
-        } else if(dataInfo.fileSource.kind === "remoteSource") {
-            self.postMessage({
-                kind: "initRtcSeekr",
-                fileSize: 0,
+        } else if (dataInfo.fileSource.kind === "outsideSource") {
+            this.videoEventer2.postMessage({
+                bufferSize: this.bufferSize,
                 atomicBuffers: this.seekerEventer.getBuffer(),
                 targetBuffer: this.wasmMemory,
-                bufferSize: this.bufferSize,
-            } as RtcSeekableWorkerInit);
+                kind: "initSeeker"
+            } as SeekerWorkerInit);
         } else {
             throw new Error("What? What file source do you want me to use???")
         }

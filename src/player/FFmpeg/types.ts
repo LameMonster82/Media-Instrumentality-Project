@@ -1,12 +1,11 @@
 import type { Dictionary, WorkerPostMessage, WorkerShutdown } from "@/core/types";
-import type { ChapterInfo } from "../Tracks/subtitles old/subtitleStream";
 import type { AVMediaType, FileInfo, MediaType } from "./structReader";
-import type { RtcSeekableWorkerInit, WorkerRemoteSoruce } from "../seeker/types";
+import type { OutsideSource, SeekerWorkerInit } from "../seeker/types";
 
 //#region Main -> FFmpeg Worker
 export interface WorkerInitFFmpeg extends WorkerPostMessage {
     readonly kind: "initFfmpeg";
-    readonly fileSource: string | File | WorkerRemoteSoruce;
+    readonly fileSource: string | File | OutsideSource;
     readonly bufferSize: number;
 }
 
@@ -64,12 +63,6 @@ export interface WorkerPostPort extends WorkerPostMessage {
     readonly kind: "portPost";
     readonly streamIndex: number;
     readonly port: MessagePort;
-}
-
-export interface WorkerChapterInfo extends WorkerPostMessage {
-    readonly kind: "chapterInfo";
-    /** Time in seconds */
-    readonly data: ChapterInfo;
 }
 
 export interface WorkerBitmapSubtitle extends WorkerPostMessage {
@@ -153,7 +146,7 @@ export interface WorkerSeekStatus extends WorkerPostMessage {
     readonly status: number;
 }
 
-export type AllVideoWorkerEvents = WorkerFFmpegInitStatus | WorkerSetTime | WorkerOk | WorkerEndOfFile | WorkerRequestData | WorkerDataAnswer | WorkerSeekTo | WorkerSeekStatus | RtcSeekableWorkerInit;
+export type AllVideoWorkerEvents = WorkerFFmpegInitStatus | WorkerSetTime | WorkerOk | WorkerEndOfFile | WorkerRequestData | WorkerDataAnswer | WorkerSeekTo | WorkerSeekStatus | SeekerWorkerInit;
 
 //#endregion
 

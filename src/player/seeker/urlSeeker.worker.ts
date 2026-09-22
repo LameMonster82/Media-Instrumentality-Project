@@ -215,9 +215,9 @@ class UrlSeeker {
 
 let seekableStream: UrlSeeker;
 self.onmessage = async (e: MessageEvent<UrlSeekableWorkerInit>) => {
-    switch (e.data.type) {
-        case "init": {
-            seekableStream = new UrlSeeker(e.data.url, e.data.targetBuffer, e.data.atomicBuffers, e.data.fetchBufferSize);
+    switch (e.data.kind) {
+        case "initSeeker": {
+            seekableStream = new UrlSeeker(e.data.url, e.data.targetBuffer, e.data.atomicBuffers, e.data.bufferSize);
             await seekableStream.seek();
         }
     }

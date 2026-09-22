@@ -2,6 +2,7 @@ import type { WebSocketPong, WebSocketRequestRoomCount, WebSocketRequestRoomInfo
 import { Intent } from "@/player/types";
 import RTCHost from "./RTCHost";
 import type { AllWebsocketMessages, DictionaryWebSocketEvent, MessageByKind, RespondEventByKind2, WebSocketConfirmIntent, WebSocketICECandidates, WebSocketIntent, WebSocketIntentRequest, WebSocketIntentStatus, WebSocketNewHost, WebSocketOfferSDP, WebSocketRequestSeeker } from "./types";
+import type { WorkerRemoteSoruce } from "@/player/seeker/types";
 
 type IntentCallback = (time: number) => Promise<void>;
 type IntentStatusProvider = () => { intent: Intent; time: number };
@@ -31,7 +32,8 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
 
     private hostingFile: File | null = null;
     private rtcHosts: RTCHost[] = [];
-    private seekerChannel: MessageChannel | undefined;
+    private seekerConnection: RTCPeerConnection | undefined;
+    private seekerFileSize: (size: number) => void = () => {};
     private seekOfferReceived = false;
 
     private loadingState = false;
@@ -78,21 +80,37 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
             await this.handleSeekerRequest(data.userId);
         });
 
-        this.onEvent("offerSDP", (data) => {
+        this.onEvent("offerSDP", async (data) => {
             this.seekOfferReceived = true;
-            this.seekerChannel?.port1.postMessage(data);
+            if (this.seekerConnection) {
+                this.seekerFileSize(data.fileSize);
+
+                await this.seekerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+
+                const answer = await this.seekerConnection.createAnswer();
+                await this.seekerConnection.setLocalDescription(answer);
+
+                this.send({
+                    kind: 'answerSDP',
+                    userId: this.userId,
+                    targetId: this.hostId ?? undefined,
+                    sdp: this.seekerConnection.localDescription?.toJSON()!
+                });
+            }
         });
 
         this.onEvent("answerSDP", async (data) => {
-            if (!this.hostingFile) return;
-            await this.rtcHosts.find((host) => host.otherID === data.userId)?.setSDP(data.sdp);
+            if (this.hostingFile)
+                await this.rtcHosts.find((host) => host.otherID === data.userId)?.setSDP(data.sdp);
+            else
+                await this.seekerConnection?.setRemoteDescription(new RTCSessionDescription(data.sdp));
         });
 
         this.onEvent("iceCandidates", async (data) => {
             if (this.hostingFile) {
                 await this.rtcHosts.find((host) => host.otherID === data.userId)?.addICECandidates(data.candidate);
             } else {
-                this.seekerChannel?.port1.postMessage(data);
+                await this.seekerConnection?.addIceCandidate(new RTCIceCandidate(data.candidate));
             }
         });
 
@@ -105,7 +123,7 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
 
         // If we joined before the host had a file, our first data request was
         // dropped. Once the host is ready, ask again.
-        if (this.seekerChannel && !this.seekOfferReceived) {
+        if (this.seekerConnection && !this.seekOfferReceived) {
             this.send({ kind: "requestSeeker", userId: this.userId } as WebSocketRequestSeeker);
         }
     }
@@ -123,7 +141,6 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
         });
 
         this.rtcHosts.push(host);
-        host.createChannel();
         const sdp = await host.getOffer();
 
         this.send({
@@ -211,21 +228,26 @@ export default class Lobby<T extends AllWebsocketMessages = AllWebsocketMessages
         return this.rtcInfo ?? null;
     }
 
-    public setupSeekerChannel(): MessagePort {
-        this.seekerChannel = new MessageChannel();
+    public async setupRemoteChannel(channelCB: (channel: RTCDataChannel, fileSize: number ) => void): Promise<void> {
+        const { promise: sizePromise, resolve: sizeResolve } = Promise.withResolvers<number>();
+        this.seekerFileSize = sizeResolve;
+        this.seekerConnection = new RTCPeerConnection(this.rtcInfo!);
+        this.seekerConnection.ondatachannel = (channel) => {
+            channelCB(channel.channel, fileSize);
+        }
+        this.seekerConnection.onicecandidate = (data) => {
+            if (!data.candidate) return;
 
-        this.seekerChannel.port1.onmessage = (event: MessageEvent) => {
-            const message = event.data as { kind: string; userId?: string; targetId?: string };
-            message.userId = this.userId;
-
-            if (message.kind === "answerSDP" || message.kind === "iceCandidates") {
-                message.targetId = this.hostId ?? undefined;
-            }
-
-            this.websocket.send(JSON.stringify(message));
+            this.send({
+                kind: "iceCandidates",
+                userId: this.userId,
+                targetId: this.hostId ?? undefined,
+                candidate: data.candidate.toJSON()
+            });
         };
 
-        return this.seekerChannel.port2;
+        this.send({ kind: "requestSeeker", userId: this.userId });
+        const fileSize = await sizePromise;
     }
 
     public async intent(intent: Intent, time: number, selfPromise: Promise<unknown>): Promise<void> {

@@ -1,6 +1,7 @@
 import MediaControls from "@/components/controls/Controls";
 import styles from "./videoPlayer.module.css";
 import ffmpegWorker from "@/player/FFmpeg/bridge.worker?worker";
+import rtcSeekerWorker from "./seeker/rtcSeeker.worker?worker";
 import { RequestDataStatus, type AllVideoWorkerEvents, type WorkerChangeStream, type WorkerInitFFmpeg } from "./FFmpeg/types";
 import { AVMediaType, AVSubtitleType } from "./FFmpeg/structReader";
 import type { CanvasTrackWrapper, MediaStreamTrackWrapper } from "./Tracks/types";
@@ -9,7 +10,7 @@ import { GetAudioTrackCtor } from "./Tracks/audio/utils";
 import { audioTime, type WorkerAudioDataInit } from "./Tracks/audio/audioTypes";
 import { Dispositions } from "./FFmpeg/advancedTypes/AVTypes";
 import type { BitmapSubArgs, VideoDisplayData, VTTCueArgs } from "./Tracks/subtitles/types";
-import type { RemoteFileSource, WorkerRemoteSoruce } from "./seeker/types";
+import type { OutsideSource, RtcSeekableWorkerInit, SeekerWorkerInit, WorkerRemoteSoruce } from "./seeker/types";
 import musicIcon from "@Resources/Icons/music.svg?url";
 
 import { webYCbCrMap } from "jassub";
@@ -20,7 +21,6 @@ import SubtitleASSTrack from "./Tracks/subtitles/SubtitleASSTrack";
 import SubtitleBitmapTrack from "./Tracks/subtitles/SubtitleBitmapTrack";
 import QuickPostmessage from "./quickMessage/QuickMessage";
 import { HasData, Intent } from "./types";
-import RTCSeeker from "./seeker/rtcSeeker.worker";
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
 const DEBUG = import.meta.env.DEV;
@@ -69,14 +69,14 @@ export class VideoPlayer2 {
     private onPauseCB: ((time: number, selfPromise: Promise<unknown>) => void)[] = [];
     private onSeekCB: ((time: number, selfPromise: Promise<unknown>) => void)[] = [];
 
-    private rtcSeeker: RTCSeeker | undefined;
-
     // FFmpeg
     private worker: Worker;
+    private rtcSeeker: Worker | undefined;
+    private dataForSeeker: SeekerWorkerInit | undefined
 
     private initPromise = Promise.withResolvers<void>();
 
-    constructor(videoSrc: string | File | RemoteFileSource, externallyControlled: boolean) {
+    constructor(videoSrc: string | File | WorkerRemoteSoruce, externallyControlled: boolean) {
         this.externallyControlled = externallyControlled;
 
         // DOM
@@ -98,37 +98,39 @@ export class VideoPlayer2 {
 
         // Worker
         const worker = ffmpegWorker({ name: "I tell ffmpeg to do the work" });
+        const isRemote = typeof videoSrc === "object" && !(videoSrc instanceof File) && videoSrc.kind === "remoteSource";
 
-        let workerSrc: string | File | WorkerRemoteSoruce;
-        if (typeof videoSrc === "object" && !(videoSrc instanceof File) && videoSrc.kind === "remote") {
-            workerSrc = { kind: "remoteSource" };
+        let sourceSrc: string | File | OutsideSource;
+        if (isRemote) {
+            sourceSrc = { kind: "outsideSource" };
         } else {
-            workerSrc = videoSrc as string | File;
+            sourceSrc = videoSrc as string | File;
         }
 
         worker.postMessage({
-            fileSource: workerSrc,
+            fileSource: sourceSrc,
             bufferSize: 32 * 1024 * 1024,
             kind: "initFfmpeg",
         } as WorkerInitFFmpeg);
 
-
+        
         window.onbeforeunload = () => {
             worker.terminate();
         };
-
+        
+        
         this.worker = worker;
         this.workerEventer2 = new QuickPostmessage(worker, worker);
-
+        
         this.workerEventer2.addEventListener("endOfFile", (_data) => {
             this.endOfFile = true;
         });
 
-        if (typeof videoSrc === "object" && !(videoSrc instanceof File) && videoSrc.kind === "remote") {
-            this.workerEventer2.waitForEvent("initRtcSeekr").then(async data => {
-                this.rtcSeeker = new RTCSeeker(data, videoSrc.info, videoSrc.port, 32 * 1024 * 1024);
-            });
-
+        if (isRemote) {
+            this.workerEventer2.waitForEvent("initSeeker").then(async data => {
+                this.dataForSeeker = data;
+                videoSrc.resolveInfo();
+            })
         }
 
         // Init
@@ -136,8 +138,20 @@ export class VideoPlayer2 {
         this.initMedia().then(this.timeLoop.bind(this));
     }
 
-    public getBandwith(): number {
-        return this.rtcSeeker?.bandwidth ?? -1;
+    public initRTCSeeker(channel: RTCDataChannel, fileSize: number) {
+        // RTCDataChannel has this funny quirk that it becomes untransferable when it touches any async code
+        // meaning if you want to transfer it to another thread, it has to be asap.
+        // No, not even as a promise resolve result. NO ASYNC. NO FUN ALLOWED!!!!!!!
+        this.rtcSeeker = rtcSeekerWorker({ name: "I steal the file from your friend over WebRTC Data channels" });
+
+        this.rtcSeeker.postMessage({
+            fileSize: fileSize,
+            channel: channel,
+            bufferSize: this.dataForSeeker!.bufferSize,
+            atomicBuffers: this.dataForSeeker!.atomicBuffers,
+            targetBuffer: this.dataForSeeker!.targetBuffer,
+            kind: "initSeeker"
+        } as RtcSeekableWorkerInit, [channel]);
     }
 
     private callIntent(intent: Intent, time: number, selfPromise: Promise<unknown>) {

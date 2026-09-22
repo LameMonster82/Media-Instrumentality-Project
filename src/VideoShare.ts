@@ -1,4 +1,3 @@
-import type { RemoteFileSource } from "./player/seeker/types";
 import { Intent } from "./player/types";
 import { VideoPlayer2 } from "./player/VideoPlayer";
 import Lobby from "./shareplay/lobby";
@@ -208,15 +207,11 @@ export class VideoShare {
     }
 
     /** Play whatever the lobby's host is serving, over the seeker channel. */
-    private mountSeekerPlayer(instance: Lobby): void {
-        const port = instance.setupSeekerChannel();
-        const remoteFile: RemoteFileSource = {
-            kind: "remote",
-            port,
-            info: instance.getRTCInfo()!,
-        };
-
-        const current = new VideoPlayer2(remoteFile, true);
+    private async mountSeekerPlayer(instance: Lobby) {
+        const { promise, resolve } = Promise.withResolvers<void>();
+        const current = new VideoPlayer2({ kind: "remoteSource", resolveInfo: resolve }, true);
+        await promise;
+        await instance.setupRemoteChannel(current.initRTCSeeker.bind(current));
         this.player = current;
         this.wireSync(instance, current);
         this.playerContainer.replaceChildren(current.getVideo());
@@ -271,7 +266,7 @@ export class VideoShare {
 
     private async readBandswith(current: VideoPlayer2) {
         while (true) {
-            this.bandwithDisplay.textContent = `${current.getBandwith()} MB/s`;
+            this.bandwithDisplay.textContent = `${5} MB/s`;
             await new Promise(r => setTimeout(r, 100));
         }
     }

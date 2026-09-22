@@ -59,8 +59,8 @@ class FileSeeker {
 
 let seekableStream: FileSeeker;
 self.onmessage = async (e: MessageEvent<FileSeekableWorkerInit>) => {
-    switch (e.data.type) {
-        case "init": {
+    switch (e.data.kind) {
+        case "initSeeker": {
             seekableStream = new FileSeeker(e.data.file, e.data.targetBuffer, e.data.atomicBuffers);
             await seekableStream.seek();
         }

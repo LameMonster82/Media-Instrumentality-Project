@@ -1,55 +1,58 @@
-import type { RTCHosterWorkerInit, RTCUpdateMaxMsgSize } from "./types";
+import type { RTCHosterWorkerInit, RTCBlockSize } from "./types";
 import rtcHosterWorker from "./rtcHost.worker?worker";
 
 export default class RTCHost {
-    private connection: RTCPeerConnection;
+    private connection: RTCPeerConnection[] = [];
+    private maxMsgSize: number[] = [];
     private hosterWorker: Worker;
     public otherID: string;
-
 
     constructor(
         file: File,
         otherID: string,
         info: RTCConfiguration,
-        onIceCandidate: (candidate: RTCIceCandidateInit) => void,
+        connectionCount: number,
+        onIceCandidate: (conIndex: number, candidate: RTCIceCandidateInit) => void,
     ) {
         this.otherID = otherID;
 
-        this.connection = new RTCPeerConnection(info);
-        this.connection.onicecandidate = (event) => {
-            if (event.candidate) onIceCandidate(event.candidate.toJSON());
-        };
+        const channels: RTCDataChannel[] = [];
+        for (let i = 0; i < connectionCount; i++) {
+            const connection = new RTCPeerConnection(info);
+            connection.onicecandidate = (event) => {
+                if (event.candidate) onIceCandidate(i, event.candidate.toJSON());
+            };
+            channels.push(connection.createDataChannel(`data-channel-${i}`, { ordered: false }));
+            this.connection.push(connection);
+            this.maxMsgSize.push(-1);
+        }
 
-        const channel = this.connection.createDataChannel("data-channel");
         this.hosterWorker = rtcHosterWorker({ name: "I willingly give up your file to your friend. They asked nicely" });
-
         this.hosterWorker.postMessage({
             kind: "init",
             file,
-            channel,
-            maxSize: this.getMaxPacketSize()
-        } as RTCHosterWorkerInit, [channel]);
+            channels,
+        } as RTCHosterWorkerInit, channels);
     }
 
-    public async getOffer() {
-        const offer = await this.connection.createOffer();
-        await this.connection.setLocalDescription(offer);
+    public async getOffer(conIndex: number) {
+        const offer = await this.connection[conIndex].createOffer();
+        await this.connection[conIndex].setLocalDescription(offer);
 
-        return this.connection.localDescription!;
+        return this.connection[conIndex].localDescription!;
     }
 
-    public async setSDP(sdp: RTCSessionDescriptionInit) {
-        await this.connection.setRemoteDescription(new RTCSessionDescription(sdp));
+    public async setSDP(conIndex: number, sdp: RTCSessionDescriptionInit) {
+        await this.connection[conIndex].setRemoteDescription(new RTCSessionDescription(sdp));
+        this.maxMsgSize[conIndex] = this.connection[conIndex].sctp?.maxMessageSize ?? -1;
+        if (this.maxMsgSize.some(s => s === -1)) return;
+
         this.hosterWorker.postMessage({
-            kind: "updateMsgSize",
-            maxSize: this.getMaxPacketSize()
-        } as RTCUpdateMaxMsgSize);
+            kind: "blockSize",
+            blockSize: Math.min(...this.maxMsgSize, 262144)
+        } as RTCBlockSize);
     }
-    public async addICECandidates(candidate: RTCLocalIceCandidateInit) {
-        await this.connection.addIceCandidate(new RTCIceCandidate(candidate));
-    }
-
-    public getMaxPacketSize() {
-        return this.connection.sctp?.maxMessageSize ?? 65536;
+    public async addICECandidates(conIndex: number, candidate: RTCLocalIceCandidateInit) {
+        await this.connection[conIndex].addIceCandidate(new RTCIceCandidate(candidate));
     }
 }

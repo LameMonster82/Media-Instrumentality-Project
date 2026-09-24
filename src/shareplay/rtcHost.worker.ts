@@ -1,100 +1,119 @@
-import { HIGH_BUFFER, LOW_BUFFER, type RTCAnnounceSpace, type RTCHosterWorkerInit, type RTCSeekAnswer, type RTCSeekTo, type RTCUpdateMaxMsgSize } from "./types";
+import { HIGH_BUFFER, LOW_BUFFER, type RTCAnnounceSpace, type RTCHosterWorkerInit, type RTCSeekTo, type RTCBlockSize, type RTCSeekAnswer } from "./types";
 
 class RTCHoster {
     private file: File;
-    private channel: RTCDataChannel;
-    public maxSize: number;
-
-    private fileCursor = 0;
-    private freeSpace: number = 0;
-
-    private cancelReadingResolve: () => void = () => { };
-    private spaceResolve: () => void = () => { };
-    private cancelReading = false;
-    private lastSeek: Promise<void> | null = null;
+    private channels: {
+        channel: RTCDataChannel
+        freeSpaceMap: number[],
+        isSeeking: boolean,
+        isReading: boolean,
+        currentReadPromise: Promise<void>,
+    }[] = [];
+    private maxBlockSize: number | undefined;
+    private scratchBuffer: Uint8Array<ArrayBuffer> | undefined;
 
     constructor(data: RTCHosterWorkerInit) {
         this.file = data.file;
-        this.channel = data.channel;
-        this.maxSize = data.maxSize;
 
-        this.channel.bufferedAmountLowThreshold = LOW_BUFFER;
-        this.channel.onbufferedamountlow = () => {
-            if (this.cancelReading || this.lastSeek !== null) return; // Buffer flushing or already in action
-            this.lastSeek = this.seek(this.fileCursor);
-        }
-        this.channel.onmessage = this.handleMessages.bind(this);
+        for (const channel of data.channels)
+            this.addChannel(channel);
     }
 
-    async seek(offset: number) {
-        const { promise: cancelPromise, resolve: cancelResolve } = Promise.withResolvers<void>();
-        this.cancelReadingResolve = cancelResolve;
+    private addChannel(channel: RTCDataChannel) {
+        const pump = async () => {
+            const info = this.channels[index];
+            if (info.isSeeking || 
+                info.channel.bufferedAmount >= HIGH_BUFFER ||
+                this.maxBlockSize === undefined || this.scratchBuffer === undefined ||
+                info.channel.readyState !== "open") return;
 
-        this.fileCursor = offset;
-        const reader = this.file.slice(offset).stream().getReader();
-        try {
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done || this.cancelReading) break;
-                if (this.freeSpace <= 0) {
-                    const { promise: spacePromise, resolve: spaceResolve } = Promise.withResolvers<void>();
-                    this.spaceResolve = spaceResolve;
-                    await Promise.race([spacePromise, cancelPromise]);
-                    if (this.cancelReading) break;
-                }
-                
-                let dataToSend = value.byteLength;
+            const { promise, resolve } = Promise.withResolvers<void>();
+            info.currentReadPromise = promise;
+            info.isReading = true;
+            let nextPtr;
+            while (!info.isSeeking && (nextPtr = info.freeSpaceMap.shift()) !== undefined) {
+                const data = await this.file.slice(nextPtr, nextPtr + this.maxBlockSize).arrayBuffer();
+                if (info.isSeeking) break;
+
+                new DataView(this.scratchBuffer.buffer).setBigUint64(0, BigInt(nextPtr), true);
+                this.scratchBuffer.set(new Uint8Array(data), 8);
                 try {
-                    while (dataToSend > 0 && this.channel.bufferedAmount < HIGH_BUFFER) {
-                        const start = value.byteLength - dataToSend;
-                        const subArray = value.subarray(start, start + Math.min(this.maxSize, dataToSend));
-                        this.channel.send(subArray);
-                        this.freeSpace -= subArray.byteLength;
-                        this.fileCursor += subArray.byteLength;
-                        dataToSend -= subArray.byteLength;
-                    }
-                } catch { }
+                    info.channel.send(this.scratchBuffer.subarray(0, data.byteLength + 8));
+                } catch {
+                    // we failed to send the data
+                    // put the pointer back and we will try next time
+                    info.freeSpaceMap.unshift(nextPtr);
+                    break;
+                }
 
-                if (this.channel.bufferedAmount >= HIGH_BUFFER)
+                if (info.channel.bufferedAmount >= HIGH_BUFFER)
                     break;
             }
-        } finally {
-            reader.releaseLock();
+
+            info.isReading = false;
+            resolve();
+        };
+        channel.bufferedAmountLowThreshold = LOW_BUFFER;
+        channel.onbufferedamountlow = pump.bind(this)
+        
+        const index = this.channels.push({
+            channel,
+            freeSpaceMap: [],
+            isSeeking: false,
+            isReading: false,
+            currentReadPromise: Promise.resolve(),
+        }) - 1;
+
+        channel.onmessage = async (ev) => {
+            if (typeof ev.data !== "string") return;
+            const data = JSON.parse(ev.data) as RTCSeekTo | RTCAnnounceSpace;
+            const info = this.channels[index];
+
+            if (data.kind === "seekTo") {
+                // optionally there is an offset but who cares
+                info.isSeeking = true;
+                info.freeSpaceMap.length = 0;
+                await info.currentReadPromise;
+                info.isSeeking = false;
+                info.channel.send(JSON.stringify({
+                    kind: "seekAnswer"
+                } as RTCSeekAnswer));
+            } else if (data.kind === "updateFreeSpace") {
+                info.freeSpaceMap.push(...data.freeSpace);
+            }
+
+            if (!info.isReading)
+                pump();
         }
-        this.lastSeek = null;
     }
 
-    async handleMessages(ev: MessageEvent<string>) {
-        if (typeof ev.data !== "string") return;
-        const data = JSON.parse(ev.data) as RTCSeekTo | RTCAnnounceSpace;
-
-        if (data.kind === "seekTo") {
-            this.cancelReading = true;
-            this.cancelReadingResolve();
-            await this.lastSeek;
-            this.freeSpace = data.freeSpace;
-            this.cancelReading = false;
-            this.lastSeek = this.seek(data.offset);
-            this.channel.send(JSON.stringify({
-                kind: "seekAnswer"
-            } as RTCSeekAnswer))
-        } else if (data.kind === "updateFreeSpace") {
-            this.freeSpace = data.freeSpace;
-            this.spaceResolve();
+    public async setBlockSize(size: number) {
+        this.maxBlockSize = size - 8; // padding for ptr
+        this.scratchBuffer = new Uint8Array(size);
+        for (const { channel } of this.channels) {
+            if (channel.readyState !== "open") {
+                const { promise, resolve } = Promise.withResolvers();
+                channel.onopen = resolve;
+                await promise;
+            }
+            channel.send(JSON.stringify({
+                kind: "blockSize",
+                blockSize: this.maxBlockSize
+            } as RTCBlockSize));
         }
+
     }
 }
 
 let hosterStream: RTCHoster;
-self.onmessage = async (e: MessageEvent<RTCHosterWorkerInit | RTCUpdateMaxMsgSize>) => {
+self.onmessage = async (e: MessageEvent<RTCHosterWorkerInit | RTCBlockSize>) => {
     switch (e.data.kind) {
         case "init": {
             hosterStream = new RTCHoster(e.data);
             break;
         }
-        case "updateMsgSize": {
-            if (hosterStream)
-                hosterStream.maxSize = e.data.maxSize;
+        case "blockSize": {
+            hosterStream?.setBlockSize(e.data.blockSize);
             break;
         }
     }

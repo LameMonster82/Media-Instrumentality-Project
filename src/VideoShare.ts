@@ -211,7 +211,7 @@ export class VideoShare {
         const { promise, resolve } = Promise.withResolvers<void>();
         const current = new VideoPlayer2({ kind: "remoteSource", resolveInfo: resolve }, true);
         await promise;
-        await instance.setupRemoteChannel(current.initRTCSeeker.bind(current));
+        await instance.setupRemoteChannel(current.addRTCRemoteChannel.bind(current));
         this.player = current;
         this.wireSync(instance, current);
         this.playerContainer.replaceChildren(current.getVideo());
@@ -266,7 +266,7 @@ export class VideoShare {
 
     private async readBandswith(current: VideoPlayer2) {
         while (true) {
-            this.bandwithDisplay.textContent = `${5} MB/s`;
+            this.bandwithDisplay.textContent = `${(current.bandwidth / 1048576).toPrecision(6)} MB/s`;
             await new Promise(r => setTimeout(r, 100));
         }
     }

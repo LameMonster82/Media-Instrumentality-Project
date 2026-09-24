@@ -28,6 +28,7 @@ export interface WebSocketIntentStatus extends WebSocketMessage {
 export interface WebSocketRequestSeeker extends WebSocketMessage {
     kind: "requestSeeker";
     userId: string;
+    connectionCount: number;
 }
 
 export interface WebSocketOfferSDP extends WebSocketMessage {
@@ -35,6 +36,7 @@ export interface WebSocketOfferSDP extends WebSocketMessage {
     userId: string;
     targetId: string;
     fileSize: number;
+    connectionIndex: number,
     sdp: RTCSessionDescriptionInit;
 }
 
@@ -43,12 +45,14 @@ export interface WebSocketAnswerSDP extends WebSocketMessage {
     userId: string;
     targetId?: string;
     sdp: RTCSessionDescriptionInit;
+    connectionIndex: number,
 }
 
 export interface WebSocketICECandidates extends WebSocketMessage {
     kind: "iceCandidates";
     userId: string;
     targetId?: string;
+    connectionIndex: number;
     candidate: RTCIceCandidateInit;
 }
 
@@ -70,7 +74,6 @@ export type DictionaryWebSocketEvent<T extends WebSocketMessage> = {
 export interface RTCSeekTo extends WebSocketMessage {
     kind: "seekTo";
     offset: number;
-    freeSpace: number
 }
 
 export interface RTCSeekAnswer extends WebSocketMessage {
@@ -79,19 +82,18 @@ export interface RTCSeekAnswer extends WebSocketMessage {
 
 export interface RTCAnnounceSpace extends WebSocketMessage {
     kind: "updateFreeSpace";
-    freeSpace: number;
+    freeSpace: number[];
 }
 
 export interface RTCHosterWorkerInit {
     kind: "init",
     file: File,
-    channel: RTCDataChannel,
-    maxSize: number,
+    channels: RTCDataChannel[],
 }
 
-export interface RTCUpdateMaxMsgSize {
-    kind: "updateMsgSize",
-    maxSize: number,
+export interface RTCBlockSize {
+    kind: "blockSize",
+    blockSize: number,
 }
 
 // eslint-disable-next-line @typescript-eslint/naming-convention

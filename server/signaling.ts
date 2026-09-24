@@ -224,7 +224,7 @@ async function handleMessage(client: Client, room: Room, raw: string): Promise<v
 
         case 'requestSeeker': {
             if (!room.hostId) return;
-            sendTo(room, room.hostId, { kind: 'requestSeeker', userId: client.id });
+            sendTo(room, room.hostId, { kind: 'requestSeeker', userId: client.id, connectionCount: message.connectionCount });
             return;
         }
 

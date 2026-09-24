@@ -10,7 +10,7 @@ import { GetAudioTrackCtor } from "./Tracks/audio/utils";
 import { audioTime, type WorkerAudioDataInit } from "./Tracks/audio/audioTypes";
 import { Dispositions } from "./FFmpeg/advancedTypes/AVTypes";
 import type { BitmapSubArgs, VideoDisplayData, VTTCueArgs } from "./Tracks/subtitles/types";
-import type { OutsideSource, RtcSeekableWorkerInit, SeekerWorkerInit, WorkerRemoteSoruce } from "./seeker/types";
+import type { OutsideSource, RtcSeekableWorkerAddChannel, RtcSeekableWorkerInit, SeekerWorkerInit, WorkerRemoteSoruce } from "./seeker/types";
 import musicIcon from "@Resources/Icons/music.svg?url";
 
 import { webYCbCrMap } from "jassub";
@@ -73,6 +73,7 @@ export class VideoPlayer2 {
     private worker: Worker;
     private rtcSeeker: Worker | undefined;
     private dataForSeeker: SeekerWorkerInit | undefined
+    public bandwidth: number = 0;
 
     private initPromise = Promise.withResolvers<void>();
 
@@ -138,20 +139,32 @@ export class VideoPlayer2 {
         this.initMedia().then(this.timeLoop.bind(this));
     }
 
-    public initRTCSeeker(channel: RTCDataChannel, fileSize: number) {
-        // RTCDataChannel has this funny quirk that it becomes untransferable when it touches any async code
-        // meaning if you want to transfer it to another thread, it has to be asap.
-        // No, not even as a promise resolve result. NO ASYNC. NO FUN ALLOWED!!!!!!!
-        this.rtcSeeker = rtcSeekerWorker({ name: "I steal the file from your friend over WebRTC Data channels" });
+    public addRTCRemoteChannel(channel: RTCDataChannel, fileSize: number) {
+        if (!this.dataForSeeker)
+            throw new Error("We dont have data from ffmpeg that we will have a custom seeker????");
+
+        if (!this.rtcSeeker) {
+            // RTCDataChannel has this funny quirk that it becomes untransferable when it touches any async code
+            // meaning if you want to transfer it to another thread, it has to be asap.
+            // No, not even as a promise resolve result. NO ASYNC. NO FUN ALLOWED!!!!!!!
+            this.rtcSeeker = rtcSeekerWorker({ name: "I steal the file from your friend over WebRTC Data channels" });
+
+            this.rtcSeeker.onmessage = (ev) => {
+                if (ev.data.kind === "bandwidth") this.bandwidth = ev.data.value;
+            };
+            this.rtcSeeker.postMessage({
+                fileSize: fileSize,
+                bufferSize: this.dataForSeeker!.bufferSize,
+                atomicBuffers: this.dataForSeeker!.atomicBuffers,
+                targetBuffer: this.dataForSeeker!.targetBuffer,
+                kind: "initSeeker"
+            } as RtcSeekableWorkerInit);
+        }
 
         this.rtcSeeker.postMessage({
-            fileSize: fileSize,
-            channel: channel,
-            bufferSize: this.dataForSeeker!.bufferSize,
-            atomicBuffers: this.dataForSeeker!.atomicBuffers,
-            targetBuffer: this.dataForSeeker!.targetBuffer,
-            kind: "initSeeker"
-        } as RtcSeekableWorkerInit, [channel]);
+            kind: "addChannel",
+            channel,
+        } as RtcSeekableWorkerAddChannel, [channel])
     }
 
     private callIntent(intent: Intent, time: number, selfPromise: Promise<unknown>) {

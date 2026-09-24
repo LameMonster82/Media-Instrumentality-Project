@@ -15,8 +15,13 @@ export interface FileSeekableWorkerInit extends SeekerWorkerInit {
 
 export interface RtcSeekableWorkerInit extends SeekerWorkerInit {
     fileSize: number,
-    channel: RTCDataChannel,
 }
+
+export interface RtcSeekableWorkerAddChannel {
+    kind: "addChannel"
+    channel: RTCDataChannel
+}
+
 
 export interface OutsideSource {
     kind: "outsideSource";
